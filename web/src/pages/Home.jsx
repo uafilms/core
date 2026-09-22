@@ -52,8 +52,10 @@ const Section = ({ title, items, isHero = false }) => {
   );
 };
 
+let homeDataCache = null;
+
 const Home = () => {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(homeDataCache);
   const [searchQuery, setSearchQuery] = useState('');
   const [history, setHistory] = useState([]);
   const navigate = useNavigate();
@@ -66,7 +68,10 @@ const Home = () => {
     setHistory(savedHistory);
 
     api.get(`/home?adult=${adult}`)
-      .then((res) => setData(res.data))
+      .then((res) => {
+        homeDataCache = res.data;
+        setData(res.data);
+      })
       .catch((err) => console.error(err));
   }, []);
 

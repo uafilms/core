@@ -35,7 +35,7 @@ const MovieCard = ({ movie, isHero = false }) => {
       }}
     >
       <article
-        onClick={() => navigate(`/details/${type}/${movie.id}`, { state: { from: location } })}
+        onClick={() => navigate(`/details/${type}/${movie.id}`, { state: { from: location, movie } })}
         className="no-padding round wave surface-container-low"
         style={{
           height: height,

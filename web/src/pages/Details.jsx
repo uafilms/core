@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Hls from 'hls.js';
 import api from '../api/axios';
 import Comments from '../components/Comments';
@@ -19,9 +19,21 @@ const formatSourceName = (source) => {
 const Details = () => {
   const { type, id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const [data, setData] = useState(null);
-  const [loadingMeta, setLoadingMeta] = useState(true);
+  const initialMovie = location.state?.movie;
+  const [data, setData] = useState(() => {
+    if (!initialMovie) return null;
+    return {
+      id: initialMovie.id,
+      title: initialMovie.title || initialMovie.name,
+      posterUrl: initialMovie.poster_path ? `https://image.tmdb.org/t/p/w500${initialMovie.poster_path}` : null,
+      backdropUrl: initialMovie.backdrop_path ? `https://image.tmdb.org/t/p/w1280${initialMovie.backdrop_path}` : null,
+      year: initialMovie.release_date || initialMovie.first_air_date ? parseInt(initialMovie.release_date || initialMovie.first_air_date) : null,
+      overview: initialMovie.overview || '',
+    };
+  });
+  const [loadingMeta, setLoadingMeta] = useState(!initialMovie);
   const [error, setError] = useState(null);
   const [isFav, setIsFav] = useState(false);
 
@@ -192,7 +204,7 @@ const Details = () => {
   const backdropUrl = data?.backdropUrl || data?.posterUrl || '';
 
   return (
-    <div style={{ minHeight: '100vh' }}>
+    <div className="page-transition" style={{ minHeight: '100vh' }}>
       {/* Hero Header */}
       <div style={{ position: 'relative', height: '350px', width: '100%' }}>
         <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10 }}>
