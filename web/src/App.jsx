@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, Suspense } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import LoadingBar from 'react-top-loading-bar';
 import { loaderEvent } from './api/axios';
 
@@ -21,6 +21,7 @@ const PageLoader = () => (
 
 function App() {
   const ref = useRef(null);
+  const location = useLocation();
   const [showDisclaimer, setShowDisclaimer] = useState(false);
 
   useEffect(() => {
@@ -63,13 +64,15 @@ function App() {
 
       <main className="responsive main-content">
         <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/search" element={<Search />} />
-            <Route path="/favorites" element={<Favorites />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/details/:type/:id" element={<Details />} />
-          </Routes>
+          <div key={location.pathname} className="page-transition">
+            <Routes location={location}>
+              <Route path="/" element={<Home />} />
+              <Route path="/search" element={<Search />} />
+              <Route path="/favorites" element={<Favorites />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/details/:type/:id" element={<Details />} />
+            </Routes>
+          </div>
         </Suspense>
       </main>
 
