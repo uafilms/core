@@ -1,0 +1,39 @@
+{
+  "name": "core",
+  "version": "1.0.0",
+  "description": "uafilms backend rewrite",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/api/server.ts",
+    "dev": "tsx watch src/api/server.ts",
+    "test": "tsx"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uafilms/core.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/uafilms/core/issues"
+  },
+  "homepage": "https://github.com/uafilms/core#readme",
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "axios": "^1.20.0",
+    "better-sqlite3": "^13.0.3",
+    "cheerio": "^1.2.0",
+    "dotenv": "^18.0.2",
+    "hono": "^4.13.8",
+    "webcrack": "^2.16.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
