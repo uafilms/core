@@ -1,4 +1,5 @@
 import type { VodExtractionOptions, VodExtractionResult, VodExtractor } from '../types/vod.js';
+import { httpRequest } from '../utils/http.js';
 import { tortugaVod } from './tortuga/main.js';
 import { ashdiVod } from './ashdi/main.js';
 import { hdvbVod } from './hdvb/main.js';
@@ -41,6 +42,24 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
       const innerUrl = parsed.searchParams.get('url');
       if (innerUrl) {
         const decodedInner = decodeURIComponent(innerUrl);
+
+        // Animeon club player episode API check
+        if (decodedInner.includes('animeon.club/api/player/')) {
+          try {
+            const apiRes = await httpRequest<{ videoUrl?: string }>(decodedInner, {
+              headers: {
+                Referer: 'https://animeon.club/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+              },
+            });
+            if (apiRes.data?.videoUrl) {
+              return extractVod(apiRes.data.videoUrl, options);
+            }
+          } catch {
+            // fallback
+          }
+        }
+
         // Якщо це вже прямий m3u8 стрім (і не наш проксі)
         if (decodedInner.includes('.m3u8') && !decodedInner.includes('/master.m3u8')) {
           return {
@@ -56,6 +75,23 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
       }
     } catch {
       // fallback to normal resolution
+    }
+  }
+
+  // Якщо передали прямий URL на animeon API
+  if (url.includes('animeon.club/api/player/')) {
+    try {
+      const apiRes = await httpRequest<{ videoUrl?: string }>(url, {
+        headers: {
+          Referer: 'https://animeon.club/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        },
+      });
+      if (apiRes.data?.videoUrl) {
+        return extractVod(apiRes.data.videoUrl, options);
+      }
+    } catch {
+      // fallback
     }
   }
 

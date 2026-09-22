@@ -88,20 +88,46 @@ export function decryptMoonAnimeIframe(html: string): { file: string; poster?: s
   const dynKey = extractDynamicKey(decodedJs);
 
   let fileValue: string | null = null;
-  const fileEncodedMatch = decodedJs.match(/file:\s*_0xd\("([^"]+)"\)/);
-  if (fileEncodedMatch) {
-    fileValue = moonInnerDecode(fileEncodedMatch[1], dynKey);
-  } else {
-    const rawFileMatch = decodedJs.match(/file:\s*"([^"]+)"/);
-    if (rawFileMatch) fileValue = rawFileMatch[1];
+
+  // Pattern 1: Modern MoonAnime format: var rawVideo = _0xd("...");
+  const rawVideoEncodedMatch = decodedJs.match(/var\s+rawVideo\s*=\s*_0xd\("([^"]+)"\)/);
+  if (rawVideoEncodedMatch) {
+    fileValue = moonInnerDecode(rawVideoEncodedMatch[1], dynKey);
+  }
+
+  // Pattern 2: Legacy file: _0xd("...")
+  if (!fileValue) {
+    const fileEncodedMatch = decodedJs.match(/file:\s*_0xd\("([^"]+)"\)/);
+    if (fileEncodedMatch) {
+      fileValue = moonInnerDecode(fileEncodedMatch[1], dynKey);
+    }
+  }
+
+  // Pattern 3: Literal var rawVideo = "..." or file: "..."
+  if (!fileValue) {
+    const rawMatch = decodedJs.match(/(?:var\s+rawVideo\s*=\s*|file:\s*)"([^"]+)"/);
+    if (rawMatch) fileValue = rawMatch[1];
   }
 
   if (!fileValue) return null;
 
   let poster: string | undefined;
-  const posterMatch = decodedJs.match(/poster:\s*"([^"]+)"/);
-  if (posterMatch && posterMatch[1].startsWith('http')) {
-    poster = posterMatch[1];
+
+  // Check modern rawPoster = _0xd("...")
+  const rawPosterEncodedMatch = decodedJs.match(/var\s+rawPoster\s*=\s*_0xd\("([^"]+)"\)/);
+  if (rawPosterEncodedMatch) {
+    const decodedPoster = moonInnerDecode(rawPosterEncodedMatch[1], dynKey);
+    if (decodedPoster && decodedPoster.startsWith('http')) {
+      poster = decodedPoster;
+    }
+  }
+
+  // Fallback poster check
+  if (!poster) {
+    const posterMatch = decodedJs.match(/(?:var\s+rawPoster\s*=\s*|poster:\s*)"([^"]+)"/);
+    if (posterMatch && posterMatch[1].startsWith('http')) {
+      poster = posterMatch[1];
+    }
   }
 
   return { file: fileValue, poster };

@@ -47,5 +47,7 @@ export class MemoryCache {
   }
 }
 
-export const omssResponseCache = new MemoryCache(2 * 60 * 60 * 1000); // 2 hours
+export const omssResponseCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
 export const metaCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
+export const m3u8PlaylistCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
+export const omssSourceResolutionCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours

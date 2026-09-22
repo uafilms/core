@@ -3,6 +3,7 @@ import axios from 'axios';
 import { extractVod } from '../../vods/index.js';
 import { parseMasterPlaylist, stripCorsProxy } from '../../utils/m3u8.js';
 import { logWarn, logError } from '../../utils/logger.js';
+import { m3u8PlaylistCache } from '../services/cache.js';
 
 export const streamRouter = new Hono();
 
@@ -40,7 +41,7 @@ streamRouter.get('/master.m3u8', async (c) => {
   }
 
   // 1. If still not resolved and lazy params are provided, resolve target URL via VOD extractors
-  if (!streamUrl && (cdn || episodeId || (type && id))) {
+  if (!streamUrl && (cdn || episodeId || (type && id) || translation)) {
     try {
       const fullUrl = c.req.url;
       const extracted = await extractVod(fullUrl);
@@ -62,10 +63,21 @@ streamRouter.get('/master.m3u8', async (c) => {
     }
   }
 
-  // Prevent self-referencing loops
-  if (streamUrl && streamUrl.includes('/master.m3u8')) {
+  // Prevent self-referencing loops (only if pointing to this server, not remote CDNs like factorios)
+  if (streamUrl && !streamUrl.startsWith('http://') && !streamUrl.startsWith('https://') && streamUrl.includes('/master.m3u8')) {
     logWarn('stream', `streamUrl resolved to proxy self, aborting: ${streamUrl}`);
     streamUrl = undefined;
+  } else if (streamUrl) {
+    try {
+      const parsedUrl = new URL(streamUrl);
+      const host = c.req.header('host') || 'localhost:3000';
+      if (parsedUrl.host === host && parsedUrl.pathname.includes('/master.m3u8')) {
+        logWarn('stream', `streamUrl resolved to proxy self, aborting: ${streamUrl}`);
+        streamUrl = undefined;
+      }
+    } catch {
+      // not a valid absolute URL, let it continue or fail later
+    }
   }
 
   if (!streamUrl) {
@@ -87,6 +99,8 @@ streamRouter.get('/master.m3u8', async (c) => {
   const isMoon = streamUrl.includes('moonanime.art') || streamUrl.includes('mooncdn') || streamUrl.includes('s.moonanime');
   const isBamboo = streamUrl.includes('bambooua.com');
   const isHdvb = streamUrl.includes('hdvbua.pro') || streamUrl.includes('vidcache');
+  const isFranko = streamUrl.includes('factorios.live') || streamUrl.includes('uacdn.online');
+  const isTortuga = streamUrl.includes('tortuga.tw') || streamUrl.includes('tortuga.wtf') || streamUrl.includes('tortuga');
 
   if (isAshdi) {
     headers['Origin'] = 'https://ashdi.vip';
@@ -94,11 +108,21 @@ streamRouter.get('/master.m3u8', async (c) => {
   } else if (isMoon) {
     headers['Origin'] = 'https://moonanime.art';
     headers['Referer'] = 'https://moonanime.art/';
+    headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0';
+    headers['Sec-Fetch-Dest'] = 'empty';
+    headers['Sec-Fetch-Mode'] = 'cors';
+    headers['Sec-Fetch-Site'] = 'same-site';
   } else if (isBamboo) {
     headers['Origin'] = 'https://bambooua.com';
     headers['Referer'] = 'https://bambooua.com/';
   } else if (isHdvb) {
     headers['Referer'] = 'https://eneyida.tv/';
+  } else if (isFranko) {
+    headers['Origin'] = 'https://franko.uacdn.online';
+    headers['Referer'] = 'https://franko.uacdn.online/';
+  } else if (isTortuga) {
+    headers['Referer'] = 'https://uaserials.com/';
+    headers['Origin'] = 'https://uaserials.com';
   }
 
   // 3. Fetch manifest and rewrite
@@ -113,14 +137,26 @@ streamRouter.get('/master.m3u8', async (c) => {
     const proto = c.req.header('x-forwarded-proto') || 'http';
     const proxyHost = `${proto}://${host}`;
 
+    const cacheKey = `${proxyHost}:${streamUrl}`;
+    const cachedM3u8 = m3u8PlaylistCache.get<string>(cacheKey);
+    if (cachedM3u8) {
+      return c.text(cachedM3u8, 200, {
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=86400',
+      });
+    }
+
     const modifiedM3u8 = parseMasterPlaylist(res.data, streamUrl, proxyHost, {
       corsProxySegments: isMoon || isAshdi || isBamboo,
     });
 
+    m3u8PlaylistCache.set(cacheKey, modifiedM3u8, 24 * 60 * 60 * 1000);
+
     return c.text(modifiedM3u8, 200, {
       'Content-Type': 'application/vnd.apple.mpegurl',
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'public, max-age=86400',
     });
   } catch (err: unknown) {
     logError('stream', `m3u8 fetch error: ${(err as Error).message}`);

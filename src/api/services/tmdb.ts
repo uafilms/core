@@ -65,7 +65,27 @@ export class TmdbService {
     const token = this.getToken();
     if (token) {
       try {
-        const url = `https://api.themoviedb.org/3/${type}/${id}?append_to_response=external_ids&language=uk-UA`;
+        let tmdbNumericId = id;
+        if (id.startsWith('tt')) {
+          // Resolve IMDb ID to TMDB ID first
+          const findUrl = `https://api.themoviedb.org/3/find/${id}?external_source=imdb_id`;
+          const findRes = await axios.get<any>(findUrl, {
+            headers: this.getHeaders(),
+            timeout: 5000,
+          });
+          const results = type === 'tv'
+            ? (findRes.data.tv_results || [])
+            : (findRes.data.movie_results || []);
+          if (results.length > 0) {
+            tmdbNumericId = String(results[0].id);
+          } else if (findRes.data.tv_results?.length > 0) {
+            tmdbNumericId = String(findRes.data.tv_results[0].id);
+          } else if (findRes.data.movie_results?.length > 0) {
+            tmdbNumericId = String(findRes.data.movie_results[0].id);
+          }
+        }
+
+        const url = `https://api.themoviedb.org/3/${type}/${tmdbNumericId}?append_to_response=external_ids&language=uk-UA`;
         const res = await axios.get<any>(url, {
           headers: this.getHeaders(),
           timeout: 5000,
@@ -76,11 +96,11 @@ export class TmdbService {
         const originalTitle = data.original_title || data.original_name;
         const dateStr = data.release_date || data.first_air_date || '';
         const year = dateStr ? parseInt(dateStr.split('-')[0], 10) : undefined;
-        const imdbId = data.external_ids?.imdb_id;
+        const imdbId = data.external_ids?.imdb_id || (id.startsWith('tt') ? id : undefined);
 
         const meta: MediaMetadata = {
           id,
-          tmdbId: parseInt(id, 10),
+          tmdbId: typeof data.id === 'number' ? data.id : parseInt(tmdbNumericId, 10),
           imdbId,
           title,
           originalTitle,
@@ -132,7 +152,26 @@ export class TmdbService {
     const token = this.getToken();
     if (token) {
       try {
-        const url = `https://api.themoviedb.org/3/${type}/${id}?append_to_response=external_ids&language=uk-UA`;
+        let tmdbNumericId = id;
+        if (id.startsWith('tt')) {
+          const findUrl = `https://api.themoviedb.org/3/find/${id}?external_source=imdb_id`;
+          const findRes = await axios.get<any>(findUrl, {
+            headers: this.getHeaders(),
+            timeout: 5000,
+          });
+          const results = type === 'tv'
+            ? (findRes.data.tv_results || [])
+            : (findRes.data.movie_results || []);
+          if (results.length > 0) {
+            tmdbNumericId = String(results[0].id);
+          } else if (findRes.data.tv_results?.length > 0) {
+            tmdbNumericId = String(findRes.data.tv_results[0].id);
+          } else if (findRes.data.movie_results?.length > 0) {
+            tmdbNumericId = String(findRes.data.movie_results[0].id);
+          }
+        }
+
+        const url = `https://api.themoviedb.org/3/${type}/${tmdbNumericId}?append_to_response=external_ids&language=uk-UA`;
         const res = await axios.get<any>(url, {
           headers: this.getHeaders(),
           timeout: 6000,

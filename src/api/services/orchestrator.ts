@@ -3,6 +3,8 @@ import type { MediaMetadata, MediaType, StreamSource } from '../../types/media.j
 import type { OmssSource, OmssSubtitle, OmssDiagnostic, PlatformType, OmssQuality, OmssVideoType } from '../types.js';
 import { providers } from '../../providers/index.js';
 import { extractVod } from '../../vods/index.js';
+import { detectCdn } from '../../utils/cdn.js';
+import { omssSourceResolutionCache } from '../services/cache.js';
 
 interface OrchestratorOptions {
   meta: MediaMetadata;
@@ -14,6 +16,7 @@ interface OrchestratorOptions {
   proxyHost: string;
   onProviderResult?: (chunk: {
     provider: string;
+    providerName?: string;
     sources: OmssSource[];
     subtitles: OmssSubtitle[];
   }) => void;
@@ -46,6 +49,56 @@ export class OrchestratorService {
   }> {
     const { meta, type, season = 1, episode = 1, providerId, platform = 'web', proxyHost, onProviderResult } = options;
 
+    const mediaKey = meta.imdbId || meta.id || meta.title;
+    const cacheKey = `orchestrator:${mediaKey}:${type}:${season}:${episode}:${providerId || 'all'}:${platform}:${proxyHost}`;
+
+    // 24h caching for source resolution (when not streaming SSE or as baseline)
+    if (!onProviderResult) {
+      const cached = omssSourceResolutionCache.get<{
+        sources: OmssSource[];
+        subtitles: OmssSubtitle[];
+        diagnostics: OmssDiagnostic[];
+      }>(cacheKey);
+
+      if (cached) {
+        return cached;
+      }
+    } else {
+      // If SSE requested and cached, emit cached items directly
+      const cached = omssSourceResolutionCache.get<{
+        sources: OmssSource[];
+        subtitles: OmssSubtitle[];
+        diagnostics: OmssDiagnostic[];
+      }>(cacheKey);
+
+      if (cached && cached.sources.length > 0) {
+        const cdnGroups = new Map<string, { id: string; name: string; sources: OmssSource[]; subtitles: OmssSubtitle[] }>();
+        for (const s of cached.sources) {
+          const key = s.provider.id;
+          if (!cdnGroups.has(key)) {
+            cdnGroups.set(key, { id: key, name: s.provider.name, sources: [], subtitles: [] });
+          }
+          cdnGroups.get(key)!.sources.push(s);
+        }
+        for (const sub of cached.subtitles) {
+          const key = sub.provider.id;
+          if (!cdnGroups.has(key)) {
+            cdnGroups.set(key, { id: key, name: sub.provider.name, sources: [], subtitles: [] });
+          }
+          cdnGroups.get(key)!.subtitles.push(sub);
+        }
+        for (const group of cdnGroups.values()) {
+          onProviderResult({
+            provider: group.id,
+            providerName: group.name,
+            sources: group.sources,
+            subtitles: group.subtitles,
+          });
+        }
+        return cached;
+      }
+    }
+
     let targetProviders = providers;
     if (providerId) {
       targetProviders = providers.filter(p => p.name.toLowerCase() === providerId.toLowerCase());
@@ -57,6 +110,9 @@ export class OrchestratorService {
     const sources: OmssSource[] = [];
     const subtitles: OmssSubtitle[] = [];
     const diagnostics: OmssDiagnostic[] = [];
+    const seenSourceUrls = new Set<string>();
+    const seenSubtitleUrls = new Set<string>();
+    const claimedCdns = new Set<string>();
 
     // Run providers in parallel with individual error catching
     const tasks = targetProviders.map(async (provider) => {
@@ -116,6 +172,18 @@ export class OrchestratorService {
             }
           }
 
+          const cdn = detectCdn(raw, provider.name);
+
+          // First provider to obtain VOD from this CDN wins
+          if (claimedCdns.has(cdn.id)) {
+            continue;
+          }
+
+          if (seenSourceUrls.has(playUrl)) {
+            continue;
+          }
+          seenSourceUrls.add(playUrl);
+
           const audioName = raw.audio || raw.title || 'Ukrainian';
           const audioTracks = [audioName.includes('(') ? audioName : `Ukrainian (${audioName})`];
 
@@ -127,8 +195,8 @@ export class OrchestratorService {
             quality: normalizeQuality(raw.quality),
             audioTracks,
             provider: {
-              id: provider.name,
-              name: provider.name.toUpperCase(),
+              id: cdn.id,
+              name: cdn.name,
             },
             ...(platform === 'native' && reqHeaders ? { headers: reqHeaders } : {}),
           };
@@ -139,14 +207,20 @@ export class OrchestratorService {
           // Subtitles
           if (raw.subtitles && raw.subtitles.length > 0) {
             for (const sub of raw.subtitles) {
+              const subUrl = platform === 'web' ? `${proxyHost}/master.m3u8?url=${encodeURIComponent(sub.url)}` : sub.url;
+              if (seenSubtitleUrls.has(subUrl)) {
+                continue;
+              }
+              seenSubtitleUrls.add(subUrl);
+
               const subObj: OmssSubtitle = {
                 id: randomUUID(),
-                url: platform === 'web' ? `${proxyHost}/master.m3u8?url=${encodeURIComponent(sub.url)}` : sub.url,
+                url: subUrl,
                 label: sub.label || 'Ukrainian',
                 format: sub.url.endsWith('.srt') ? 'srt' : 'vtt',
                 provider: {
-                  id: provider.name,
-                  name: provider.name.toUpperCase(),
+                  id: cdn.id,
+                  name: cdn.name,
                 },
               };
               subtitles.push(subObj);
@@ -155,12 +229,41 @@ export class OrchestratorService {
           }
         }
 
-        if (onProviderResult && providerSources.length > 0) {
-          onProviderResult({
-            provider: provider.name,
-            sources: providerSources,
-            subtitles: providerSubtitles,
-          });
+        if (providerSources.length > 0) {
+          // Mark CDNs as claimed by the winning provider
+          for (const s of providerSources) {
+            claimedCdns.add(s.provider.id);
+          }
+
+          if (onProviderResult) {
+            // Group sources and subtitles by CDN so SSE sends per-CDN events
+            const cdnGroups = new Map<string, { id: string; name: string; sources: OmssSource[]; subtitles: OmssSubtitle[] }>();
+
+            for (const s of providerSources) {
+              const key = s.provider.id;
+              if (!cdnGroups.has(key)) {
+                cdnGroups.set(key, { id: key, name: s.provider.name, sources: [], subtitles: [] });
+              }
+              cdnGroups.get(key)!.sources.push(s);
+            }
+
+            for (const sub of providerSubtitles) {
+              const key = sub.provider.id;
+              if (!cdnGroups.has(key)) {
+                cdnGroups.set(key, { id: key, name: sub.provider.name, sources: [], subtitles: [] });
+              }
+              cdnGroups.get(key)!.subtitles.push(sub);
+            }
+
+            for (const group of cdnGroups.values()) {
+              onProviderResult({
+                provider: group.id,
+                providerName: group.name,
+                sources: group.sources,
+                subtitles: group.subtitles,
+              });
+            }
+          }
         }
       } catch (err: unknown) {
         diagnostics.push({
@@ -187,6 +290,11 @@ export class OrchestratorService {
 
     sources.sort((a, b) => qualityWeights[b.quality] - qualityWeights[a.quality]);
 
-    return { sources, subtitles, diagnostics };
+    const finalResult = { sources, subtitles, diagnostics };
+    if (sources.length > 0) {
+      omssSourceResolutionCache.set(cacheKey, finalResult, 24 * 60 * 60 * 1000);
+    }
+
+    return finalResult;
   }
 }

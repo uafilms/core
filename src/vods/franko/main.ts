@@ -82,7 +82,7 @@ export class FrankoVodExtractor implements VodExtractor {
     }
 
     // 2. Lazy stream route: /master.m3u8?cdn=franko&id=...&translation=...
-    if (trimmed.includes('cdn=franko') || (trimmed.startsWith('/master.m3u8') && trimmed.includes('franko'))) {
+    if (trimmed.includes('cdn=franko') || (trimmed.includes('/master.m3u8') && trimmed.includes('franko'))) {
       const urlObj = new URL(trimmed, 'http://localhost');
       const id = parseInt(urlObj.searchParams.get('id') || '0', 10);
       const translation = parseInt(urlObj.searchParams.get('translation') || '0', 10);

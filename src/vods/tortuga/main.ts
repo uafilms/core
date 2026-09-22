@@ -73,7 +73,8 @@ export class TortugaVodExtractor implements VodExtractor {
       const html = await getHtml(vodUrl, {
         signal: options.signal,
         headers: {
-          'Referer': options.referer || 'https://tortuga.tw/',
+          'Referer': options.referer || 'https://uaserials.com/',
+          'Origin': 'https://uaserials.com',
           ...options.headers,
         },
       });
@@ -101,7 +102,8 @@ export class TortugaVodExtractor implements VodExtractor {
       const html = await getHtml(embedUrl, {
         signal: options.signal,
         headers: {
-          'Referer': options.referer || 'https://tortuga.tw/',
+          'Referer': options.referer || 'https://uaserials.com/',
+          'Origin': 'https://uaserials.com',
           ...options.headers,
         },
       });

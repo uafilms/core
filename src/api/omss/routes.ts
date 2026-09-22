@@ -100,6 +100,7 @@ omssRouter.get('/v1/movies/:id', async (c) => {
                 event: 'provider',
                 data: JSON.stringify({
                   provider: chunk.provider,
+                  name: chunk.providerName,
                   sources: filteredSources,
                   subtitles: chunk.subtitles,
                 }),
@@ -245,6 +246,7 @@ omssRouter.get('/v1/tv/:id/seasons/:s/episodes/:e', async (c) => {
                 event: 'provider',
                 data: JSON.stringify({
                   provider: chunk.provider,
+                  name: chunk.providerName,
                   sources: filteredSources,
                   subtitles: chunk.subtitles,
                 }),
