@@ -12,6 +12,11 @@ interface OrchestratorOptions {
   providerId?: string;
   platform?: PlatformType;
   proxyHost: string;
+  onProviderResult?: (chunk: {
+    provider: string;
+    sources: OmssSource[];
+    subtitles: OmssSubtitle[];
+  }) => void;
 }
 
 function normalizeQuality(q?: string): OmssQuality {
@@ -39,7 +44,7 @@ export class OrchestratorService {
     subtitles: OmssSubtitle[];
     diagnostics: OmssDiagnostic[];
   }> {
-    const { meta, type, season = 1, episode = 1, providerId, platform = 'web', proxyHost } = options;
+    const { meta, type, season = 1, episode = 1, providerId, platform = 'web', proxyHost, onProviderResult } = options;
 
     let targetProviders = providers;
     if (providerId) {
@@ -82,6 +87,9 @@ export class OrchestratorService {
           rawSources = ep?.sources || [];
         }
 
+        const providerSources: OmssSource[] = [];
+        const providerSubtitles: OmssSubtitle[] = [];
+
         for (const raw of rawSources) {
           let playUrl = raw.url;
           let reqHeaders = raw.headers;
@@ -111,7 +119,7 @@ export class OrchestratorService {
           const audioName = raw.audio || raw.title || 'Ukrainian';
           const audioTracks = [audioName.includes('(') ? audioName : `Ukrainian (${audioName})`];
 
-          sources.push({
+          const sourceObj: OmssSource = {
             id: randomUUID(),
             url: playUrl,
             streamable: !raw.mime?.includes('text/html'),
@@ -123,12 +131,15 @@ export class OrchestratorService {
               name: provider.name.toUpperCase(),
             },
             ...(platform === 'native' && reqHeaders ? { headers: reqHeaders } : {}),
-          });
+          };
+
+          sources.push(sourceObj);
+          providerSources.push(sourceObj);
 
           // Subtitles
           if (raw.subtitles && raw.subtitles.length > 0) {
             for (const sub of raw.subtitles) {
-              subtitles.push({
+              const subObj: OmssSubtitle = {
                 id: randomUUID(),
                 url: platform === 'web' ? `${proxyHost}/master.m3u8?url=${encodeURIComponent(sub.url)}` : sub.url,
                 label: sub.label || 'Ukrainian',
@@ -137,9 +148,19 @@ export class OrchestratorService {
                   id: provider.name,
                   name: provider.name.toUpperCase(),
                 },
-              });
+              };
+              subtitles.push(subObj);
+              providerSubtitles.push(subObj);
             }
           }
+        }
+
+        if (onProviderResult && providerSources.length > 0) {
+          onProviderResult({
+            provider: provider.name,
+            sources: providerSources,
+            subtitles: providerSubtitles,
+          });
         }
       } catch (err: unknown) {
         diagnostics.push({

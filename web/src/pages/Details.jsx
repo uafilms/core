@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import Hls from 'hls.js';
 import api from '../api/axios';
+import VideoPlayer from '../components/player/VideoPlayer';
 import Comments from '../components/Comments';
 
 const formatSourceName = (source) => {
@@ -37,7 +37,7 @@ const Details = () => {
   const [error, setError] = useState(null);
   const [isFav, setIsFav] = useState(false);
 
-  // OMSS Streams State
+  // OMSS Streams State (live SSE streaming)
   const [sources, setSources] = useState([]);
   const [selectedSource, setSelectedSource] = useState(null);
   const [loadingSources, setLoadingSources] = useState(true);
@@ -45,9 +45,6 @@ const Details = () => {
   // TV Series Navigation
   const [season, setSeason] = useState(1);
   const [episode, setEpisode] = useState(1);
-
-  const videoRef = useRef(null);
-  const hlsRef = useRef(null);
 
   // 1. Fetch Metadata
   useEffect(() => {
@@ -77,88 +74,85 @@ const Details = () => {
     };
   }, [id, type]);
 
-  // 2. Fetch OMSS Sources
+  // 2. Fetch OMSS Sources via SSE (on the fly)
   useEffect(() => {
     if (!data) return;
-    let active = true;
+    let cancelled = false;
     setLoadingSources(true);
     setSources([]);
     setSelectedSource(null);
 
     const targetId = data.imdbId || id;
-    const endpoint = type === 'movie'
+    const subpath = type === 'movie'
       ? `/v1/movies/${targetId}`
       : `/v1/tv/${targetId}/seasons/${season}/episodes/${episode}`;
 
-    api.get(endpoint)
-      .then((res) => {
-        if (!active) return;
-        const list = res.data?.sources || [];
-        setSources(list);
-        if (list.length > 0) {
-          setSelectedSource(list[0]);
-        }
-      })
-      .catch((err) => {
-        console.warn('OMSS fetch sources error:', err);
-      })
-      .finally(() => {
-        if (active) setLoadingSources(false);
-      });
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
+    const sseUrl = `${baseUrl}${subpath}?sse=1`;
 
-    return () => {
-      active = false;
-    };
-  }, [data, type, id, season, episode]);
+    let eventSource = null;
 
-  // 3. Attach HLS.js video stream
-  useEffect(() => {
-    if (!selectedSource || !selectedSource.url) return;
-    const video = videoRef.current;
-    if (!video) return;
+    try {
+      eventSource = new EventSource(sseUrl);
 
-    if (Hls.isSupported()) {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-      }
+      eventSource.addEventListener('provider', (event) => {
+        if (cancelled) return;
+        try {
+          const chunk = JSON.parse(event.data);
+          if (chunk.sources && Array.isArray(chunk.sources) && chunk.sources.length > 0) {
+            setSources((prev) => {
+              const existingIds = new Set(prev.map((s) => s.id || s.url));
+              const newSources = chunk.sources.filter((s) => !existingIds.has(s.id || s.url));
+              const updated = [...prev, ...newSources];
 
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-      });
-      hlsRef.current = hls;
-
-      hls.loadSource(selectedSource.url);
-      hls.attachMedia(video);
-
-      hls.on(Hls.Events.ERROR, (_, errorData) => {
-        if (errorData.fatal) {
-          console.warn('Hls fatal error, attempting recovery:', errorData.type);
-          switch (errorData.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              hls.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              hls.recoverMediaError();
-              break;
-            default:
-              hls.destroy();
-              break;
+              // Auto-select first source if nothing selected yet
+              setSelectedSource((cur) => cur || updated[0]);
+              return updated;
+            });
           }
+        } catch (e) {
+          console.error('Error parsing SSE provider chunk:', e);
         }
       });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari / iOS native HLS
-      video.src = selectedSource.url;
+
+      eventSource.addEventListener('complete', () => {
+        if (cancelled) return;
+        setLoadingSources(false);
+        if (eventSource) {
+          eventSource.close();
+        }
+      });
+
+      eventSource.onerror = () => {
+        if (cancelled) return;
+        setLoadingSources(false);
+        if (eventSource) {
+          eventSource.close();
+        }
+      };
+    } catch (err) {
+      console.warn('SSE not supported or failed, falling back to standard GET:', err);
+      api.get(subpath)
+        .then((res) => {
+          if (cancelled) return;
+          const list = res.data?.sources || [];
+          setSources(list);
+          if (list.length > 0) {
+            setSelectedSource(list[0]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingSources(false);
+        });
     }
 
     return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
+      cancelled = true;
+      if (eventSource) {
+        eventSource.close();
       }
     };
-  }, [selectedSource]);
+  }, [data, type, id, season, episode]);
 
   const toggleFavorite = () => {
     if (!data) return;
@@ -317,7 +311,7 @@ const Details = () => {
               const isSelected = selectedSource === src;
               return (
                 <button
-                  key={index}
+                  key={src.id || index}
                   className={`chip ${isSelected ? 'primary' : 'border surface-container-low'}`}
                   onClick={() => setSelectedSource(src)}
                   style={{ cursor: 'pointer' }}
@@ -335,7 +329,7 @@ const Details = () => {
           )
         )}
 
-        {/* Modern HLS Video Player */}
+        {/* BeerCSS M3 Video.js Player */}
         <div
           style={{
             width: '100%',
@@ -350,15 +344,18 @@ const Details = () => {
           }}
         >
           {selectedSource ? (
-            <video
-              ref={videoRef}
-              controls
-              playsInline
+            <VideoPlayer
+              key={selectedSource.id || selectedSource.url}
+              src={selectedSource.url}
+              type={selectedSource.type || 'application/x-mpegURL'}
               poster={backdropUrl}
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              title={data.title}
+              sources={sources}
+              selectedSource={selectedSource}
+              onSourceChange={setSelectedSource}
             />
           ) : (
-            <div className="row center-align middle-align fill" style={{ opacity: 0.6 }}>
+            <div className="row center-align middle-align fill" style={{ opacity: 0.6, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {loadingSources ? 'Пошук джерел...' : 'Відео джерела недоступні'}
             </div>
           )}

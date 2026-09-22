@@ -19,7 +19,11 @@
     "react-router-dom": "^6.22.1",
     "react-top-loading-bar": "^2.3.1",
     "swearify": "^1.0.2",
-    "swiper": "^11.0.6"
+    "swiper": "^11.0.6",
+    "video.js": "^8.24.1",
+    "videojs-contrib-quality-levels": "^4.1.0",
+    "videojs-hotkeys": "^0.2.30",
+    "videojs-mobile-ui": "^1.2.7"
   },
   "devDependencies": {
     "@types/react": "^18.2.56",

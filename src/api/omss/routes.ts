@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { randomUUID } from 'node:crypto';
 import type { PlatformType, OmssRootResponse, OmssSourceResponse, OmssErrorResponse } from '../types.js';
 import { providers } from '../../providers/index.js';
@@ -54,6 +55,7 @@ omssRouter.get('/v1/movies/:id', async (c) => {
   const platform = (c.req.query('platform') || 'web') as PlatformType;
   const provider = c.req.query('provider');
   const filter = c.req.query('filter');
+  const sse = c.req.query('sse') === '1' || c.req.header('accept')?.includes('text/event-stream');
 
   // Validation
   if (!id || (!/^\d+$/.test(id) && !id.startsWith('tt'))) {
@@ -74,6 +76,53 @@ omssRouter.get('/v1/movies/:id', async (c) => {
   const host = c.req.header('host') || 'localhost:3000';
   const proto = c.req.header('x-forwarded-proto') || 'http';
   const proxyHost = `${proto}://${host}`;
+
+  if (sse) {
+    return streamSSE(c, async (stream) => {
+      try {
+        const result = await OrchestratorService.resolveSources({
+          meta,
+          type: 'movie',
+          providerId: provider,
+          platform,
+          proxyHost,
+          onProviderResult: async (chunk) => {
+            let filteredSources = chunk.sources;
+            if (filter) {
+              try {
+                filteredSources = applyFilterToSources(filteredSources, filter);
+              } catch (e) {
+                // ignore
+              }
+            }
+            if (filteredSources.length > 0) {
+              await stream.writeSSE({
+                event: 'provider',
+                data: JSON.stringify({
+                  provider: chunk.provider,
+                  sources: filteredSources,
+                  subtitles: chunk.subtitles,
+                }),
+              });
+            }
+          },
+        });
+
+        await stream.writeSSE({
+          event: 'complete',
+          data: JSON.stringify({
+            total: result.sources.length,
+            diagnostics: result.diagnostics,
+          }),
+        });
+      } catch (err: unknown) {
+        await stream.writeSSE({
+          event: 'error',
+          data: JSON.stringify({ message: (err as Error).message }),
+        });
+      }
+    });
+  }
 
   try {
     const result = await OrchestratorService.resolveSources({
@@ -132,6 +181,7 @@ omssRouter.get('/v1/tv/:id/seasons/:s/episodes/:e', async (c) => {
   const platform = (c.req.query('platform') || 'web') as PlatformType;
   const provider = c.req.query('provider');
   const filter = c.req.query('filter');
+  const sse = c.req.query('sse') === '1' || c.req.header('accept')?.includes('text/event-stream');
 
   // Validation
   if (!id || (!/^\d+$/.test(id) && !id.startsWith('tt'))) {
@@ -169,6 +219,55 @@ omssRouter.get('/v1/tv/:id/seasons/:s/episodes/:e', async (c) => {
   const host = c.req.header('host') || 'localhost:3000';
   const proto = c.req.header('x-forwarded-proto') || 'http';
   const proxyHost = `${proto}://${host}`;
+
+  if (sse) {
+    return streamSSE(c, async (stream) => {
+      try {
+        const result = await OrchestratorService.resolveSources({
+          meta,
+          type: 'tv',
+          season,
+          episode,
+          providerId: provider,
+          platform,
+          proxyHost,
+          onProviderResult: async (chunk) => {
+            let filteredSources = chunk.sources;
+            if (filter) {
+              try {
+                filteredSources = applyFilterToSources(filteredSources, filter);
+              } catch (e) {
+                // ignore
+              }
+            }
+            if (filteredSources.length > 0) {
+              await stream.writeSSE({
+                event: 'provider',
+                data: JSON.stringify({
+                  provider: chunk.provider,
+                  sources: filteredSources,
+                  subtitles: chunk.subtitles,
+                }),
+              });
+            }
+          },
+        });
+
+        await stream.writeSSE({
+          event: 'complete',
+          data: JSON.stringify({
+            total: result.sources.length,
+            diagnostics: result.diagnostics,
+          }),
+        });
+      } catch (err: unknown) {
+        await stream.writeSSE({
+          event: 'error',
+          data: JSON.stringify({ message: (err as Error).message }),
+        });
+      }
+    });
+  }
 
   try {
     const result = await OrchestratorService.resolveSources({
