@@ -38,4 +38,4 @@ RUN mkdir -p cache && chmod 777 cache
 
 EXPOSE 3000
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/api/server.js"]
