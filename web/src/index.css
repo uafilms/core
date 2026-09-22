@@ -1,0 +1,78 @@
+:root {
+  font-family: 'Roboto', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+a { text-decoration: none; color: inherit; }
+
+/* Swiper Fixes */
+.swiper { padding: 0 16px !important; }
+.swiper-slide { width: auto !important; }
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--mdui-color-surface); }
+::-webkit-scrollbar-thumb { background: var(--mdui-color-outline); border-radius: 4px; }
+
+/* ===== mdui overrides ===== */
+
+/* Fix icons: mdui defaults to 'Material Icons' font but we load 'Material Symbols Rounded' */
+mdui-icon {
+  font-family: 'Material Symbols Rounded' !important;
+}
+
+/* Fix select/text-field: restore MD3 rounded shape */
+mdui-select,
+mdui-text-field {
+  --mdui-shape-corner-extra-small: 28px;
+}
+
+/* Fix select: don't stretch to 100% width like default */
+mdui-select {
+  width: auto;
+  min-width: 150px;
+}
+
+/* Fix chips: override dark surface background — make transparent */
+mdui-chip {
+  background-color: transparent !important;
+}
+/* Preserve selected state for filter chips */
+mdui-chip[selected] {
+  background-color: rgb(var(--mdui-color-secondary-container)) !important;
+}
+
+/* ===== Smooth theme transitions (View Transitions API) ===== */
+
+/* Custom cross-fade using mdui's standard easing */
+::view-transition-old(root) {
+  animation: theme-fade-out 400ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+::view-transition-new(root) {
+  animation: theme-fade-in 400ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+@keyframes theme-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes theme-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

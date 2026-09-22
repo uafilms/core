@@ -6,6 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
+    "build:web": "npm --prefix web run build",
+    "build:all": "npm run build && npm run build:web",
     "start": "tsx src/api/server.ts",
     "dev": "tsx watch src/api/server.ts",
     "test": "tsx"

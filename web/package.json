@@ -1,0 +1,37 @@
+{
+  "name": "uafilms-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mdui/icons": "^1.0.0",
+    "axios": "^1.6.7",
+    "file-saver": "^2.0.5",
+    "hls.js": "^1.7.3",
+    "jszip": "^3.10.1",
+    "mdui": "^2.0.0",
+    "p-limit": "^5.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.1",
+    "react-top-loading-bar": "^2.3.1",
+    "swearify": "^1.0.2",
+    "swiper": "^11.0.6"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.56",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "eslint": "^8.56.0",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.5",
+    "vite": "^5.1.4"
+  }
+}
