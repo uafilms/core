@@ -3,15 +3,14 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/axios';
 import VideoPlayer from '../components/player/VideoPlayer';
 import Comments from '../components/Comments';
+import Dropdown from '../components/Dropdown';
 
 const formatSourceName = (source) => {
   const provider = source.provider?.name || source.provider?.id || 'Джерело';
   const quality = source.quality || '';
-  const audio = source.audioTracks?.[0]?.label || '';
 
   const parts = [provider];
   if (quality && quality !== 'Auto') parts.push(quality);
-  if (audio && audio !== 'Default' && audio !== 'Original') parts.push(audio);
 
   return parts.join(' • ');
 };
@@ -271,36 +270,32 @@ const Details = () => {
 
         {/* TV Series Season & Episode Navigation */}
         {type === 'tv' && (
-          <div style={{ marginBottom: '24px' }}>
-            <h6 style={{ fontWeight: 500, marginBottom: '12px' }}>Сезон</h6>
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', marginBottom: '16px' }}>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
-                <button
-                  key={s}
-                  className={`chip ${season === s ? 'primary' : 'border surface-container-low'}`}
-                  onClick={() => {
-                    setSeason(s);
-                    setEpisode(1);
-                  }}
-                  style={{ flexShrink: 0, cursor: 'pointer' }}
-                >
-                  <span>Сезон {s}</span>
-                </button>
-              ))}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '24px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span className="small-text surface-variant-text" style={{ fontWeight: 500 }}>Сезон</span>
+              <Dropdown
+                value={season}
+                options={[1, 2, 3, 4, 5, 6, 7, 8].map((s) => ({
+                  value: s,
+                  label: `Сезон ${s}`,
+                }))}
+                onChange={(s) => {
+                  setSeason(s);
+                  setEpisode(1);
+                }}
+              />
             </div>
 
-            <h6 style={{ fontWeight: 500, marginBottom: '12px' }}>Серія</h6>
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-              {Array.from({ length: 24 }, (_, i) => i + 1).map((e) => (
-                <button
-                  key={e}
-                  className={`chip ${episode === e ? 'primary' : 'border surface-container-low'}`}
-                  onClick={() => setEpisode(e)}
-                  style={{ flexShrink: 0, minWidth: '42px', justifyContent: 'center', cursor: 'pointer' }}
-                >
-                  <span>{e}</span>
-                </button>
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span className="small-text surface-variant-text" style={{ fontWeight: 500 }}>Серія</span>
+              <Dropdown
+                value={episode}
+                options={Array.from({ length: 24 }, (_, i) => i + 1).map((e) => ({
+                  value: e,
+                  label: `Серія ${e}`,
+                }))}
+                onChange={(e) => setEpisode(e)}
+              />
             </div>
           </div>
         )}
@@ -313,29 +308,50 @@ const Details = () => {
           {loadingSources && <progress className="circle small indeterminate"></progress>}
         </div>
 
-        {sources.length > 0 ? (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
-            {sources.map((src, index) => {
-              const isSelected = selectedSource === src;
-              return (
-                <button
-                  key={src.id || index}
-                  className={`chip ${isSelected ? 'primary' : 'border surface-container-low'}`}
-                  onClick={() => setSelectedSource(src)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <span>{formatSourceName(src)}</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          !loadingSources && (
-            <div className="error-text" style={{ marginBottom: '16px' }}>
-              Джерела не знайдені або недоступні
-            </div>
-          )
-        )}
+        {(() => {
+          // Group unique CDNs / providers
+          const cdnMap = new Map();
+          for (const s of sources) {
+            const key = s.provider?.id || s.provider?.name || 'unknown';
+            if (!cdnMap.has(key)) {
+              cdnMap.set(key, s);
+            }
+          }
+          const uniqueCdns = Array.from(cdnMap.values());
+
+          if (uniqueCdns.length > 0) {
+            return (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+                {uniqueCdns.map((src, index) => {
+                  const isSelected = selectedSource?.provider?.id === src.provider?.id;
+                  return (
+                    <button
+                      key={src.provider?.id || index}
+                      className={`chip ${isSelected ? 'primary' : 'border surface-container-low'}`}
+                      onClick={() => {
+                        // Switch to first source of this CDN or keep current if same
+                        if (selectedSource?.provider?.id !== src.provider?.id) {
+                          setSelectedSource(src);
+                        }
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <span>{src.provider?.name || src.provider?.id}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          }
+
+          return (
+            !loadingSources && (
+              <div className="error-text" style={{ marginBottom: '16px' }}>
+                Джерела не знайдені або недоступні
+              </div>
+            )
+          );
+        })()}
 
         {/* BeerCSS M3 Video.js Player */}
         <div

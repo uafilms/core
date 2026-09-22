@@ -1,10 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import videojs from 'video.js';
-import 'video.js/dist/video-js.css';
 import 'videojs-contrib-quality-levels';
 import 'videojs-hotkeys';
 import 'videojs-mobile-ui';
-import 'videojs-mobile-ui/dist/videojs-mobile-ui.css';
 import './player-style.css';
 
 export default function VideoPlayer({
@@ -39,14 +37,16 @@ export default function VideoPlayer({
           this.controlText('Налаштування');
         }
         createEl() {
-          const el = super.createEl('button', {
-            className: 'vjs-control vjs-button vjs-settings-btn',
-            type: 'button',
-          });
+          const el = super.createEl();
+          // Remove auto-added vjs-icon-placeholder — we use Material Symbols instead
+          const placeholder = el.querySelector('.vjs-icon-placeholder');
+          if (placeholder) placeholder.remove();
           const icon = videojs.dom.createEl('span', {
             className: 'material-symbols-rounded',
             innerHTML: 'settings',
-            style: 'pointer-events: none;',
+          }, {
+            'aria-hidden': 'true',
+            style: 'pointer-events:none;font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;',
           });
           el.appendChild(icon);
           return el;
@@ -124,13 +124,28 @@ export default function VideoPlayer({
     // Bind quality levels
     if (player.qualityLevels) {
       const ql = player.qualityLevels();
+      const snapHeight = (h) => {
+        if (h >= 2000) return 2160;
+        if (h >= 1440) return 1440;
+        if (h >= 900) return 1080;
+        if (h >= 630) return 720;
+        if (h >= 450) return 480;
+        if (h >= 270) return 360;
+        if (h >= 180) return 240;
+        return h;
+      };
       const updateQl = () => {
+        const seen = new Set();
         const list = [];
         for (let i = 0; i < ql.length; i++) {
           const level = ql[i];
-          const height = level.height || (level.playlist?.attributes?.RESOLUTION?.height) || 0;
+          const rawHeight = level.height || (level.playlist?.attributes?.RESOLUTION?.height) || 0;
+          const height = rawHeight > 0 ? snapHeight(rawHeight) : 0;
           const label = height > 0 ? `${height}p` : `Рівень ${i + 1}`;
-          list.push({ index: i, height, label, bitrate: level.bitrate });
+          if (!seen.has(label)) {
+            seen.add(label);
+            list.push({ index: i, height, label, bitrate: level.bitrate });
+          }
         }
         list.sort((a, b) => b.height - a.height);
         setQualities(list);
@@ -223,7 +238,21 @@ export default function VideoPlayer({
                   <span>Озвучка</span>
                 </div>
                 <div className="vjs-settings-val">
-                  {selectedSource?.audioTracks?.[0] || selectedSource?.provider?.name || 'Default'}
+                  {(() => {
+                    const track = selectedSource?.audioTracks?.[0];
+                    const trackStr = typeof track === 'string' ? track : (track?.label || track?.language || '');
+                    if (!trackStr) return selectedSource?.provider?.name || 'Default';
+                    const match = trackStr.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+                    const langPart = match ? match[1].trim() : trackStr;
+                    const typePart = match ? match[2].trim() : '';
+                    const l = langPart.toLowerCase();
+                    const emoji = l.includes('ukrainian') || l.includes('uk') ? '🇺🇦'
+                      : l.includes('english') || l.includes('en') ? '🇬🇧'
+                      : l.includes('russian') || l.includes('ru') ? '🇷🇺'
+                      : l.includes('polish') || l.includes('pl') ? '🇵🇱'
+                      : '🌐';
+                    return typePart ? `${emoji} ${typePart}` : `${emoji} ${langPart}`;
+                  })()}
                 </div>
               </div>
 
@@ -253,25 +282,47 @@ export default function VideoPlayer({
             <div>
               <div className="vjs-submenu-header" onClick={() => setActiveMenu('main')}>
                 <i className="material-symbols-rounded">arrow_back</i>
-                <span>Озвучка та джерела</span>
+                <span>Озвучка</span>
               </div>
               <div className="vjs-submenu-scroll">
-                {sources.map((s, idx) => {
-                  const isCur = s.url === src;
-                  const label = s.audioTracks?.[0] || s.provider?.name || `Джерело ${idx + 1}`;
-                  return (
-                    <div
-                      key={s.id || idx}
-                      className={`vjs-submenu-option ${isCur ? 'selected' : ''}`}
-                      onClick={() => {
-                        if (onSourceChange) onSourceChange(s);
-                        setActiveMenu(null);
-                      }}
-                    >
-                      {label} ({s.quality || 'Auto'})
-                    </div>
+                {(() => {
+                  // Find all sources from the same provider / CDN as selectedSource
+                  const sameProviderSources = sources.filter(
+                    (s) => s.provider?.id === selectedSource?.provider?.id
                   );
-                })}
+                  const availableList = sameProviderSources.length > 0 ? sameProviderSources : [selectedSource].filter(Boolean);
+
+                  return availableList.map((srcOption) => {
+                    const isSelected = (srcOption.id || srcOption.url) === (selectedSource?.id || selectedSource?.url);
+                    const track = srcOption.audioTracks?.[0];
+                    const trackStr = typeof track === 'string' ? track : (track?.label || track?.language || '');
+                    const match = trackStr ? trackStr.match(/^(.*?)\s*\(([^)]+)\)\s*$/) : null;
+                    const langPart = match ? match[1].trim() : (trackStr || 'Ukrainian');
+                    const typePart = match ? match[2].trim() : '';
+                    const l = langPart.toLowerCase();
+                    const emoji = l.includes('ukrainian') || l.includes('uk') ? '🇺🇦'
+                      : l.includes('english') || l.includes('en') ? '🇬🇧'
+                      : l.includes('russian') || l.includes('ru') ? '🇷🇺'
+                      : l.includes('polish') || l.includes('pl') ? '🇵🇱'
+                      : '🌐';
+                    const label = typePart ? `${emoji} ${typePart}` : `${emoji} ${langPart}`;
+
+                    return (
+                      <div
+                        key={srcOption.id || srcOption.url}
+                        className={`vjs-submenu-option ${isSelected ? 'selected' : ''}`}
+                        onClick={() => {
+                          if (onSourceChange) {
+                            onSourceChange(srcOption);
+                          }
+                          setActiveMenu(null);
+                        }}
+                      >
+                        {label}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
           )}

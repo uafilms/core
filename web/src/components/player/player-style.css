@@ -10,9 +10,9 @@
   --vjs-on-primary: var(--on-primary, #062e6f);
   --vjs-surface: var(--surface-container, #1d2024);
   --vjs-surface-high: var(--surface-container-high, #282a2f);
-  --vjs-on-surface: var(--on-surface, #e2e2e9);
-  --vjs-on-surface-variant: var(--on-surface-variant, #c4c6d0);
-  --vjs-outline-variant: var(--outline-variant, rgba(255, 255, 255, 0.1));
+  --vjs-on-surface: #e2e2e9;
+  --vjs-on-surface-variant: #c4c6d0;
+  --vjs-outline-variant: rgba(255, 255, 255, 0.1);
 }
 
 /* === PLAYER CONTAINER === */
@@ -21,10 +21,9 @@
   width: 100%;
   height: 100%;
   display: block;
-  overflow: hidden !important;
   border-radius: 16px;
   background: black;
-  clip-path: inset(0 round 16px);
+  overflow: hidden;
 }
 
 /* === VIDEO.JS BASE === */
@@ -36,7 +35,6 @@
   font-family: Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 14px;
   user-select: none;
-  overflow: hidden !important;
 }
 
 /* =========================================================
@@ -56,6 +54,27 @@
   speak: never;
 }
 
+/* Prevent global `i` tag style (index.css / BeerCSS) from overriding VideoJS icons */
+.video-js i:not(.material-symbols-rounded) {
+  font-family: VideoJS !important;
+  font-style: normal !important;
+  font-feature-settings: normal !important;
+}
+
+/* Isolate vjs-slider from BeerCSS range/input overrides */
+.video-js .vjs-slider {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background: rgba(255, 255, 255, 0.2) !important;
+  border: none !important;
+  border-radius: 9999px !important;
+  outline: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  cursor: pointer !important;
+}
+
 /* Reset all button properties overridden by BeerCSS */
 .video-js button,
 .video-js .vjs-button,
@@ -72,13 +91,11 @@
   min-width: 0 !important;
   min-height: 0 !important;
   box-sizing: border-box !important;
-  font-family: inherit !important;
-  font-size: inherit !important;
+  font-size: 14px !important;
   gap: 0 !important;
   border-radius: 12px !important;
   color: var(--vjs-on-surface-variant) !important;
   overflow: visible !important;
-  vertical-align: baseline !important;
   cursor: pointer !important;
   box-shadow: none !important;
   text-transform: none !important;
@@ -217,15 +234,29 @@
   color: #fff !important;
 }
 
-.video-js .vjs-control-bar .vjs-icon-placeholder:before {
-  font-size: 22px !important;
-  line-height: 40px !important;
-  width: 40px !important;
-  height: 40px !important;
+/* Control bar icon placeholder */
+.video-js .vjs-control-bar .vjs-icon-placeholder {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  text-align: center !important;
+  width: 100% !important;
+  height: 100% !important;
+  position: static !important;
+}
+
+.video-js .vjs-control-bar .vjs-icon-placeholder:before {
+  font-family: VideoJS !important;
+  font-size: 22px !important;
+  line-height: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 22px !important;
+  height: 22px !important;
+  flex-shrink: 0 !important;
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
 }
 
 /* Custom BeerSettingsButton with Material Symbols */
@@ -254,7 +285,16 @@
 .video-js .vjs-volume-panel {
   display: flex !important;
   align-items: center !important;
+  width: auto !important;
+  flex-shrink: 0 !important;
+  transition: width 0.2s ease !important;
   margin-right: 6px;
+}
+
+.video-js .vjs-mute-control {
+  width: 40px !important;
+  height: 40px !important;
+  flex-shrink: 0 !important;
 }
 
 .video-js .vjs-volume-control {
@@ -295,25 +335,49 @@
   margin: 0 10px !important;
   position: relative !important;
   height: 40px !important;
+  font-size: 14px !important;
+}
+
+.video-js .vjs-progress-holder,
+.video-js .vjs-progress-control:hover .vjs-progress-holder,
+.video-js.vjs-scrubbing.vjs-touch-enabled .vjs-progress-control .vjs-progress-holder {
+  font-size: 14px !important;
 }
 
 .video-js .vjs-progress-holder {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 9999px;
-  width: 100%;
-  margin: 0;
-  cursor: pointer;
-  transition: height 0.15s ease;
+  height: 4px !important;
+  min-height: 4px !important;
+  background: rgba(255, 255, 255, 0.2) !important;
+  border-radius: 9999px !important;
+  width: 100% !important;
+  margin: 0 !important;
+  cursor: pointer !important;
+  transition: height 0.15s ease !important;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  position: relative !important;
+  display: block !important;
 }
 
 .video-js .vjs-progress-control:hover .vjs-progress-holder {
-  height: 6px;
+  height: 6px !important;
+  min-height: 6px !important;
 }
 
 .video-js .vjs-play-progress {
-  background: var(--vjs-primary);
-  border-radius: 9999px;
+  background: var(--vjs-primary) !important;
+  border-radius: 9999px !important;
+  height: 100% !important;
+}
+
+.video-js .vjs-load-progress {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border-radius: 9999px !important;
+}
+
+.video-js .vjs-load-progress div {
+  background: rgba(255, 255, 255, 0.15) !important;
 }
 
 .video-js .vjs-play-progress:before {
@@ -351,13 +415,35 @@
 
 .video-js .vjs-current-time,
 .video-js .vjs-duration {
-  display: block !important;
+  display: inline-flex !important;
+  flex-shrink: 0 !important;
 }
 
-.video-js .vjs-time-divider {
-  display: block !important;
+.video-js .vjs-time-divider,
+.video-js .vjs-control-bar .vjs-time-divider {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
   min-width: auto !important;
+  flex-shrink: 0 !important;
   padding: 0 2px !important;
+  border-radius: 0 !important;
+  font-family: Roboto, Arial, sans-serif !important;
+  font-size: 13px !important;
+  color: var(--vjs-on-surface-variant) !important;
+}
+
+.video-js .vjs-time-divider div,
+.video-js .vjs-time-divider span {
+  font-family: Roboto, Arial, sans-serif !important;
+  font-size: 13px !important;
+  color: var(--vjs-on-surface-variant) !important;
+  line-height: 1 !important;
+  font-weight: normal !important;
+  font-style: normal !important;
+  font-feature-settings: normal !important;
+  speak: auto !important;
 }
 
 .video-js .vjs-remaining-time {
@@ -422,6 +508,11 @@
   color: var(--vjs-on-surface);
 }
 
+.vjs-settings-label span {
+  color: var(--vjs-on-surface);
+  font-family: Roboto, sans-serif;
+}
+
 .vjs-settings-label i {
   font-size: 20px;
   color: var(--vjs-on-surface-variant);
@@ -463,6 +554,8 @@
   color: var(--vjs-on-surface);
   position: relative;
   transition: background-color 0.15s;
+  border-radius: 8px;
+  margin: 2px 6px;
 }
 
 .vjs-submenu-option:hover {
@@ -487,6 +580,24 @@
 .video-js.vjs-fullscreen,
 .video-js.vjs-full-window {
   border-radius: 0 !important;
+}
+
+/* Ensure fullscreen and settings buttons are visible */
+.video-js .vjs-fullscreen-control,
+.video-js .vjs-settings-btn {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 40px !important;
+  height: 40px !important;
+  flex-shrink: 0 !important;
+}
+
+/* Material Symbols inside settings menu (not inside vjs controls) */
+.vjs-settings-menu .material-symbols-rounded,
+.vjs-settings-menu i.material-symbols-rounded {
+  font-family: "Material Symbols Rounded" !important;
+  font-feature-settings: "liga" 1 !important;
 }
 
 @media (max-width: 540px) {
