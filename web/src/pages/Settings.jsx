@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PALETTES, applyPalette, applyPureDark } from '../utils/palette.js';
+import Dropdown from '../components/Dropdown.jsx';
 
 const Settings = () => {
   const [filterProfanity, setFilterProfanity] = useState(false);
   const [showAdult, setShowAdult] = useState(false);
-  const [engSource, setEngSource] = useState(false);
-  const [engMode, setEngMode] = useState('mixed');
   const [theme, setThemeState] = useState('dark');
   const [palette, setPalette] = useState('default');
   const [customColor, setCustomColor] = useState('#5B8DEF');
@@ -26,8 +25,6 @@ const Settings = () => {
     const settings = JSON.parse(localStorage.getItem('uafilms_settings') || '{}');
     setFilterProfanity(settings.filterProfanity || false);
     setShowAdult(settings.showAdult || false);
-    setEngSource(settings.engSource || false);
-    setEngMode(settings.engMode || 'mixed');
 
     const savedTheme = localStorage.getItem('uafilms_theme') || 'dark';
     setThemeState(savedTheme);
@@ -62,12 +59,10 @@ const Settings = () => {
 
     if (key === 'filterProfanity') setFilterProfanity(value);
     if (key === 'showAdult') setShowAdult(value);
-    if (key === 'engSource') setEngSource(value);
     if (key === 'pureDark') {
       setPureDark(value);
       applyPureDark(value);
     }
-    if (key === 'engMode') setEngMode(value);
   };
 
   return (
@@ -86,17 +81,14 @@ const Settings = () => {
                 Оберіть вигляд інтерфейсу.
               </p>
             </div>
-            <div className="field suffix round fill surface-container-high no-margin" style={{ minWidth: '140px' }}>
-              <select
-                value={theme}
-                onChange={(e) => handleThemeChange(e.target.value)}
-                style={{ cursor: 'pointer', paddingRight: '2.5rem' }}
-              >
-                <option value="dark">Темна</option>
-                <option value="light">Світла</option>
-              </select>
-              <i>arrow_drop_down</i>
-            </div>
+            <Dropdown
+              value={theme}
+              options={[
+                { value: 'dark', label: 'Темна' },
+                { value: 'light', label: 'Світла' },
+              ]}
+              onChange={handleThemeChange}
+            />
           </div>
         </article>
 

@@ -74,25 +74,61 @@ function App() {
       </main>
 
       {/* Beta disclaimer dialog */}
-      {showDisclaimer && <div className="modal-backdrop" onClick={closeDisclaimer}></div>}
-      <dialog className={`modal ${showDisclaimer ? 'active' : ''}`} onClick={closeDisclaimer}>
-        <article className="round padding surface-container-high" onClick={(e) => e.stopPropagation()}>
-          <header className="row center-align middle-align" style={{ gap: '10px' }}>
-            <i className="primary-text" style={{ fontSize: '28px', lineHeight: 1 }}>info</i>
-            <h5 className="no-margin" style={{ fontWeight: 600 }}>Beta-тестування</h5>
-          </header>
-          <div className="space"></div>
-          <p className="center-align" style={{ margin: '8px 0', lineHeight: 1.6 }}>
-            Ласкаво просимо на <b>UAFilms</b>!
-            <br /><br />
-            Проєкт переписано на сучасний стек з BeerCSS.
-          </p>
-          <div className="space"></div>
-          <nav className="right-align" style={{ marginTop: '16px' }}>
-            <button className="primary round" onClick={closeDisclaimer}>Зрозуміло</button>
-          </nav>
-        </article>
-      </dialog>
+      {showDisclaimer && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            boxSizing: 'border-box',
+          }}
+          onClick={closeDisclaimer}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: 'var(--surface-container-high)',
+              padding: '28px',
+              borderRadius: '28px',
+              maxWidth: '420px',
+              width: '100%',
+              textAlign: 'center',
+              boxShadow: 'var(--elevate3, 0 8px 32px rgba(0,0,0,0.3))',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--on-surface)' }}>
+              <i className="primary-text" style={{ fontSize: '28px' }}>info</i>
+              <h6 style={{ margin: 0, fontWeight: 700 }}>Beta-тестування</h6>
+            </div>
+
+            <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.6', color: 'var(--on-surface-variant)' }}>
+              Ласкаво просимо на <b>UAFilms</b>!
+              <br /><br />
+              Сайт знаходиться на стадії активної розробки та закритого тестування. Деякі функції можуть працювати нестабільно.
+            </p>
+
+            <button
+              className="primary round"
+              onClick={closeDisclaimer}
+              style={{ alignSelf: 'center', marginTop: '8px', padding: '8px 24px' }}
+            >
+              Зрозуміло
+            </button>
+          </div>
+        </div>
+      )}
 
       <style>{`
         .turnstile-container {

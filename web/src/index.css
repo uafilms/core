@@ -2,7 +2,7 @@
   font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Oxygen, Ubuntu, Cantarell, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  --font-icon: "Material Symbols Outlined";
+  --font-icon: "Material Symbols Rounded";
 }
 
 body {
@@ -10,104 +10,41 @@ body {
   min-width: 320px;
   min-height: 100vh;
   font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Material Symbols font ligatures */
-i, .material-symbols-outlined {
-  font-family: "Material Symbols Outlined", sans-serif;
-  font-weight: normal;
-  font-style: normal;
-  font-size: 24px;
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  white-space: nowrap;
-  word-wrap: normal;
-  direction: ltr;
+/* Material Symbols Rounded ligature support */
+i, .material-symbols-rounded {
+  font-family: var(--font-icon), sans-serif;
   font-feature-settings: "liga" 1;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Field and Select styling for BeerCSS */
-.field {
-  position: relative;
-}
-
-.field.prefix > i {
-  position: absolute;
-  left: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  color: var(--on-surface-variant);
-  z-index: 2;
-}
-
-.field.prefix > input {
-  padding-left: 3rem !important;
-}
-
-.field.fill > select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background-color: var(--surface-container-high) !important;
-  color: var(--on-surface) !important;
-  border-radius: inherit;
-  padding: 0 2.5rem 0 1rem;
-  height: 100%;
-  width: 100%;
-  cursor: pointer;
-  border: none;
-  outline: none;
-  font-family: inherit;
-  font-size: 0.95rem;
-}
-
-.field.suffix > i {
-  pointer-events: none;
-  position: absolute;
-  right: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--on-surface-variant);
-  z-index: 2;
-}
-
-/* Modal Dialog Fix */
-dialog.modal {
-  position: fixed;
-  inset: 0;
-  margin: auto;
-  padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  max-width: 480px;
-  width: 90%;
-  z-index: 999;
-  display: none;
-}
-
-dialog.modal.active {
+/* Page loader */
+.page-loader {
   display: flex;
-  align-items: center;
   justify-content: center;
-}
-
-dialog.modal > article {
+  align-items: center;
+  min-height: 60vh;
   width: 100%;
-  box-shadow: var(--elevate3, 0 8px 32px rgba(0,0,0,0.4));
-  background-color: var(--surface-container-high);
 }
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background-color: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(4px);
-  z-index: 998;
+/* Custom scrollbar for modern browsers */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--outline-variant, rgba(128, 128, 128, 0.3));
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--outline, rgba(128, 128, 128, 0.5));
 }
