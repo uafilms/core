@@ -7,7 +7,21 @@ import { Mousewheel } from 'swiper/modules';
 import { useNavigate } from 'react-router-dom';
 
 const BetaBadge = () => (
-  <span className="badge min red white-text" style={{ marginLeft: '8px' }}>
+  <span
+    style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      padding: '2px 8px',
+      borderRadius: '6px',
+      fontSize: '11px',
+      fontWeight: 500,
+      letterSpacing: '0.04em',
+      background: 'var(--error, #ba1a1a)',
+      color: 'var(--on-error, #ffffff)',
+      marginLeft: '10px',
+      lineHeight: '1.2',
+    }}
+  >
     BETA
   </span>
 );
@@ -17,19 +31,19 @@ const Section = ({ title, items, isHero = false }) => {
   return (
     <div style={{ marginBottom: '32px' }}>
       {!isHero && (
-        <h5 style={{ marginLeft: '24px', marginBottom: '16px', fontWeight: 600 }}>
+        <h5 style={{ marginLeft: '24px', marginBottom: '16px', fontWeight: 500 }}>
           {title}
         </h5>
       )}
       <Swiper
         modules={[Mousewheel]}
-        mousewheel={true}
+        mousewheel={{ forceToAxis: true }}
         spaceBetween={16}
         slidesPerView={'auto'}
         style={{ paddingLeft: '24px', paddingRight: '24px' }}
       >
         {items.map((item) => (
-          <SwiperSlide key={item.id}>
+          <SwiperSlide key={item.id} style={{ width: isHero ? 'min(85vw, 640px)' : '140px' }}>
             <MovieCard movie={item} isHero={isHero} />
           </SwiperSlide>
         ))}
@@ -77,8 +91,8 @@ const Home = () => {
   return (
     <div>
       <div style={{ padding: '24px 24px 8px 24px' }}>
-        <div className="row middle-align" style={{ marginBottom: '16px' }}>
-          <h4 className="primary-text no-margin" style={{ fontWeight: 700 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
+          <h4 className="primary-text no-margin" style={{ fontWeight: 500 }}>
             UAFilms
           </h4>
           <BetaBadge />

@@ -201,16 +201,6 @@ const Details = () => {
           </button>
         </div>
 
-        <div style={{ position: 'absolute', bottom: -24, right: 32, zIndex: 10 }}>
-          <button
-            className={`circle large ${isFav ? 'secondary' : 'surface-container'}`}
-            onClick={toggleFavorite}
-            style={{ cursor: 'pointer' }}
-          >
-            <i>{isFav ? 'favorite' : 'favorite_border'}</i>
-          </button>
-        </div>
-
         <img
           src={backdropUrl}
           alt="Cover"
@@ -228,14 +218,24 @@ const Details = () => {
       </div>
 
       <div style={{ padding: '0 24px 40px 24px', maxWidth: '1200px', margin: '0 auto' }}>
-        <h3 style={{ margin: '16px 0 8px 0', fontWeight: 700 }}>{data.title}</h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', margin: '20px 0 12px 0' }}>
+          <h4 style={{ margin: 0, fontWeight: 500 }}>{data.title}</h4>
+          <button
+            className={`circle ${isFav ? 'secondary' : 'surface-container'}`}
+            onClick={toggleFavorite}
+            style={{ cursor: 'pointer', flexShrink: 0 }}
+            title={isFav ? 'Видалити з обраного' : 'Додати в обране'}
+          >
+            <i>{isFav ? 'favorite' : 'favorite_border'}</i>
+          </button>
+        </div>
 
-        <div className="row wrap middle-align" style={{ gap: '10px', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
           <span className="chip border surface-container-low">{data.year?.toString() || '-'}</span>
           <span className="chip border surface-container-low">{type === 'movie' ? 'Фільм' : 'Серіал'}</span>
 
           {data.imdbRating && (
-            <span className="chip border surface-container-low row middle-align no-space" style={{ gap: '4px' }}>
+            <span className="chip border surface-container-low" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
               <i style={{ fontSize: '16px', color: '#f59e0b' }}>star</i>
               <span>{data.imdbRating.toString()}</span>
             </span>
@@ -247,10 +247,10 @@ const Details = () => {
         </div>
 
         <div style={{ marginBottom: '32px' }}>
-          <h6 className="primary-text" style={{ fontWeight: 600, marginBottom: '8px' }}>
+          <h6 className="primary-text" style={{ fontWeight: 500, marginBottom: '8px' }}>
             Про тайтл
           </h6>
-          <p style={{ lineHeight: '1.6', maxWidth: '800px', opacity: 0.9 }}>
+          <p style={{ lineHeight: '1.6', maxWidth: '800px', opacity: 0.9, margin: 0 }}>
             {data.overview || 'Опис відсутній.'}
           </p>
         </div>
@@ -258,8 +258,8 @@ const Details = () => {
         {/* TV Series Season & Episode Navigation */}
         {type === 'tv' && (
           <div style={{ marginBottom: '24px' }}>
-            <h6 style={{ fontWeight: 600, marginBottom: '12px' }}>Сезон</h6>
-            <div className="row no-wrap" style={{ gap: '8px', overflowX: 'auto', paddingBottom: '4px', marginBottom: '16px' }}>
+            <h6 style={{ fontWeight: 500, marginBottom: '12px' }}>Сезон</h6>
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', marginBottom: '16px' }}>
               {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
                 <button
                   key={s}
@@ -275,8 +275,8 @@ const Details = () => {
               ))}
             </div>
 
-            <h6 style={{ fontWeight: 600, marginBottom: '12px' }}>Серія</h6>
-            <div className="row no-wrap" style={{ gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+            <h6 style={{ fontWeight: 500, marginBottom: '12px' }}>Серія</h6>
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
               {Array.from({ length: 24 }, (_, i) => i + 1).map((e) => (
                 <button
                   key={e}
@@ -292,15 +292,15 @@ const Details = () => {
         )}
 
         {/* Sources / Providers Selector */}
-        <div className="row middle-align" style={{ gap: '12px', marginBottom: '12px' }}>
-          <h6 style={{ fontWeight: 600, margin: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+          <h6 style={{ fontWeight: 500, margin: 0 }}>
             Джерела {type === 'tv' && `(Сезон ${season}, Серія ${episode})`}
           </h6>
           {loadingSources && <progress className="circle small indeterminate"></progress>}
         </div>
 
         {sources.length > 0 ? (
-          <div className="row wrap" style={{ gap: '8px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
             {sources.map((src, index) => {
               const isSelected = selectedSource === src;
               return (

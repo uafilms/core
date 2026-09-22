@@ -67,16 +67,16 @@ const Settings = () => {
 
   return (
     <div style={{ padding: '24px', maxWidth: '800px', margin: '0 auto' }}>
-      <h4 className="primary-text" style={{ fontWeight: 700, marginBottom: '24px' }}>
+      <h4 className="primary-text" style={{ fontWeight: 500, marginBottom: '24px' }}>
         Налаштування
       </h4>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         {/* ===== Block 1: Тема ===== */}
-        <article className="round surface-container no-margin" style={{ padding: '24px', overflow: 'visible' }}>
-          <div className="row middle-align">
-            <div className="max">
-              <h6 style={{ margin: 0, fontWeight: 600 }}>Тема оформлення</h6>
+        <article className="round surface-container no-margin" style={{ padding: '20px 24px', overflow: 'visible' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+            <div style={{ flex: 1 }}>
+              <h6 style={{ margin: 0, fontWeight: 500, fontSize: '16px' }}>Тема оформлення</h6>
               <p className="small-text surface-variant-text" style={{ margin: '4px 0 0 0' }}>
                 Оберіть вигляд інтерфейсу.
               </p>
@@ -93,9 +93,9 @@ const Settings = () => {
         </article>
 
         {/* ===== Block 2: Палітра + Pure dark ===== */}
-        <article className="round surface-container no-margin" style={{ padding: '24px' }}>
+        <article className="round surface-container no-margin" style={{ padding: '20px 24px' }}>
           <div style={{ marginBottom: '16px' }}>
-            <h6 style={{ margin: 0, fontWeight: 600 }}>Колірна палітра</h6>
+            <h6 style={{ margin: 0, fontWeight: 500, fontSize: '16px' }}>Колірна палітра</h6>
             <p className="small-text surface-variant-text" style={{ margin: '4px 0 0 0' }}>
               {palette === 'custom' ? 'Кастомна' : PALETTES[palette]?.name || 'Стандартна'}
             </p>
@@ -153,7 +153,7 @@ const Settings = () => {
                       />
                     )}
                     {id === 'custom' && (
-                      <span style={{ fontSize: '18px', fontWeight: 700, color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.5)', pointerEvents: 'none' }}>
+                      <span style={{ fontSize: '18px', fontWeight: 500, color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.5)', pointerEvents: 'none' }}>
                         +
                       </span>
                     )}
@@ -166,11 +166,11 @@ const Settings = () => {
             })}
           </div>
 
-          <div className="divider" style={{ margin: '20px 0 16px 0' }}></div>
+          <div className="divider" style={{ margin: '20px 0' }}></div>
 
-          <div className="row middle-align">
-            <div className="max">
-              <h6 style={{ margin: 0, fontWeight: 600 }}>Pure dark</h6>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+            <div style={{ flex: 1 }}>
+              <h6 style={{ margin: 0, fontWeight: 500, fontSize: '16px' }}>Pure dark</h6>
               <p className="small-text surface-variant-text" style={{ margin: '4px 0 0 0' }}>
                 Абсолютно чорний фон для AMOLED-екранів.
               </p>
@@ -187,10 +187,10 @@ const Settings = () => {
         </article>
 
         {/* ===== Block 3: Контент ===== */}
-        <article className="round surface-container no-margin" style={{ padding: '24px' }}>
-          <div className="row middle-align" style={{ marginBottom: '16px' }}>
-            <div className="max">
-              <h6 style={{ margin: 0, fontWeight: 600 }}>Фільтрувати нецензурну лексику</h6>
+        <article className="round surface-container no-margin" style={{ padding: '20px 24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', marginBottom: '20px' }}>
+            <div style={{ flex: 1 }}>
+              <h6 style={{ margin: 0, fontWeight: 500, fontSize: '16px' }}>Фільтрувати нецензурну лексику</h6>
               <p className="small-text surface-variant-text" style={{ margin: '4px 0 0 0' }}>
                 Замінює матюки в коментарях на зірочки.
               </p>
@@ -205,11 +205,11 @@ const Settings = () => {
             </label>
           </div>
 
-          <div className="divider"></div>
+          <div className="divider" style={{ margin: '20px 0' }}></div>
 
-          <div className="row middle-align" style={{ marginTop: '16px' }}>
-            <div className="max">
-              <h6 style={{ margin: 0, fontWeight: 600 }}>Показувати контент 18+</h6>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+            <div style={{ flex: 1 }}>
+              <h6 style={{ margin: 0, fontWeight: 500, fontSize: '16px' }}>Показувати контент 18+</h6>
               <p className="small-text surface-variant-text" style={{ margin: '4px 0 0 0' }}>
                 Додає результати для дорослих у пошук та рекомендації.
               </p>
