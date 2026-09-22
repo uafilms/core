@@ -4,6 +4,9 @@
   "description": "uafilms backend rewrite",
   "type": "commonjs",
   "main": "dist/index.js",
+  "workspaces": [
+    "web"
+  ],
   "scripts": {
     "build": "tsc",
     "build:web": "npm --prefix web run build",
