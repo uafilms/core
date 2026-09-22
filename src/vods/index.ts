@@ -34,6 +34,31 @@ export const vodExtractors: VodExtractor[] = [
 export async function extractVod(url: string, options: VodExtractionOptions = {}): Promise<VodExtractionResult | null> {
   if (!url) return null;
 
+  // Якщо передали наш proxy URL з параметром url
+  if (url.includes('/master.m3u8') && url.includes('url=')) {
+    try {
+      const parsed = new URL(url.startsWith('http') ? url : `http://localhost${url}`);
+      const innerUrl = parsed.searchParams.get('url');
+      if (innerUrl) {
+        const decodedInner = decodeURIComponent(innerUrl);
+        // Якщо це вже прямий m3u8 стрім (і не наш проксі)
+        if (decodedInner.includes('.m3u8') && !decodedInner.includes('/master.m3u8')) {
+          return {
+            sources: [{
+              title: 'Stream',
+              url: decodedInner,
+              mime: 'application/x-mpegURL',
+            }],
+          };
+        }
+        // Інакше рекурсивно витягуємо внутрішній URL (наприклад iframe / embed)
+        return extractVod(decodedInner, options);
+      }
+    } catch {
+      // fallback to normal resolution
+    }
+  }
+
   // Точний збіг по cdn query param
   if (url.includes('cdn=aniworld') || url.includes('/catalog/episode/')) {
     const res = await aniWorldVod.extract(url, options);

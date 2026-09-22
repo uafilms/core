@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import videojs from 'video.js';
+import 'video.js/dist/video-js.css';
 import 'videojs-contrib-quality-levels';
 import 'videojs-hotkeys';
 import 'videojs-mobile-ui';
+import 'videojs-mobile-ui/dist/videojs-mobile-ui.css';
 import './player-style.css';
 
 export default function VideoPlayer({
@@ -42,12 +44,11 @@ export default function VideoPlayer({
             type: 'button',
           });
           const icon = videojs.dom.createEl('span', {
-            className: 'material-symbols-rounded icon-placeholder',
+            className: 'material-symbols-rounded',
             innerHTML: 'settings',
             style: 'pointer-events: none;',
           });
-          if (el.firstChild) el.insertBefore(icon, el.firstChild);
-          else el.appendChild(icon);
+          el.appendChild(icon);
           return el;
         }
       }
@@ -57,7 +58,8 @@ export default function VideoPlayer({
     const player = videojs(videoNode.current, {
       autoplay: false,
       controls: true,
-      fluid: true,
+      fill: true,
+      fluid: false,
       playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
       poster: poster || undefined,
       controlBar: {
@@ -84,6 +86,14 @@ export default function VideoPlayer({
     });
 
     playerRef.current = player;
+
+    const mimeType = (type === 'hls' || src?.includes('.m3u8') || src?.includes('/master.m3u8'))
+      ? 'application/x-mpegURL'
+      : (type || 'application/x-mpegURL');
+
+    if (src) {
+      player.src({ src, type: mimeType });
+    }
 
     // Attach Hotkeys
     if (typeof player.hotkeys === 'function') {
@@ -151,9 +161,13 @@ export default function VideoPlayer({
     const player = playerRef.current;
     if (!player || !src) return;
 
+    const mimeType = (type === 'hls' || src.includes('.m3u8') || src.includes('/master.m3u8'))
+      ? 'application/x-mpegURL'
+      : (type || 'application/x-mpegURL');
+
     player.src({
       src,
-      type: src.includes('.m3u8') || src.includes('/master.m3u8') ? 'application/x-mpegURL' : type,
+      type: mimeType,
     });
 
     if (poster) {

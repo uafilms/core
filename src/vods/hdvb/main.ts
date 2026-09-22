@@ -16,10 +16,25 @@ export class HdvbVodExtractor implements VodExtractor {
   async extract(url: string, options: VodExtractionOptions = {}): Promise<VodExtractionResult | null> {
     if (!url) return null;
 
-    const normalizedUrl = normalizeHdvbUrl(url);
+    let targetUrl = url;
 
-    // Якщо це прямий m3u8
-    if (normalizedUrl.includes('.m3u8')) {
+    // Підтримка lazy routes /master.m3u8?cdn=hdvb&url=...
+    if (targetUrl.includes('cdn=hdvb') || targetUrl.includes('/master.m3u8')) {
+      try {
+        const parsed = new URL(targetUrl.startsWith('http') ? targetUrl : `http://localhost${targetUrl}`);
+        const innerUrl = parsed.searchParams.get('url');
+        if (innerUrl) {
+          targetUrl = decodeURIComponent(innerUrl);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const normalizedUrl = normalizeHdvbUrl(targetUrl);
+
+    // Якщо це прямий m3u8 (і не наш проксі)
+    if (normalizedUrl.includes('.m3u8') && !normalizedUrl.includes('/master.m3u8')) {
       return {
         sources: [{
           title: 'HDVB',

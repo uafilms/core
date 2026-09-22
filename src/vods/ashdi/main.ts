@@ -16,13 +16,18 @@ export class AshdiVodExtractor implements VodExtractor {
     let targetUrl = url;
 
     // Підтримка lazy routes вигляду /master.m3u8?cdn=ashdi&type=vod&id=123
-    if (targetUrl.includes('cdn=ashdi')) {
+    if (targetUrl.includes('cdn=ashdi') || targetUrl.includes('/master.m3u8')) {
       try {
         const parsed = new URL(targetUrl.startsWith('http') ? targetUrl : `http://localhost${targetUrl}`);
-        const id = parsed.searchParams.get('id');
-        const type = parsed.searchParams.get('type') || 'vod';
-        if (id) {
-          targetUrl = `https://ashdi.vip/${type}/${id}`;
+        const innerUrl = parsed.searchParams.get('url');
+        if (innerUrl) {
+          targetUrl = decodeURIComponent(innerUrl);
+        } else {
+          const id = parsed.searchParams.get('id');
+          const type = parsed.searchParams.get('type') || 'vod';
+          if (id) {
+            targetUrl = `https://ashdi.vip/${type}/${id}`;
+          }
         }
       } catch {
         // ігноруємо помилку парсингу URL
@@ -31,7 +36,7 @@ export class AshdiVodExtractor implements VodExtractor {
 
     const normalizedUrl = normalizeAshdiUrl(targetUrl);
 
-    if (normalizedUrl.includes('.m3u8')) {
+    if (normalizedUrl.includes('.m3u8') && !normalizedUrl.includes('/master.m3u8')) {
       return {
         sources: [{
           title: 'Ashdi',

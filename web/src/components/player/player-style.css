@@ -31,10 +31,19 @@
   height: 100% !important;
   display: block;
   background: black;
-  font-family: var(--font, 'Roboto', sans-serif) !important;
+  font-family: var(--font, 'Roboto', sans-serif);
   font-size: 14px;
   user-select: none;
   overflow: hidden !important;
+}
+
+/* Explicitly preserve VideoJS icon font on all control bar icons */
+.video-js [class^="vjs-icon-"]:before,
+.video-js [class*=" vjs-icon-"]:before,
+.video-js .vjs-icon-placeholder:before {
+  font-family: VideoJS !important;
+  font-weight: normal !important;
+  font-style: normal !important;
 }
 
 /* === BIG PLAY BUTTON === */
@@ -136,14 +145,33 @@
 }
 
 /* Settings button icon */
-.vjs-settings-btn .icon-placeholder {
-  font-size: 22px;
-  line-height: 54px;
-  display: inline-block;
-  color: var(--vjs-on-surface-variant);
+.vjs-settings-btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
-.vjs-settings-btn:hover .icon-placeholder {
+.vjs-settings-btn .vjs-icon-placeholder {
+  display: none !important;
+}
+
+.vjs-settings-btn .vjs-icon-placeholder:before {
+  display: none !important;
+  content: none !important;
+}
+
+.vjs-settings-btn .material-symbols-rounded {
+  font-family: "Material Symbols Rounded" !important;
+  font-size: 24px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vjs-on-surface-variant);
+  pointer-events: none;
+}
+
+.vjs-settings-btn:hover .material-symbols-rounded {
   color: var(--vjs-on-surface);
 }
 

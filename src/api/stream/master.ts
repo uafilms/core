@@ -15,10 +15,32 @@ streamRouter.get('/master.m3u8', async (c) => {
   const translation = query.translation;
   const episodeId = query.episodeId;
 
-  let streamUrl: string | undefined = rawUrl;
+  let streamUrl: string | undefined;
 
-  // 1. If lazy params are provided, resolve target URL via VOD extractors
-  if (cdn || episodeId || (type && id)) {
+  if (rawUrl) {
+    if (rawUrl.includes('.m3u8') && !rawUrl.includes('/master.m3u8')) {
+      streamUrl = rawUrl;
+    } else {
+      try {
+        const extracted = await extractVod(rawUrl);
+        if (extracted) {
+          if (typeof extracted === 'string') {
+            streamUrl = extracted;
+          } else if ('sources' in (extracted as any) && Array.isArray((extracted as any).sources)) {
+            streamUrl = (extracted as any).sources[0]?.url;
+          } else if (Array.isArray(extracted) && extracted.length > 0) {
+            const first = extracted[0];
+            streamUrl = typeof first === 'string' ? first : (first as any).url;
+          }
+        }
+      } catch (err: unknown) {
+        logWarn('stream', `extract from rawUrl failed: ${(err as Error).message}`);
+      }
+    }
+  }
+
+  // 1. If still not resolved and lazy params are provided, resolve target URL via VOD extractors
+  if (!streamUrl && (cdn || episodeId || (type && id))) {
     try {
       const fullUrl = c.req.url;
       const extracted = await extractVod(fullUrl);
@@ -40,6 +62,12 @@ streamRouter.get('/master.m3u8', async (c) => {
     }
   }
 
+  // Prevent self-referencing loops
+  if (streamUrl && streamUrl.includes('/master.m3u8')) {
+    logWarn('stream', `streamUrl resolved to proxy self, aborting: ${streamUrl}`);
+    streamUrl = undefined;
+  }
+
   if (!streamUrl) {
     return c.text('#EXTM3U\n#EXT-X-ERROR: Stream URL not found or could not be resolved', 404, {
       'Content-Type': 'application/vnd.apple.mpegurl',
@@ -58,6 +86,7 @@ streamRouter.get('/master.m3u8', async (c) => {
   const isAshdi = streamUrl.includes('ashdi.vip');
   const isMoon = streamUrl.includes('moonanime.art') || streamUrl.includes('mooncdn') || streamUrl.includes('s.moonanime');
   const isBamboo = streamUrl.includes('bambooua.com');
+  const isHdvb = streamUrl.includes('hdvbua.pro') || streamUrl.includes('vidcache');
 
   if (isAshdi) {
     headers['Origin'] = 'https://ashdi.vip';
@@ -68,6 +97,8 @@ streamRouter.get('/master.m3u8', async (c) => {
   } else if (isBamboo) {
     headers['Origin'] = 'https://bambooua.com';
     headers['Referer'] = 'https://bambooua.com/';
+  } else if (isHdvb) {
+    headers['Referer'] = 'https://eneyida.tv/';
   }
 
   // 3. Fetch manifest and rewrite
