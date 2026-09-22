@@ -40,6 +40,20 @@ npm run dev
 
 app and API run at `http://localhost:3000`.
 
+#### docker
+
+run directly from GitHub Container Registry:
+
+```bash
+docker run -d -p 3000:3000 -v $(pwd)/cache:/app/cache --name uafilms-core ghcr.io/uafilms/core:latest
+```
+
+or using docker-compose:
+
+```bash
+docker compose up -d
+```
+
 ### build
 
 ```bash

@@ -1,0 +1,14 @@
+services:
+  core:
+    build: .
+    image: ghcr.io/uafilms/core:latest
+    container_name: uafilms-core
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      # - TMDB_TOKEN=your_tmdb_token_here
+    volumes:
+      - ./cache:/app/cache
