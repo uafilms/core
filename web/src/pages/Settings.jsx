@@ -73,7 +73,7 @@ const Settings = () => {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         {/* ===== Block 1: Тема ===== */}
-        <article className="round surface-container no-margin">
+        <article className="round surface-container no-margin" style={{ padding: '24px', overflow: 'visible' }}>
           <div className="row middle-align">
             <div className="max">
               <h6 style={{ margin: 0, fontWeight: 600 }}>Тема оформлення</h6>
@@ -93,7 +93,7 @@ const Settings = () => {
         </article>
 
         {/* ===== Block 2: Палітра + Pure dark ===== */}
-        <article className="round surface-container no-margin">
+        <article className="round surface-container no-margin" style={{ padding: '24px' }}>
           <div style={{ marginBottom: '16px' }}>
             <h6 style={{ margin: 0, fontWeight: 600 }}>Колірна палітра</h6>
             <p className="small-text surface-variant-text" style={{ margin: '4px 0 0 0' }}>
@@ -101,7 +101,7 @@ const Settings = () => {
             </p>
           </div>
 
-          <div className="row wrap" style={{ gap: '12px', marginBottom: '20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))', gap: '14px', marginBottom: '20px', justifyItems: 'center' }}>
             {Object.entries(PALETTES).map(([id, p]) => {
               const isActive = palette === id;
               const swatchBg = p.hex || (id === 'custom' ? customColor : null);
@@ -166,9 +166,9 @@ const Settings = () => {
             })}
           </div>
 
-          <div className="divider"></div>
+          <div className="divider" style={{ margin: '20px 0 16px 0' }}></div>
 
-          <div className="row middle-align" style={{ marginTop: '16px' }}>
+          <div className="row middle-align">
             <div className="max">
               <h6 style={{ margin: 0, fontWeight: 600 }}>Pure dark</h6>
               <p className="small-text surface-variant-text" style={{ margin: '4px 0 0 0' }}>
@@ -187,7 +187,7 @@ const Settings = () => {
         </article>
 
         {/* ===== Block 3: Контент ===== */}
-        <article className="round surface-container no-margin">
+        <article className="round surface-container no-margin" style={{ padding: '24px' }}>
           <div className="row middle-align" style={{ marginBottom: '16px' }}>
             <div className="max">
               <h6 style={{ margin: 0, fontWeight: 600 }}>Фільтрувати нецензурну лексику</h6>

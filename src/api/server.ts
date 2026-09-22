@@ -36,14 +36,15 @@ if (hasWebDist) {
   app.use('/favicon.ico', serveStatic({ root: './web/dist' }));
   app.use('/vite.svg', serveStatic({ root: './web/dist' }));
 
-  // Root HTML request from browser
+  // Root request: return SPA index.html for browsers, or JSON if explicitly requested as application/json
   app.get('/', (c, next) => {
     const accept = c.req.header('accept') || '';
-    if (accept.includes('text/html')) {
-      const indexPath = path.join(distDir, 'index.html');
-      if (fs.existsSync(indexPath)) {
-        return c.html(fs.readFileSync(indexPath, 'utf-8'));
-      }
+    if (accept.includes('application/json') && !accept.includes('text/html')) {
+      return next();
+    }
+    const indexPath = path.join(distDir, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      return c.html(fs.readFileSync(indexPath, 'utf-8'));
     }
     return next();
   });
@@ -51,14 +52,24 @@ if (hasWebDist) {
 
 // Mount routers
 app.route('/api', catalogRouter);
+app.route('/', catalogRouter);
 app.route('/', omssRouter);
+app.route('/api', omssRouter);
 app.route('/', streamRouter);
+app.route('/api', streamRouter);
 
 // SPA fallback for frontend client routing
 if (hasWebDist) {
   app.get('*', (c, next) => {
     const p = c.req.path;
-    if (p.startsWith('/api') || p.startsWith('/v1') || p.startsWith('/master.m3u8')) {
+    if (
+      p.startsWith('/api') ||
+      p.startsWith('/v1') ||
+      p.startsWith('/master.m3u8') ||
+      p === '/home' ||
+      p === '/details' ||
+      p === '/comments'
+    ) {
       return next();
     }
     const indexPath = path.join(distDir, 'index.html');

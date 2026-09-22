@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 const navItems = [
   { to: '/', icon: 'home', label: 'Головна' },
-  { to: '/search', icon: 'search', label: 'Пошук' },
   { to: '/favorites', icon: 'favorite', label: 'Обране' },
   { to: '/settings', icon: 'settings', label: 'Налаштування' },
 ];

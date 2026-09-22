@@ -29,7 +29,8 @@ const TurnstileWidget = () => {
     let cancelled = false;
     const loadConfig = async () => {
       try {
-        const res = await fetch(import.meta.env.VITE_API_BASE_URL);
+        const apiUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+        const res = await fetch(`${apiUrl}/`);
         if (!res.ok) throw new Error('API unavailable');
         const data = await res.json();
         if (cancelled) return;

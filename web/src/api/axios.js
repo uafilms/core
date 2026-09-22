@@ -3,7 +3,7 @@ import axios from 'axios';
 export const loaderEvent = new EventTarget();
 
 const instance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
 });
 
 // FIX: Тут НЕ має бути '/details'

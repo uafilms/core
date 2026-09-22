@@ -1,17 +1,17 @@
 :root {
-  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Oxygen, Ubuntu, Cantarell, sans-serif !important;
+  font-family: var(--font) !important;
   line-height: 1.5;
   font-weight: 400;
   --font-icon: "Material Symbols Rounded";
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  font-family: inherit;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+*, *::before, *::after {
+  font-family: var(--font);
+}
+
+body, h1, h2, h3, h4, h5, h6, p, span, button, input, select, textarea, article, nav, header, footer {
+  font-family: var(--font);
 }
 
 /* Material Symbols Rounded ligature support */
