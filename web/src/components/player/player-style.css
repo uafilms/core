@@ -197,15 +197,18 @@
 /* Control buttons inside bar */
 .video-js .vjs-control-bar .vjs-button,
 .video-js .vjs-control-bar .vjs-control {
-  width: 42px !important;
-  height: 42px !important;
+  width: 40px !important;
+  height: 40px !important;
   border-radius: 12px !important;
   color: var(--vjs-on-surface-variant) !important;
-  display: flex !important;
+  display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
   transition: color 0.15s, background-color 0.15s;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .video-js .vjs-control-bar .vjs-button:hover,
@@ -216,10 +219,12 @@
 
 .video-js .vjs-control-bar .vjs-icon-placeholder:before {
   font-size: 22px !important;
-  line-height: 42px !important;
-  width: 42px !important;
-  height: 42px !important;
-  display: block !important;
+  line-height: 40px !important;
+  width: 40px !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   text-align: center !important;
 }
 
@@ -285,11 +290,11 @@
 /* Progress Control */
 .video-js .vjs-progress-control {
   flex: 1;
-  display: flex;
-  align-items: center;
-  margin: 0 12px;
-  position: relative;
-  height: 100%;
+  display: flex !important;
+  align-items: center !important;
+  margin: 0 10px !important;
+  position: relative !important;
+  height: 40px !important;
 }
 
 .video-js .vjs-progress-holder {
@@ -331,14 +336,17 @@
 
 /* Time Display */
 .video-js .vjs-time-control {
-  display: flex !important;
+  display: inline-flex !important;
   align-items: center !important;
-  line-height: 54px;
+  justify-content: center !important;
+  height: 40px !important;
+  line-height: 40px !important;
   font-size: 13px;
   font-weight: 500;
   min-width: auto;
-  padding: 0 3px;
+  padding: 0 4px !important;
   color: var(--vjs-on-surface-variant);
+  box-sizing: border-box !important;
 }
 
 .video-js .vjs-current-time,

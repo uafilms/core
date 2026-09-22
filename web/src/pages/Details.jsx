@@ -200,13 +200,7 @@ const Details = () => {
   return (
     <div className="page-transition" style={{ minHeight: '100vh' }}>
       {/* Hero Header */}
-      <div style={{ position: 'relative', height: '350px', width: '100%' }}>
-        <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10 }}>
-          <button className="circle surface-container" onClick={() => navigate(-1)} style={{ cursor: 'pointer' }}>
-            <i>arrow_back</i>
-          </button>
-        </div>
-
+      <div style={{ position: 'relative', height: '350px', width: '100%', overflow: 'hidden' }}>
         <img
           src={backdropUrl}
           alt="Cover"
@@ -216,16 +210,30 @@ const Details = () => {
           style={{
             position: 'absolute',
             bottom: 0,
+            left: 0,
             width: '100%',
             background: 'linear-gradient(to top, var(--surface), transparent)',
-            height: '200px',
+            height: '220px',
           }}
         />
+
+        {/* Back button aligned with content container */}
+        <div style={{ position: 'absolute', top: 16, left: 0, right: 0, zIndex: 10 }}>
+          <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '0 24px' }}>
+            <button
+              className="circle surface-container"
+              onClick={() => navigate(-1)}
+              style={{ cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' }}
+            >
+              <i>arrow_back</i>
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div style={{ padding: '0 24px 40px 24px', maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', margin: '20px 0 12px 0' }}>
-          <h4 style={{ margin: 0, fontWeight: 500 }}>{data.title}</h4>
+      <div style={{ padding: '0 24px 40px 24px', maxWidth: '1000px', margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', margin: '20px 0 16px 0' }}>
+          <h4 style={{ margin: 0, fontWeight: 500, fontSize: '1.75rem', lineHeight: 1.25 }}>{data.title}</h4>
           <button
             className={`circle ${isFav ? 'secondary' : 'surface-container'}`}
             onClick={toggleFavorite}
@@ -247,16 +255,16 @@ const Details = () => {
             </span>
           )}
 
-          {data.genres && data.genres.length > 0 && (
-            <span className="chip border surface-container-low">{data.genres.join(', ')}</span>
-          )}
+          {data.genres && data.genres.map((genre) => (
+            <span key={genre} className="chip border surface-container-low">{genre}</span>
+          ))}
         </div>
 
         <div style={{ marginBottom: '32px' }}>
           <h6 className="primary-text" style={{ fontWeight: 500, marginBottom: '8px' }}>
             Про тайтл
           </h6>
-          <p style={{ lineHeight: '1.6', maxWidth: '800px', opacity: 0.9, margin: 0 }}>
+          <p style={{ lineHeight: '1.6', opacity: 0.9, margin: 0, fontSize: '0.95rem' }}>
             {data.overview || 'Опис відсутній.'}
           </p>
         </div>

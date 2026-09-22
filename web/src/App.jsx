@@ -79,6 +79,7 @@ function App() {
       {/* Beta disclaimer dialog */}
       {showDisclaimer && (
         <div
+          className="modal-overlay"
           style={{
             position: 'fixed',
             top: 0,
@@ -140,6 +141,12 @@ function App() {
           left: 50%;
           transform: translateX(-50%);
           z-index: 9999;
+        }
+
+        @media (min-width: 600px) {
+          .modal-overlay {
+            padding-left: 80px !important;
+          }
         }
 
         @media (max-width: 600px) {
