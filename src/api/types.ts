@@ -10,7 +10,7 @@ export interface OmssRootResponse {
   name: string;
   version: string;
   status: 'operational' | 'degraded' | 'down';
-  spec: 'omss';
+  spec?: string;
   endpoints: {
     movie: string;
     tv: string;

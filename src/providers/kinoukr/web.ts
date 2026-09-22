@@ -10,6 +10,7 @@ import type { ProviderGetOptions, ProviderSearchOptions } from '../../types/prov
 import { httpRequest } from '../../utils/http.js';
 import { rankSearchResults, sortSeasons, sortSources } from '../../utils/sort.js';
 import { ashdiVod } from '../../vods/index.js';
+import { logWarn } from '../../utils/logger.js';
 
 const BASE_URL = 'https://kinoukr.tv';
 const COOKIES = 'onlyforkinoukr=1; lampac-off=1';
@@ -48,7 +49,7 @@ async function getDleHash(signal?: AbortSignal): Promise<string | null> {
       return cachedHash;
     }
   } catch (err) {
-    console.warn('[KinoUkrWeb] Failed to retrieve dle_login_hash:', err);
+    logWarn('kinoukr', `failed to retrieve dle_login_hash: ${err}`);
   }
 
   return null;
@@ -63,7 +64,7 @@ export async function searchKinoUkrWeb(
 
   const dleHash = await getDleHash(options.signal);
   if (!dleHash) {
-    console.warn('[KinoUkrWeb] Cannot search without dle_hash');
+    logWarn('kinoukr', 'cannot search without dle_hash');
     return [];
   }
 
@@ -142,7 +143,7 @@ export async function searchKinoUkrWeb(
 
     return rankSearchResults(results, cleanQ, options.year);
   } catch (err) {
-    console.warn('[KinoUkrWeb] Search error:', err);
+    logWarn('kinoukr', `search error: ${err}`);
     return [];
   }
 }
@@ -245,7 +246,7 @@ export async function getKinoUkrWeb(
               }
             }
           } catch (err) {
-            console.warn('[KinoUkrWeb] Ashdi serial extraction error:', err);
+            logWarn('kinoukr', `ashdi serial extraction error: ${err}`);
           }
         } else if (details.cdn === 'tortuga' && details.type === 'embed') {
           const tortugaStream: StreamSource = {
@@ -332,7 +333,7 @@ export async function getKinoUkrWeb(
       sources: sortSources(sources),
     };
   } catch (err) {
-    console.warn('[KinoUkrWeb] Get error:', err);
+    logWarn('kinoukr', `get error: ${err}`);
     return null;
   }
 }

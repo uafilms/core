@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import axios from 'axios';
 import { extractVod } from '../../vods/index.js';
 import { parseMasterPlaylist, stripCorsProxy } from '../../utils/m3u8.js';
+import { logWarn, logError } from '../../utils/logger.js';
 
 export const streamRouter = new Hono();
 
@@ -35,7 +36,7 @@ streamRouter.get('/master.m3u8', async (c) => {
         }
       }
     } catch (err: unknown) {
-      console.warn('[StreamRouter] Lazy VOD extract failed:', (err as Error).message);
+      logWarn('stream', `lazy extract failed: ${(err as Error).message}`);
     }
   }
 
@@ -91,7 +92,7 @@ streamRouter.get('/master.m3u8', async (c) => {
       'Cache-Control': 'no-cache',
     });
   } catch (err: unknown) {
-    console.error('[StreamRouter] Fetch M3U8 error:', (err as Error).message);
+    logError('stream', `m3u8 fetch error: ${(err as Error).message}`);
     return c.text(`#EXTM3U\n#EXT-X-ERROR: ${(err as Error).message}`, 502, {
       'Content-Type': 'application/vnd.apple.mpegurl',
       'Access-Control-Allow-Origin': '*',

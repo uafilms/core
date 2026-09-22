@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import axios from 'axios';
 import { webcrack } from 'webcrack';
+import { log, logWarn, logError } from '../../utils/logger.js';
 
 let cachedKey: string = '297796CCB81D255125'; // Fallback default
 
@@ -22,7 +23,7 @@ export async function extractKeyFromJs(jsUrl: string): Promise<string | null> {
       return match[1];
     }
   } catch (err: any) {
-    console.error('[UASerials] Failed to extract key via webcrack:', err.message);
+    logError('uaserials', `failed to extract key via webcrack: ${err.message}`);
   }
   return null;
 }
@@ -55,14 +56,14 @@ export async function decryptDataTag(
   try {
     return decryptWithKey(cachedKey, dataTag);
   } catch (e) {
-    console.warn('[UASerials] Decryption failed with cached key. Re-extracting with webcrack...');
+    logWarn('uaserials', 'cached key failed, re-extracting with webcrack');
   }
 
   // Key outdated or failed -> re-extract using webcrack
   const freshKey = await extractKeyFromJs(jsBundleUrl);
   if (freshKey) {
     cachedKey = freshKey;
-    console.log(`[UASerials] Updated cached key: ${cachedKey}`);
+    log('uaserials', `updated cached key: ${cachedKey}`);
     return decryptWithKey(cachedKey, dataTag);
   }
 

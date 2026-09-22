@@ -1,6 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import 'mdui/components/circular-progress.js';
-import 'mdui/components/icon.js';
 
 const TurnstileWidget = () => {
   const widgetId = useRef(null);
@@ -13,7 +11,6 @@ const TurnstileWidget = () => {
   const checkInterval = useRef(null);
   const tokenReadyFired = useRef(false);
 
-  // — Створюємо overlay в body для Turnstile (поза .turnstile-container)
   useEffect(() => {
     const el = document.createElement('div');
     el.className = 'ts-api-overlay';
@@ -28,7 +25,6 @@ const TurnstileWidget = () => {
     };
   }, []);
 
-  // — Завантаження конфігу
   useEffect(() => {
     let cancelled = false;
     const loadConfig = async () => {
@@ -44,10 +40,11 @@ const TurnstileWidget = () => {
       }
     };
     loadConfig();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // — Рендер Turnstile в overlay (поза потоком)
   useEffect(() => {
     if (!config || !overlayRef.current) return;
 
@@ -114,7 +111,6 @@ const TurnstileWidget = () => {
           },
         });
 
-        // Авто-запуск перевірки одразу після render
         if (widgetId.current && window.turnstile) {
           window.turnstile.execute(widgetId.current);
         }
@@ -126,56 +122,58 @@ const TurnstileWidget = () => {
     if (window.turnstile) {
       initTurnstile();
     } else {
-      checkInterval.current = setInterval(initTurnstile, 100);
+      checkInterval.current = setInterval(() => {
+        if (window.turnstile) {
+          initTurnstile();
+        }
+      }, 100);
     }
 
     return () => {
       if (checkInterval.current) clearInterval(checkInterval.current);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      if (window.turnstile && widgetId.current !== null) {
-        try { window.turnstile.remove(widgetId.current); } catch (e) { /* ignore */ }
+      if (widgetId.current !== null && window.turnstile) {
+        try {
+          window.turnstile.remove(widgetId.current);
+        } catch {
+          // ignore
+        }
         widgetId.current = null;
       }
     };
   }, [config]);
 
-  // — Синхронізація cardVisible → animPhase
   useEffect(() => {
     if (cardVisible) {
-      setAnimPhase((prev) => prev === 'hidden' || prev === 'exiting' ? 'entering' : prev);
+      setAnimPhase('entering');
     } else {
-      setAnimPhase((prev) => prev === 'visible' || prev === 'entering' ? 'exiting' : prev);
+      setAnimPhase('exiting');
     }
   }, [cardVisible]);
 
   const handleAnimEnd = () => {
-    if (animPhase === 'entering') setAnimPhase('visible');
-    else if (animPhase === 'exiting') setAnimPhase('hidden');
+    if (animPhase === 'exiting') {
+      setAnimPhase('hidden');
+    }
   };
 
   const handleClick = () => {
-    if (state === 'interactive') {
-      // Показуємо overlay — Turnstile iframe вже готовий, просто був прихований
-      if (overlayRef.current) overlayRef.current.style.display = '';
+    if (state === 'interactive' && overlayRef.current) {
+      overlayRef.current.style.display = '';
+    } else if (state === 'error' && widgetId.current !== null && window.turnstile) {
       setState('checking');
-    } else if (state === 'error') {
-      setState('checking');
-      window.cfToken = null;
-      tokenReadyFired.current = false;
-      if (window.turnstile && widgetId.current !== null) {
-        window.turnstile.reset(widgetId.current);
-        setTimeout(() => window.turnstile.execute(widgetId.current), 100);
-      }
+      window.turnstile.reset(widgetId.current);
+      window.turnstile.execute(widgetId.current);
     }
   };
 
   if (!config || !config.enabled) return null;
 
   const statusLabels = {
-    interactive: 'Я не робот',
-    checking: 'Перевірка...',
-    success: 'Пройдено',
-    error: 'Помилка',
+    checking: 'Перевірка безпеки...',
+    interactive: 'Підтвердіть дію',
+    success: 'Перевірку пройдено',
+    error: 'Помилка перевірки',
   };
 
   return (
@@ -194,14 +192,14 @@ const TurnstileWidget = () => {
                 </div>
                 <div className={`icon-layer${state === 'checking' ? ' visible' : ' hidden'}`}>
                   <div className="spinner-wrap">
-                    <mdui-circular-progress id="ts-spinner" />
+                    <progress className="circle small indeterminate" />
                   </div>
                 </div>
                 <div className={`icon-layer${state === 'success' ? ' visible' : ' hidden'}`}>
-                  <mdui-icon name="check_circle" className="icon-success" />
+                  <i className="primary-text" style={{ fontSize: '20px' }}>check_circle</i>
                 </div>
                 <div className={`icon-layer${state === 'error' ? ' visible' : ' hidden'}`}>
-                  <mdui-icon name="error" className="icon-error" />
+                  <i className="error-text" style={{ fontSize: '20px' }}>error</i>
                 </div>
               </div>
 
@@ -220,7 +218,7 @@ const TurnstileWidget = () => {
             </div>
 
             <div className="pill-brand" title="Cloudflare Turnstile">
-              <mdui-icon name="shield" style={{ fontSize: '16px' }} />
+              <i style={{ fontSize: '16px' }}>shield</i>
             </div>
           </div>
         </div>
@@ -250,15 +248,15 @@ const TurnstileWidget = () => {
           box-sizing: border-box;
           display: flex;
           align-items: center;
-          border-radius: var(--mdui-shape-corner-full, 9999px);
-          border: 1.5px solid rgb(var(--mdui-color-outline));
-          background: rgb(var(--mdui-color-surface-container-low));
+          border-radius: 9999px;
+          border: 1.5px solid var(--outline);
+          background: var(--surface-container-low);
         }
 
         .turnstile-card.state-interactive { cursor: pointer; }
-        .turnstile-card.state-interactive:hover { border-color: rgb(var(--mdui-color-primary)); transition: border-color 0.3s ease; }
-        .turnstile-card.state-success { border-color: rgb(var(--mdui-color-primary)); transition: border-color 0.3s ease; }
-        .turnstile-card.state-error { border-color: rgb(var(--mdui-color-error)); cursor: pointer; transition: border-color 0.3s ease; }
+        .turnstile-card.state-interactive:hover { border-color: var(--primary); transition: border-color 0.3s ease; }
+        .turnstile-card.state-success { border-color: var(--primary); transition: border-color 0.3s ease; }
+        .turnstile-card.state-error { border-color: var(--error); cursor: pointer; transition: border-color 0.3s ease; }
 
         .anim-entering {
           animation: cardEnter 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both;
@@ -317,7 +315,7 @@ const TurnstileWidget = () => {
           width: 16px;
           height: 16px;
           border-radius: 3px;
-          border: 1.5px solid rgb(var(--mdui-color-outline));
+          border: 1.5px solid var(--outline);
         }
 
         .spinner-wrap {
@@ -329,20 +327,11 @@ const TurnstileWidget = () => {
           overflow: hidden;
         }
 
-        #ts-spinner {
-          width: 18px !important;
-          height: 18px !important;
-          color: rgb(var(--mdui-color-primary));
-        }
-
-        .icon-success { color: rgb(var(--mdui-color-primary)); font-size: 20px; display: flex; }
-        .icon-error   { color: rgb(var(--mdui-color-error));   font-size: 20px; display: flex; }
-
         .status-label {
           font-size: 13px;
           font-weight: 500;
           letter-spacing: 0.1px;
-          color: rgb(var(--mdui-color-on-surface));
+          color: var(--on-surface);
           white-space: nowrap;
           line-height: 1;
         }
@@ -359,7 +348,7 @@ const TurnstileWidget = () => {
 
         .error-hint {
           font-size: 11px;
-          color: rgb(var(--mdui-color-primary));
+          color: var(--primary);
           opacity: 0.7;
           margin-left: 4px;
         }
@@ -368,7 +357,7 @@ const TurnstileWidget = () => {
           display: flex;
           align-items: center;
           opacity: 0.4;
-          color: rgb(var(--mdui-color-on-surface-variant));
+          color: var(--on-surface-variant);
           transition: opacity 0.2s;
           flex-shrink: 0;
         }

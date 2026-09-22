@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
 import { httpRequest } from '../../utils/http.js';
+import { log, logWarn, logError } from '../../utils/logger.js';
 import type { KinoUkrDbRow, KinoUkrJsonMap } from './types.js';
 
 const JSON_URL = 'https://raw.githubusercontent.com/lampac-nextgen/lampac/refs/heads/main/Core/data/kinoukr.json';
@@ -92,7 +93,7 @@ export async function getKinoUkrDb(forceSync = false): Promise<Database.Database
 
     if (shouldSync) {
       try {
-        console.log('[KinoUkrDB] Syncing database from lampac repository...');
+        log('kinoukr', 'syncing database from lampac repository...');
         const res = await httpRequest<KinoUkrJsonMap>({
           url: JSON_URL,
           method: 'GET',
@@ -134,10 +135,10 @@ export async function getKinoUkrDb(forceSync = false): Promise<Database.Database
 
           insertMany(Object.entries(data));
           const count = db.prepare('SELECT COUNT(*) as c FROM kinoukr_items').get() as { c: number };
-          console.log(`[KinoUkrDB] Synced ${count.c} items successfully.`);
+          log('kinoukr', `synced ${count.c} items successfully`);
         }
       } catch (err: any) {
-        console.error('[KinoUkrDB] Failed to sync from lampac:', err.message);
+        logError('kinoukr', `failed to sync from lampac: ${err.message}`);
         // If DB already has data, continue running degraded
         const existingCount = (db.prepare('SELECT COUNT(*) as c FROM kinoukr_items').get() as { c: number }).c;
         if (existingCount === 0) {

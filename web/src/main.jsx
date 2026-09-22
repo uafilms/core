@@ -1,10 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
+import 'beercss';
+import 'material-dynamic-colors';
 import App from './App.jsx';
 import './index.css';
-import 'mdui/mdui.css';
-import 'mdui';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

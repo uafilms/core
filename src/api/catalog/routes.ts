@@ -9,7 +9,7 @@ export const catalogRouter = new Hono();
 catalogRouter.get('/', (c) => {
   return c.json({
     status: 'ok',
-    message: 'UAFilms Catalog & OMSS API',
+    message: 'UAFilms API',
     version: '1.0.0',
   });
 });

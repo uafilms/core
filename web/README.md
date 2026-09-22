@@ -34,7 +34,7 @@ UAFilms is a aggregator of movies and TV series that combines content from multi
 
 ### UI Components
 
-* **Web Components**: [mdui](https://mdui.org) for Material Design 3 components (migrated from @material/web).
+* **CSS Framework**: [BeerCSS](https://www.beercss.com/) for semantic Material Design 3 styling and themes.
 * **Icons**: Material Symbols.
 * **Sliders**: Swiper.js for interactive carousels.
 

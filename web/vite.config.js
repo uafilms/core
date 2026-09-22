@@ -13,13 +13,10 @@ export default defineConfig({
           // Якщо файл з node_modules
           if (id.includes('node_modules')) {
             // Виносимо важкі бібліотеки окремо
-            if (id.includes('jszip')) {
-              return 'jszip';
-            }
             if (id.includes('swiper')) {
               return 'swiper';
             }
-            // Все інше (включно з react, mdui, lit) — у vendor,
+            // Все інше (включно з react, beercss) — у vendor,
             // щоб уникнути circular dependency між чанками
             return 'vendor';
           }

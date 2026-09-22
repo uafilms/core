@@ -2,6 +2,7 @@ import axios from 'axios';
 import type { MediaMetadata, MediaType } from '../../types/media.js';
 import { metaCache } from './cache.js';
 import { getUakinoDb } from '../../providers/uakino/db.js';
+import { logWarn } from '../../utils/logger.js';
 
 export interface CatalogItem {
   id: number | string;
@@ -88,7 +89,7 @@ export class TmdbService {
         metaCache.set(cacheKey, meta);
         return meta;
       } catch (err: unknown) {
-        console.warn(`[TMDB] API request failed for ${type}/${id}:`, (err as Error).message);
+        logWarn('tmdb', `request failed for ${type}/${id}: ${(err as Error).message}`);
       }
     }
 
@@ -115,7 +116,7 @@ export class TmdbService {
         return meta;
       }
     } catch (err) {
-      console.warn('[TMDB] Local DB lookup failed:', (err as Error).message);
+      logWarn('tmdb', `local db lookup failed: ${(err as Error).message}`);
     }
 
     return null;
@@ -151,7 +152,7 @@ export class TmdbService {
         metaCache.set(cacheKey, details, 3600);
         return details;
       } catch (err: unknown) {
-        console.warn(`[TMDB] getDetails failed for ${type}/${id}:`, (err as Error).message);
+        logWarn('tmdb', `getDetails failed for ${type}/${id}: ${(err as Error).message}`);
       }
     }
 
@@ -184,7 +185,7 @@ export class TmdbService {
         return details;
       }
     } catch (err) {
-      console.warn('[TMDB] Local DB getDetails fallback failed:', (err as Error).message);
+      logWarn('tmdb', `local db fallback failed: ${(err as Error).message}`);
     }
 
     return null;
@@ -200,7 +201,7 @@ export class TmdbService {
         );
         return res.data;
       } catch (err) {
-        console.warn('[TMDB] getTrending failed:', (err as Error).message);
+        logWarn('tmdb', `getTrending failed: ${(err as Error).message}`);
       }
     }
     return this.getLocalCatalogFallback();
@@ -216,7 +217,7 @@ export class TmdbService {
         );
         return res.data;
       } catch (err) {
-        console.warn('[TMDB] getRecommended failed:', (err as Error).message);
+        logWarn('tmdb', `getRecommended failed: ${(err as Error).message}`);
       }
     }
     return this.getLocalCatalogFallback({ minYear: 2022 });
@@ -232,7 +233,7 @@ export class TmdbService {
         );
         return res.data;
       } catch (err) {
-        console.warn('[TMDB] getUkrainian failed:', (err as Error).message);
+        logWarn('tmdb', `getUkrainian failed: ${(err as Error).message}`);
       }
     }
     return this.getLocalCatalogFallback({ minYear: 2020 });
@@ -248,7 +249,7 @@ export class TmdbService {
         );
         return res.data;
       } catch (err) {
-        console.warn('[TMDB] getCartoons failed:', (err as Error).message);
+        logWarn('tmdb', `getCartoons failed: ${(err as Error).message}`);
       }
     }
     return this.getLocalCatalogFallback({ minYear: 2021 });
@@ -264,7 +265,7 @@ export class TmdbService {
         );
         return res.data;
       } catch (err) {
-        console.warn('[TMDB] getAnime failed:', (err as Error).message);
+        logWarn('tmdb', `getAnime failed: ${(err as Error).message}`);
       }
     }
     return this.getLocalCatalogFallback({ isTv: 1 });
@@ -286,7 +287,7 @@ export class TmdbService {
         }
         return data;
       } catch (err) {
-        console.warn('[TMDB] search failed:', (err as Error).message);
+        logWarn('tmdb', `search failed: ${(err as Error).message}`);
       }
     }
 
@@ -329,7 +330,7 @@ export class TmdbService {
         total_results: totalCount,
       };
     } catch (err) {
-      console.warn('[TMDB] Local search fallback error:', (err as Error).message);
+      logWarn('tmdb', `local search fallback error: ${(err as Error).message}`);
       return { results: [], total_pages: 0, total_results: 0 };
     }
   }

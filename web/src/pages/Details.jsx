@@ -3,13 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Hls from 'hls.js';
 import api from '../api/axios';
 import Comments from '../components/Comments';
-import Downloader from '../components/Downloader';
-
-import 'mdui/components/button.js';
-import 'mdui/components/button-icon.js';
-import 'mdui/components/icon.js';
-import 'mdui/components/chip.js';
-import 'mdui/components/circular-progress.js';
 
 const formatSourceName = (source) => {
   const provider = source.provider?.name || source.provider?.id || 'Джерело';
@@ -51,15 +44,15 @@ const Details = () => {
     setError(null);
 
     api.get(`/details?id=${id}&type=${type}`)
-      .then(res => {
+      .then((res) => {
         if (active) {
           setData(res.data);
           setLoadingMeta(false);
           const favorites = JSON.parse(localStorage.getItem('uafilms_favorites') || '[]');
-          setIsFav(favorites.some(f => f.id == res.data.id));
+          setIsFav(favorites.some((f) => f.id == res.data.id));
         }
       })
-      .catch(err => {
+      .catch((err) => {
         console.error('Meta fetch error:', err);
         if (active) {
           setError('Не вдалося завантажити інформацію про фільм');
@@ -67,7 +60,9 @@ const Details = () => {
         }
       });
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [id, type]);
 
   // 2. Fetch OMSS Sources
@@ -84,7 +79,7 @@ const Details = () => {
       : `/v1/tv/${targetId}/seasons/${season}/episodes/${episode}`;
 
     api.get(endpoint)
-      .then(res => {
+      .then((res) => {
         if (!active) return;
         const list = res.data?.sources || [];
         setSources(list);
@@ -92,14 +87,16 @@ const Details = () => {
           setSelectedSource(list[0]);
         }
       })
-      .catch(err => {
+      .catch((err) => {
         console.warn('OMSS fetch sources error:', err);
       })
       .finally(() => {
         if (active) setLoadingSources(false);
       });
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [data, type, id, season, episode]);
 
   // 3. Attach HLS.js video stream
@@ -156,7 +153,7 @@ const Details = () => {
     const favorites = JSON.parse(localStorage.getItem('uafilms_favorites') || '[]');
     let newFavs;
     if (isFav) {
-      newFavs = favorites.filter(f => f.id != id);
+      newFavs = favorites.filter((f) => f.id != id);
     } else {
       const minData = {
         id: data.id,
@@ -173,20 +170,21 @@ const Details = () => {
 
   if (loadingMeta) {
     return (
-      <div style={{ minHeight: '100vh', background: 'rgb(var(--mdui-color-surface))', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-        <mdui-circular-progress indeterminate></mdui-circular-progress>
+      <div className="page-loader">
+        <progress className="circle large indeterminate"></progress>
       </div>
     );
   }
 
   if (error && !data) {
     return (
-      <div style={{ minHeight: '100vh', background: 'rgb(var(--mdui-color-surface))', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'rgb(var(--mdui-color-error))' }}>
-        <mdui-icon style={{ fontSize: '48px', marginBottom: '16px' }} name="error"></mdui-icon>
+      <div className="page-loader" style={{ flexDirection: 'column' }}>
+        <i className="error-text" style={{ fontSize: '48px', marginBottom: '16px' }}>error</i>
         <p>{error}</p>
-        <mdui-button-icon variant="tonal" onClick={() => navigate(-1)} style={{ marginTop: '16px' }}>
-          <mdui-icon name="arrow_back"></mdui-icon>
-        </mdui-button-icon>
+        <button className="secondary" onClick={() => navigate(-1)} style={{ marginTop: '16px' }}>
+          <i>arrow_back</i>
+          <span>Назад</span>
+        </button>
       </div>
     );
   }
@@ -194,25 +192,23 @@ const Details = () => {
   const backdropUrl = data?.backdropUrl || data?.posterUrl || '';
 
   return (
-    <div style={{ minHeight: '100vh', background: 'rgb(var(--mdui-color-surface))', color: 'rgb(var(--mdui-color-on-surface))' }}>
+    <div style={{ minHeight: '100vh' }}>
       {/* Hero Header */}
       <div style={{ position: 'relative', height: '350px', width: '100%' }}>
         <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10 }}>
-          <mdui-button-icon variant="tonal" onClick={() => navigate(-1)} style={{ cursor: 'pointer' }}>
-            <mdui-icon name="arrow_back"></mdui-icon>
-          </mdui-button-icon>
+          <button className="circle surface-container" onClick={() => navigate(-1)} style={{ cursor: 'pointer' }}>
+            <i>arrow_back</i>
+          </button>
         </div>
 
-        <div style={{ position: 'absolute', bottom: -28, right: 32, zIndex: 10 }}>
-          <mdui-button-icon
-            variant="tonal"
-            selected={isFav ? true : undefined}
+        <div style={{ position: 'absolute', bottom: -24, right: 32, zIndex: 10 }}>
+          <button
+            className={`circle large ${isFav ? 'secondary' : 'surface-container'}`}
             onClick={toggleFavorite}
-            style={{ width: '56px', height: '56px', cursor: 'pointer' }}
+            style={{ cursor: 'pointer' }}
           >
-            <mdui-icon name="favorite_border"></mdui-icon>
-            <mdui-icon slot="selected" name="favorite"></mdui-icon>
-          </mdui-button-icon>
+            <i>{isFav ? 'favorite' : 'favorite_border'}</i>
+          </button>
         </div>
 
         <img
@@ -220,35 +216,41 @@ const Details = () => {
           alt="Cover"
           style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.8 }}
         />
-        <div style={{
-          position: 'absolute', bottom: 0, width: '100%',
-          background: 'linear-gradient(to top, rgb(var(--mdui-color-surface)), transparent)',
-          height: '200px'
-        }} />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            width: '100%',
+            background: 'linear-gradient(to top, var(--surface), transparent)',
+            height: '200px',
+          }}
+        />
       </div>
 
       <div style={{ padding: '0 24px 40px 24px', maxWidth: '1200px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '32px', margin: '16px 0 8px 0', fontFamily: 'Roboto' }}>{data.title}</h1>
+        <h3 style={{ margin: '16px 0 8px 0', fontWeight: 700 }}>{data.title}</h3>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', color: 'rgb(var(--mdui-color-outline))', marginBottom: '24px' }}>
-          <mdui-chip variant="assist">{data.year?.toString() || '-'}</mdui-chip>
-          <mdui-chip variant="assist">{type === 'movie' ? 'Фільм' : 'Серіал'}</mdui-chip>
+        <div className="row wrap middle-align" style={{ gap: '10px', marginBottom: '24px' }}>
+          <span className="chip border surface-container-low">{data.year?.toString() || '-'}</span>
+          <span className="chip border surface-container-low">{type === 'movie' ? 'Фільм' : 'Серіал'}</span>
 
           {data.imdbRating && (
-            <mdui-chip variant="assist">
-              <mdui-icon slot="icon" style={{ fontVariationSettings: "'FILL' 1" }} name="star"></mdui-icon>
-              {data.imdbRating.toString()}
-            </mdui-chip>
+            <span className="chip border surface-container-low row middle-align no-space" style={{ gap: '4px' }}>
+              <i style={{ fontSize: '16px', color: '#f59e0b' }}>star</i>
+              <span>{data.imdbRating.toString()}</span>
+            </span>
           )}
 
           {data.genres && data.genres.length > 0 && (
-            <mdui-chip variant="assist">{data.genres.join(', ')}</mdui-chip>
+            <span className="chip border surface-container-low">{data.genres.join(', ')}</span>
           )}
         </div>
 
         <div style={{ marginBottom: '32px' }}>
-          <h3 style={{ fontSize: '18px', color: 'rgb(var(--mdui-color-primary))', marginBottom: '8px' }}>Про тайтл</h3>
-          <p style={{ lineHeight: '1.6', fontSize: '16px', color: 'rgb(var(--mdui-color-on-surface-variant))', maxWidth: '800px' }}>
+          <h6 className="primary-text" style={{ fontWeight: 600, marginBottom: '8px' }}>
+            Про тайтл
+          </h6>
+          <p style={{ lineHeight: '1.6', maxWidth: '800px', opacity: 0.9 }}>
             {data.overview || 'Опис відсутній.'}
           </p>
         </div>
@@ -256,81 +258,85 @@ const Details = () => {
         {/* TV Series Season & Episode Navigation */}
         {type === 'tv' && (
           <div style={{ marginBottom: '24px' }}>
-            <h3 style={{ fontSize: '18px', color: 'rgb(var(--mdui-color-on-surface))', marginBottom: '12px' }}>Сезон</h3>
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', marginBottom: '16px' }}>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
-                <mdui-chip
+            <h6 style={{ fontWeight: 600, marginBottom: '12px' }}>Сезон</h6>
+            <div className="row no-wrap" style={{ gap: '8px', overflowX: 'auto', paddingBottom: '4px', marginBottom: '16px' }}>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+                <button
                   key={s}
-                  variant="filter"
-                  selected={season === s ? true : undefined}
-                  onClick={() => { setSeason(s); setEpisode(1); }}
-                  style={{ cursor: 'pointer' }}
+                  className={`chip ${season === s ? 'primary' : 'border surface-container-low'}`}
+                  onClick={() => {
+                    setSeason(s);
+                    setEpisode(1);
+                  }}
+                  style={{ flexShrink: 0, cursor: 'pointer' }}
                 >
-                  Сезон {s}
-                </mdui-chip>
+                  <span>Сезон {s}</span>
+                </button>
               ))}
             </div>
 
-            <h3 style={{ fontSize: '18px', color: 'rgb(var(--mdui-color-on-surface))', marginBottom: '12px' }}>Серія</h3>
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-              {Array.from({ length: 24 }, (_, i) => i + 1).map(e => (
-                <mdui-chip
+            <h6 style={{ fontWeight: 600, marginBottom: '12px' }}>Серія</h6>
+            <div className="row no-wrap" style={{ gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+              {Array.from({ length: 24 }, (_, i) => i + 1).map((e) => (
+                <button
                   key={e}
-                  variant="filter"
-                  selected={episode === e ? true : undefined}
+                  className={`chip ${episode === e ? 'primary' : 'border surface-container-low'}`}
                   onClick={() => setEpisode(e)}
-                  style={{ cursor: 'pointer', minWidth: '40px', justifyContent: 'center' }}
+                  style={{ flexShrink: 0, minWidth: '42px', justifyContent: 'center', cursor: 'pointer' }}
                 >
-                  {e}
-                </mdui-chip>
+                  <span>{e}</span>
+                </button>
               ))}
             </div>
           </div>
         )}
 
         {/* Sources / Providers Selector */}
-        <h3 style={{ fontSize: '18px', color: 'rgb(var(--mdui-color-on-surface))', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          Джерела {type === 'tv' && `(Сезон ${season}, Серія ${episode})`}
-          {loadingSources && <mdui-circular-progress indeterminate style={{ width: '18px', height: '18px' }}></mdui-circular-progress>}
-        </h3>
+        <div className="row middle-align" style={{ gap: '12px', marginBottom: '12px' }}>
+          <h6 style={{ fontWeight: 600, margin: 0 }}>
+            Джерела {type === 'tv' && `(Сезон ${season}, Серія ${episode})`}
+          </h6>
+          {loadingSources && <progress className="circle small indeterminate"></progress>}
+        </div>
 
         {sources.length > 0 ? (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+          <div className="row wrap" style={{ gap: '8px', marginBottom: '16px' }}>
             {sources.map((src, index) => {
               const isSelected = selectedSource === src;
               return (
-                <mdui-chip
+                <button
                   key={index}
-                  variant="filter"
-                  selected={isSelected ? true : undefined}
+                  className={`chip ${isSelected ? 'primary' : 'border surface-container-low'}`}
                   onClick={() => setSelectedSource(src)}
                   style={{ cursor: 'pointer' }}
                 >
-                  {formatSourceName(src)}
-                </mdui-chip>
+                  <span>{formatSourceName(src)}</span>
+                </button>
               );
             })}
           </div>
         ) : (
           !loadingSources && (
-            <div style={{ marginBottom: '16px', color: 'rgb(var(--mdui-color-error))' }}>
+            <div className="error-text" style={{ marginBottom: '16px' }}>
               Джерела не знайдені або недоступні
             </div>
           )
         )}
 
         {/* Modern HLS Video Player */}
-        <div style={{
-          width: '100%',
-          maxWidth: '1000px',
-          aspectRatio: '16/9',
-          backgroundColor: '#000',
-          borderRadius: '16px',
-          overflow: 'hidden',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-          marginTop: '16px',
-          position: 'relative',
-        }}>
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '1000px',
+            aspectRatio: '16/9',
+            backgroundColor: '#000',
+            borderRadius: '16px',
+            overflow: 'hidden',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+            marginTop: '16px',
+            position: 'relative',
+          }}
+        >
           {selectedSource ? (
             <video
               ref={videoRef}
@@ -340,20 +346,11 @@ const Details = () => {
               style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             />
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'rgb(var(--mdui-color-on-surface-variant))' }}>
+            <div className="row center-align middle-align fill" style={{ opacity: 0.6 }}>
               {loadingSources ? 'Пошук джерел OMSS...' : 'Відео джерела недоступні'}
             </div>
           )}
         </div>
-
-        <Downloader
-          id={data.id}
-          type={type}
-          title={data.title}
-          originalTitle={data.originalTitle}
-          year={data.year}
-          providers={{}}
-        />
 
         <div style={{ marginTop: '40px' }}>
           <Comments title={data.title} imdbId={data.imdbId} />

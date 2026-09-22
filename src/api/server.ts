@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import fs from 'fs';
@@ -8,11 +7,19 @@ import path from 'path';
 import { omssRouter } from './omss/routes.js';
 import { streamRouter } from './stream/master.js';
 import { catalogRouter } from './catalog/routes.js';
+import { formatHttpLog, log } from '../utils/logger.js';
 
 export const app = new Hono();
 
-// Global middleware
-app.use('*', logger());
+// Global request logger
+app.use('*', async (c, next) => {
+  const start = Date.now();
+  await next();
+  const duration = Date.now() - start;
+  console.log(formatHttpLog(c.req.method, c.req.path, c.res.status, duration));
+});
+
+// Global CORS middleware
 app.use('*', cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'OPTIONS'],
@@ -20,19 +27,35 @@ app.use('*', cors({
   exposeHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges'],
 }));
 
+// Serve frontend SPA from web/dist if built
+const distDir = path.resolve(process.cwd(), 'web/dist');
+const hasWebDist = fs.existsSync(distDir);
+
+if (hasWebDist) {
+  app.use('/assets/*', serveStatic({ root: './web/dist' }));
+  app.use('/favicon.ico', serveStatic({ root: './web/dist' }));
+  app.use('/vite.svg', serveStatic({ root: './web/dist' }));
+
+  // Root HTML request from browser
+  app.get('/', (c, next) => {
+    const accept = c.req.header('accept') || '';
+    if (accept.includes('text/html')) {
+      const indexPath = path.join(distDir, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        return c.html(fs.readFileSync(indexPath, 'utf-8'));
+      }
+    }
+    return next();
+  });
+}
+
 // Mount routers
 app.route('/api', catalogRouter);
 app.route('/', omssRouter);
 app.route('/', streamRouter);
 
-// Serve frontend SPA from web/dist if built
-const distDir = path.resolve(process.cwd(), 'web/dist');
-if (fs.existsSync(distDir)) {
-  app.use('/assets/*', serveStatic({ root: './web/dist' }));
-  app.use('/favicon.ico', serveStatic({ root: './web/dist' }));
-  app.use('/vite.svg', serveStatic({ root: './web/dist' }));
-
-  // Fallback for SPA routing
+// SPA fallback for frontend client routing
+if (hasWebDist) {
   app.get('*', (c, next) => {
     const p = c.req.path;
     if (p.startsWith('/api') || p.startsWith('/v1') || p.startsWith('/master.m3u8')) {
@@ -51,19 +74,18 @@ app.notFound((c) => {
   return c.json({
     error: {
       code: 'ENDPOINT_NOT_FOUND',
-      message: `Endpoint not found: ${c.req.path}`,
+      message: `endpoint not found: ${c.req.path}`,
     },
     traceId: crypto.randomUUID(),
   }, 404);
 });
 
 export function startServer(port = 3000) {
-  console.log(`🚀 Starting UAFilms OMSS v1.1.0 server on port ${port}...`);
   return serve({
     fetch: app.fetch,
     port,
   }, (info) => {
-    console.log(`✅ OMSS Server running at http://localhost:${info.port}`);
+    log('uafilms', `listening on http://localhost:${info.port}`);
   });
 }
 
@@ -74,4 +96,3 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.m
   const port = parseInt(process.env.PORT || '3000', 10);
   startServer(port);
 }
-

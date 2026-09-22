@@ -11,13 +11,16 @@ const Favorites = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <h1 style={{ fontSize: '24px', marginBottom: '24px' }}>Збережене</h1>
-      
+      <h4 style={{ fontWeight: 600, marginBottom: '24px' }}>Збережене</h4>
+
       {favorites.length === 0 ? (
-        <p style={{ color: 'var(--md-sys-color-outline)' }}>Ви ще нічого не зберегли.</p>
+        <div className="center-align padding" style={{ opacity: 0.6, marginTop: '48px' }}>
+          <i style={{ fontSize: '48px', marginBottom: '8px' }}>favorite_border</i>
+          <p>Ви ще нічого не зберегли.</p>
+        </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '16px' }}>
-          {favorites.map(movie => (
+          {favorites.map((movie) => (
             <MovieCard key={movie.id} movie={movie} />
           ))}
         </div>

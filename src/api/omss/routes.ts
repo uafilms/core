@@ -24,11 +24,10 @@ function makeError(code: string, message: string, status: 400 | 404 | 500, detai
 // 4.1 Home / Root Endpoints
 const rootHandler = (c: any) => {
   const response: OmssRootResponse = {
-    name: 'UAFilms Core OMSS',
-    version: '1.1.0',
+    name: 'UAFilms',
+    version: '1.0.0',
     status: 'operational',
-    spec: 'omss',
-    note: 'UAFilms Core Ukrainian Streaming Backend with OMSS v1.1.0 compliance',
+    note: 'uafilms streaming backend',
     endpoints: {
       movie: '/v1/movies/{id}',
       tv: '/v1/tv/{id}/seasons/{s}/episodes/{e}',
@@ -39,7 +38,7 @@ const rootHandler = (c: any) => {
     },
     providers: providers.map(p => ({
       id: p.name,
-      name: p.name.toUpperCase(),
+      name: p.name,
       capabilities: ['movies', 'tv'],
     })),
   };
