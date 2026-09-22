@@ -88,7 +88,7 @@ const Search = () => {
   return (
     <div style={{ padding: '24px' }}>
       <div style={{ marginBottom: '24px' }}>
-        <div className="field prefix round fill surface-container" style={{ width: '100%', margin: 0 }}>
+        <div className="field prefix round fill surface-container no-margin" style={{ width: '100%' }}>
           <i>search</i>
           <input
             type="search"

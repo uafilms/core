@@ -74,21 +74,22 @@ function App() {
       </main>
 
       {/* Beta disclaimer dialog */}
+      {showDisclaimer && <div className="modal-backdrop" onClick={closeDisclaimer}></div>}
       <dialog className={`modal ${showDisclaimer ? 'active' : ''}`} onClick={closeDisclaimer}>
-        <article className="round padding" onClick={(e) => e.stopPropagation()}>
-          <header className="row center-align middle-align">
-            <i className="primary-text" style={{ fontSize: '32px' }}>info</i>
-            <h5 className="no-margin">Beta-тестування</h5>
+        <article className="round padding surface-container-high" onClick={(e) => e.stopPropagation()}>
+          <header className="row center-align middle-align" style={{ gap: '10px' }}>
+            <i className="primary-text" style={{ fontSize: '28px', lineHeight: 1 }}>info</i>
+            <h5 className="no-margin" style={{ fontWeight: 600 }}>Beta-тестування</h5>
           </header>
           <div className="space"></div>
-          <p className="center-align">
+          <p className="center-align" style={{ margin: '8px 0', lineHeight: 1.6 }}>
             Ласкаво просимо на <b>UAFilms</b>!
             <br /><br />
-            Проєкт переписано на сучасний стек з BeerCSS та OMSS специфікацією.
+            Проєкт переписано на сучасний стек з BeerCSS.
           </p>
           <div className="space"></div>
-          <nav className="right-align">
-            <button className="primary" onClick={closeDisclaimer}>Зрозуміло</button>
+          <nav className="right-align" style={{ marginTop: '16px' }}>
+            <button className="primary round" onClick={closeDisclaimer}>Зрозуміло</button>
           </nav>
         </article>
       </dialog>

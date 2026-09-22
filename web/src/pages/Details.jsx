@@ -347,7 +347,7 @@ const Details = () => {
             />
           ) : (
             <div className="row center-align middle-align fill" style={{ opacity: 0.6 }}>
-              {loadingSources ? 'Пошук джерел OMSS...' : 'Відео джерела недоступні'}
+              {loadingSources ? 'Пошук джерел...' : 'Відео джерела недоступні'}
             </div>
           )}
         </div>

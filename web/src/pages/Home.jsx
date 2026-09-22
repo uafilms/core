@@ -84,7 +84,7 @@ const Home = () => {
           <BetaBadge />
         </div>
 
-        <div className="field prefix round fill surface-container" style={{ width: '100%', margin: 0 }}>
+        <div className="field prefix round fill surface-container no-margin" style={{ width: '100%' }}>
           <i>search</i>
           <input
             type="text"

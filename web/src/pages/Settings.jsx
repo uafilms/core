@@ -86,8 +86,12 @@ const Settings = () => {
                 Оберіть вигляд інтерфейсу.
               </p>
             </div>
-            <div className="field suffix round fill surface-container-high" style={{ minWidth: '140px', margin: 0 }}>
-              <select value={theme} onChange={(e) => handleThemeChange(e.target.value)}>
+            <div className="field suffix round fill surface-container-high no-margin" style={{ minWidth: '140px' }}>
+              <select
+                value={theme}
+                onChange={(e) => handleThemeChange(e.target.value)}
+                style={{ cursor: 'pointer', paddingRight: '2.5rem' }}
+              >
                 <option value="dark">Темна</option>
                 <option value="light">Світла</option>
               </select>
@@ -211,7 +215,7 @@ const Settings = () => {
 
           <div className="divider"></div>
 
-          <div className="row middle-align" style={{ marginTop: '16px', marginBottom: '16px' }}>
+          <div className="row middle-align" style={{ marginTop: '16px' }}>
             <div className="max">
               <h6 style={{ margin: 0, fontWeight: 600 }}>Показувати контент 18+</h6>
               <p className="small-text surface-variant-text" style={{ margin: '4px 0 0 0' }}>
@@ -227,43 +231,6 @@ const Settings = () => {
               <span></span>
             </label>
           </div>
-
-          <div className="divider"></div>
-
-          <div className="row middle-align" style={{ marginTop: '16px' }}>
-            <div className="max">
-              <h6 style={{ margin: 0, fontWeight: 600 }}>Англомовні джерела</h6>
-              <p className="small-text surface-variant-text" style={{ margin: '4px 0 0 0' }}>
-                Додає провайдерів з англійською озвучкою.
-              </p>
-            </div>
-            <label className="switch">
-              <input
-                type="checkbox"
-                checked={engSource}
-                onChange={(e) => saveSettings('engSource', e.target.checked)}
-              />
-              <span></span>
-            </label>
-          </div>
-
-          {engSource && (
-            <div className="row middle-align" style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--outline-variant)' }}>
-              <div className="max">
-                <h6 style={{ margin: 0, fontWeight: 600 }}>Режим відображення</h6>
-                <p className="small-text surface-variant-text" style={{ margin: '4px 0 0 0' }}>
-                  Оберіть, які джерела показувати.
-                </p>
-              </div>
-              <div className="field suffix round fill surface-container-high" style={{ minWidth: '150px', margin: 0 }}>
-                <select value={engMode} onChange={(e) => saveSettings('engMode', e.target.value)}>
-                  <option value="mixed">UA + ENG</option>
-                  <option value="only_eng">Тільки ENG</option>
-                </select>
-                <i>arrow_drop_down</i>
-              </div>
-            </div>
-          )}
         </article>
 
         {/* ===== Block 4: Спільнота & Підтримка ===== */}
