@@ -6,7 +6,7 @@
   --font-icon: "Material Symbols Rounded";
 }
 
-*, *::before, *::after {
+body, input, button, select, textarea {
   font-family: var(--font);
 }
 
