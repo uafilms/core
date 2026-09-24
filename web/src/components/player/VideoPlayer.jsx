@@ -1,28 +1,29 @@
 import React, { useEffect, useRef, useState } from 'react';
 import videojs from 'video.js';
-import 'videojs-contrib-quality-levels';
+import 'video.js/dist/video-js.css';
 import 'videojs-hotkeys';
 import 'videojs-mobile-ui';
+import 'videojs-mobile-ui/dist/videojs-mobile-ui.css';
 import './player-style.css';
 
 export default function VideoPlayer({
   src,
   type = 'application/x-mpegURL',
   poster,
-  title,
   subtitles = [],
   sources = [],
-  selectedSource,
-  onSourceChange,
+  selectedSource = null,
+  onSourceChange = null,
 }) {
   const videoNode = useRef(null);
   const playerRef = useRef(null);
-  const [activeMenu, setActiveMenu] = useState(null); // null | 'quality' | 'audio' | 'speed' | 'subs'
+
+  const [activeMenu, setActiveMenu] = useState(null); // null | 'main' | 'quality' | 'audio' | 'speed' | 'subs'
   const [qualities, setQualities] = useState([]);
   const [selectedQuality, setSelectedQuality] = useState(-1); // -1 = Auto
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [subsList, setSubsList] = useState([]);
-  const [activeSub, setActiveSub] = useState('off');
+  const [textTracksList, setTextTracksList] = useState([]);
+  const [selectedTrackIndex, setSelectedTrackIndex] = useState(-1); // -1 = Off
 
   useEffect(() => {
     if (!videoNode.current) return;
@@ -38,7 +39,6 @@ export default function VideoPlayer({
         }
         createEl() {
           const el = super.createEl();
-          // Remove auto-added vjs-icon-placeholder — we use Material Symbols instead
           const placeholder = el.querySelector('.vjs-icon-placeholder');
           if (placeholder) placeholder.remove();
           const icon = videojs.dom.createEl('span', {
@@ -82,6 +82,7 @@ export default function VideoPlayer({
         },
         nativeVideoTracks: false,
         nativeAudioTracks: false,
+        nativeTextTracks: false,
       },
     });
 
@@ -120,6 +121,39 @@ export default function VideoPlayer({
         setActiveMenu((prev) => (prev ? null : 'main'));
       });
     }
+
+    // Track text tracks (subtitles from HLS #EXT-X-MEDIA or remote tracks)
+    const updateTextTracks = () => {
+      const tracks = player.textTracks();
+      const list = [];
+      let activeIdx = -1;
+
+      for (let i = 0; i < tracks.length; i++) {
+        const t = tracks[i];
+        if (t.kind === 'subtitles' || t.kind === 'captions') {
+          const label = t.label || t.language || `Субтитри ${list.length + 1}`;
+          list.push({
+            index: i,
+            label,
+            language: t.language,
+            mode: t.mode,
+          });
+          if (t.mode === 'showing') {
+            activeIdx = i;
+          }
+        }
+      }
+      setTextTracksList(list);
+      setSelectedTrackIndex(activeIdx);
+    };
+
+    const tracks = player.textTracks();
+    if (tracks) {
+      tracks.addEventListener('addtrack', updateTextTracks);
+      tracks.addEventListener('removetrack', updateTextTracks);
+      tracks.addEventListener('change', updateTextTracks);
+    }
+    player.on('loadedmetadata', updateTextTracks);
 
     // Bind quality levels
     if (player.qualityLevels) {
@@ -197,17 +231,31 @@ export default function VideoPlayer({
     const ql = player.qualityLevels();
 
     if (targetIndex === -1) {
-      // Auto: enable all levels
       for (let i = 0; i < ql.length; i++) {
         ql[i].enabled = true;
       }
     } else {
-      // Specific level: enable only target
       for (let i = 0; i < ql.length; i++) {
         ql[i].enabled = i === targetIndex;
       }
     }
     setSelectedQuality(targetIndex);
+    setActiveMenu(null);
+  };
+
+  // Handle Subtitle selection
+  const setSubtitleTrack = (targetIndex) => {
+    const player = playerRef.current;
+    if (!player) return;
+    const tracks = player.textTracks();
+    if (!tracks) return;
+
+    for (let i = 0; i < tracks.length; i++) {
+      if (tracks[i].kind === 'subtitles' || tracks[i].kind === 'captions') {
+        tracks[i].mode = (i === targetIndex) ? 'showing' : 'disabled';
+      }
+    }
+    setSelectedTrackIndex(targetIndex);
     setActiveMenu(null);
   };
 
@@ -237,24 +285,34 @@ export default function VideoPlayer({
                   <i className="material-symbols-rounded">mic</i>
                   <span>Озвучка</span>
                 </div>
-                <div className="vjs-settings-val">
-                  {(() => {
-                    const track = selectedSource?.audioTracks?.[0];
-                    const trackStr = typeof track === 'string' ? track : (track?.label || track?.language || '');
-                    if (!trackStr) return selectedSource?.provider?.name || 'Default';
-                    const match = trackStr.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
-                    const langPart = match ? match[1].trim() : trackStr;
-                    const typePart = match ? match[2].trim() : '';
-                    const l = langPart.toLowerCase();
-                    const emoji = l.includes('ukrainian') || l.includes('uk') ? '🇺🇦'
-                      : l.includes('english') || l.includes('en') ? '🇬🇧'
-                      : l.includes('russian') || l.includes('ru') ? '🇷🇺'
-                      : l.includes('polish') || l.includes('pl') ? '🇵🇱'
-                      : '🌐';
-                    return typePart ? `${emoji} ${typePart}` : `${emoji} ${langPart}`;
-                  })()}
+                <div className="vjs-settings-val" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {selectedSource?.studio?.logoUrl && (
+                    <img
+                      src={selectedSource.studio.logoUrl}
+                      alt=""
+                      className="vjs-studio-logo-sm"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  )}
+                  <span style={{ maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {selectedSource?.studio?.name || selectedSource?.audioTracks?.[0] || 'За замовчуванням'}
+                  </span>
                 </div>
               </div>
+
+              {textTracksList.length > 0 && (
+                <div className="vjs-settings-item" onClick={() => setActiveMenu('subs')}>
+                  <div className="vjs-settings-label">
+                    <i className="material-symbols-rounded">subtitles</i>
+                    <span>Субтитри</span>
+                  </div>
+                  <div className="vjs-settings-val">
+                    {selectedTrackIndex === -1
+                      ? 'Вимкнено'
+                      : textTracksList.find((t) => t.index === selectedTrackIndex)?.label || 'Увімкнено'}
+                  </div>
+                </div>
+              )}
 
               <div className="vjs-settings-item" onClick={() => setActiveMenu('quality')}>
                 <div className="vjs-settings-label">
@@ -286,31 +344,35 @@ export default function VideoPlayer({
               </div>
               <div className="vjs-submenu-scroll">
                 {(() => {
-                  // Find all sources from the same provider / CDN as selectedSource
-                  const sameProviderSources = sources.filter(
-                    (s) => s.provider?.id === selectedSource?.provider?.id
-                  );
-                  const availableList = sameProviderSources.length > 0 ? sameProviderSources : [selectedSource].filter(Boolean);
+                  const currentProviderId = selectedSource?.provider?.id;
+                  const allSources = sources && sources.length > 0 ? sources : [selectedSource].filter(Boolean);
+                  // Filter sources strictly to the currently selected provider/CDN
+                  const filtered = currentProviderId
+                    ? allSources.filter((s) => s.provider?.id === currentProviderId)
+                    : allSources;
+                  const availableList = filtered.length > 0 ? filtered : allSources;
 
-                  return availableList.map((srcOption) => {
+                  // Deduplicate identical streams if multiple identical studio/urls appear
+                  const seenTracks = new Set();
+                  const uniqueList = [];
+                  for (const s of availableList) {
+                    const trackKey = `${s.studio?.name || s.audioTracks?.[0] || ''}:${s.url}`;
+                    if (!seenTracks.has(trackKey)) {
+                      seenTracks.add(trackKey);
+                      uniqueList.push(s);
+                    }
+                  }
+
+                  return uniqueList.map((srcOption) => {
                     const isSelected = (srcOption.id || srcOption.url) === (selectedSource?.id || selectedSource?.url);
-                    const track = srcOption.audioTracks?.[0];
-                    const trackStr = typeof track === 'string' ? track : (track?.label || track?.language || '');
-                    const match = trackStr ? trackStr.match(/^(.*?)\s*\(([^)]+)\)\s*$/) : null;
-                    const langPart = match ? match[1].trim() : (trackStr || 'Ukrainian');
-                    const typePart = match ? match[2].trim() : '';
-                    const l = langPart.toLowerCase();
-                    const emoji = l.includes('ukrainian') || l.includes('uk') ? '🇺🇦'
-                      : l.includes('english') || l.includes('en') ? '🇬🇧'
-                      : l.includes('russian') || l.includes('ru') ? '🇷🇺'
-                      : l.includes('polish') || l.includes('pl') ? '🇵🇱'
-                      : '🌐';
-                    const label = typePart ? `${emoji} ${typePart}` : `${emoji} ${langPart}`;
+                    const studioName = srcOption.studio?.name || srcOption.audioTracks?.[0] || 'Озвучення';
+                    const logoUrl = srcOption.studio?.logoUrl;
+                    const isSub = srcOption.lang && srcOption.lang !== 'uk';
 
                     return (
                       <div
                         key={srcOption.id || srcOption.url}
-                        className={`vjs-submenu-option ${isSelected ? 'selected' : ''}`}
+                        className={`vjs-submenu-option vjs-audio-option ${isSelected ? 'selected' : ''}`}
                         onClick={() => {
                           if (onSourceChange) {
                             onSourceChange(srcOption);
@@ -318,11 +380,53 @@ export default function VideoPlayer({
                           setActiveMenu(null);
                         }}
                       >
-                        {label}
+                        {logoUrl ? (
+                          <div className="vjs-studio-logo-wrapper">
+                            <img
+                              src={logoUrl}
+                              alt=""
+                              className="vjs-studio-logo"
+                              onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }}
+                            />
+                          </div>
+                        ) : null}
+                        <div className="vjs-audio-text-group">
+                          <span className="vjs-audio-title">{studioName}</span>
+                          <span className="vjs-audio-sub">
+                            {isSub && <span className="vjs-audio-badge">Субтитри</span>}
+                            {srcOption.quality && <span>{srcOption.quality}</span>}
+                          </span>
+                        </div>
                       </div>
                     );
                   });
                 })()}
+              </div>
+            </div>
+          )}
+
+          {activeMenu === 'subs' && (
+            <div>
+              <div className="vjs-submenu-header" onClick={() => setActiveMenu('main')}>
+                <i className="material-symbols-rounded">arrow_back</i>
+                <span>Субтитри</span>
+              </div>
+              <div className="vjs-submenu-scroll">
+                <div
+                  className={`vjs-submenu-option ${selectedTrackIndex === -1 ? 'selected' : ''}`}
+                  onClick={() => setSubtitleTrack(-1)}
+                >
+                  Вимкнено
+                </div>
+                {textTracksList.map((track) => (
+                  <div
+                    key={track.index}
+                    className={`vjs-submenu-option ${selectedTrackIndex === track.index ? 'selected' : ''}`}
+                    onClick={() => setSubtitleTrack(track.index)}
+                  >
+                    {track.label}
+                  </div>
+                ))}
               </div>
             </div>
           )}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/axios';
 import VideoPlayer from '../components/player/VideoPlayer';
@@ -44,6 +44,34 @@ const Details = () => {
   // TV Series Navigation
   const [season, setSeason] = useState(1);
   const [episode, setEpisode] = useState(1);
+
+  // Calculate available seasons and episodes dynamically
+  const availableSeasons = useMemo(() => {
+    if (data?.seasons && Array.isArray(data.seasons) && data.seasons.length > 0) {
+      return data.seasons;
+    }
+    const count = data?.numberOfSeasons || 1;
+    return Array.from({ length: count }, (_, i) => ({
+      seasonNumber: i + 1,
+      name: `Сезон ${i + 1}`,
+      episodeCount: 24,
+    }));
+  }, [data]);
+
+  const currentSeasonObj = useMemo(() => {
+    return availableSeasons.find((s) => s.seasonNumber === season) || availableSeasons[0] || { seasonNumber: 1, episodeCount: 1 };
+  }, [availableSeasons, season]);
+
+  const availableEpisodes = useMemo(() => {
+    const count = currentSeasonObj?.episodeCount || 1;
+    return Array.from({ length: count }, (_, i) => i + 1);
+  }, [currentSeasonObj]);
+
+  useEffect(() => {
+    if (episode > availableEpisodes.length) {
+      setEpisode(1);
+    }
+  }, [availableEpisodes, episode]);
 
   // 1. Fetch Metadata
   useEffect(() => {
@@ -275,9 +303,9 @@ const Details = () => {
               <span className="small-text surface-variant-text" style={{ fontWeight: 500 }}>Сезон</span>
               <Dropdown
                 value={season}
-                options={[1, 2, 3, 4, 5, 6, 7, 8].map((s) => ({
-                  value: s,
-                  label: `Сезон ${s}`,
+                options={availableSeasons.map((s) => ({
+                  value: s.seasonNumber,
+                  label: s.name || `Сезон ${s.seasonNumber}`,
                 }))}
                 onChange={(s) => {
                   setSeason(s);
@@ -290,7 +318,7 @@ const Details = () => {
               <span className="small-text surface-variant-text" style={{ fontWeight: 500 }}>Серія</span>
               <Dropdown
                 value={episode}
-                options={Array.from({ length: 24 }, (_, i) => i + 1).map((e) => ({
+                options={availableEpisodes.map((e) => ({
                   value: e,
                   label: `Серія ${e}`,
                 }))}
