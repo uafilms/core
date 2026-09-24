@@ -19,11 +19,46 @@ export default function VideoPlayer({
   const playerRef = useRef(null);
 
   const [activeMenu, setActiveMenu] = useState(null); // null | 'main' | 'quality' | 'audio' | 'speed' | 'subs'
+  const activeMenuRef = useRef(null);
+  const [renderedMenu, setRenderedMenu] = useState(null);
+  const [isClosing, setIsClosing] = useState(false);
+  const [navDirection, setNavDirection] = useState('forward'); // 'forward' | 'back'
   const [qualities, setQualities] = useState([]);
   const [selectedQuality, setSelectedQuality] = useState(-1); // -1 = Auto
   const [playbackRate, setPlaybackRate] = useState(1);
   const [textTracksList, setTextTracksList] = useState([]);
   const [selectedTrackIndex, setSelectedTrackIndex] = useState(-1); // -1 = Off
+  const closeTimeoutRef = useRef(null);
+
+  const openMenu = (menu) => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    setIsClosing(false);
+    setNavDirection('forward');
+    setActiveMenu(menu);
+    activeMenuRef.current = menu;
+    setRenderedMenu(menu);
+  };
+
+  const switchMenu = (menu, direction = 'forward') => {
+    setNavDirection(direction);
+    setActiveMenu(menu);
+    activeMenuRef.current = menu;
+    setRenderedMenu(menu);
+  };
+
+  const closeMenu = () => {
+    if (!activeMenuRef.current) return;
+    setIsClosing(true);
+    closeTimeoutRef.current = setTimeout(() => {
+      setActiveMenu(null);
+      activeMenuRef.current = null;
+      setRenderedMenu(null);
+      setIsClosing(false);
+    }, 200);
+  };
 
   useEffect(() => {
     if (!videoNode.current) return;
@@ -118,7 +153,11 @@ export default function VideoPlayer({
     if (settingsBtn) {
       settingsBtn.on('click', (e) => {
         e.stopPropagation();
-        setActiveMenu((prev) => (prev ? null : 'main'));
+        if (activeMenuRef.current) {
+          closeMenu();
+        } else {
+          openMenu('main');
+        }
       });
     }
 
@@ -205,6 +244,26 @@ export default function VideoPlayer({
     };
   }, []);
 
+  // Close settings menu when clicking outside
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (activeMenuRef.current) {
+        const settingsMenuEl = document.querySelector('.vjs-settings-menu');
+        const settingsBtnEl = document.querySelector('.vjs-settings-btn');
+        if (
+          settingsMenuEl && !settingsMenuEl.contains(e.target) &&
+          settingsBtnEl && !settingsBtnEl.contains(e.target)
+        ) {
+          closeMenu();
+        }
+      }
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => {
+      document.removeEventListener('click', handleOutsideClick);
+    };
+  }, []);
+
   // Update src dynamically without recreating player
   useEffect(() => {
     const player = playerRef.current;
@@ -240,7 +299,7 @@ export default function VideoPlayer({
       }
     }
     setSelectedQuality(targetIndex);
-    setActiveMenu(null);
+    closeMenu();
   };
 
   // Handle Subtitle selection
@@ -256,7 +315,7 @@ export default function VideoPlayer({
       }
     }
     setSelectedTrackIndex(targetIndex);
-    setActiveMenu(null);
+    closeMenu();
   };
 
   // Handle Rate selection
@@ -266,7 +325,7 @@ export default function VideoPlayer({
       player.playbackRate(rate);
       setPlaybackRate(rate);
     }
-    setActiveMenu(null);
+    closeMenu();
   };
 
   return (
@@ -276,11 +335,14 @@ export default function VideoPlayer({
       </div>
 
       {/* BeerCSS M3 Settings Menu */}
-      {activeMenu && (
-        <div className="vjs-settings-menu" onClick={(e) => e.stopPropagation()}>
-          {activeMenu === 'main' && (
-            <div className="vjs-main-menu">
-              <div className="vjs-settings-item" onClick={() => setActiveMenu('audio')}>
+      {renderedMenu && (
+        <div
+          className={`vjs-settings-menu ${isClosing ? 'vjs-menu-closing' : 'vjs-menu-open'}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {renderedMenu === 'main' && (
+            <div className={`vjs-menu-page ${navDirection === 'back' ? 'vjs-page-back' : ''}`}>
+              <div className="vjs-settings-item" onClick={() => switchMenu('audio', 'forward')}>
                 <div className="vjs-settings-label">
                   <i className="material-symbols-rounded">mic</i>
                   <span>Озвучка</span>
@@ -301,7 +363,7 @@ export default function VideoPlayer({
               </div>
 
               {textTracksList.length > 0 && (
-                <div className="vjs-settings-item" onClick={() => setActiveMenu('subs')}>
+                <div className="vjs-settings-item" onClick={() => switchMenu('subs', 'forward')}>
                   <div className="vjs-settings-label">
                     <i className="material-symbols-rounded">subtitles</i>
                     <span>Субтитри</span>
@@ -314,7 +376,7 @@ export default function VideoPlayer({
                 </div>
               )}
 
-              <div className="vjs-settings-item" onClick={() => setActiveMenu('quality')}>
+              <div className="vjs-settings-item" onClick={() => switchMenu('quality', 'forward')}>
                 <div className="vjs-settings-label">
                   <i className="material-symbols-rounded">hd</i>
                   <span>Якість</span>
@@ -326,7 +388,7 @@ export default function VideoPlayer({
                 </div>
               </div>
 
-              <div className="vjs-settings-item" onClick={() => setActiveMenu('speed')}>
+              <div className="vjs-settings-item" onClick={() => switchMenu('speed', 'forward')}>
                 <div className="vjs-settings-label">
                   <i className="material-symbols-rounded">speed</i>
                   <span>Швидкість</span>
@@ -336,9 +398,9 @@ export default function VideoPlayer({
             </div>
           )}
 
-          {activeMenu === 'audio' && (
-            <div>
-              <div className="vjs-submenu-header" onClick={() => setActiveMenu('main')}>
+          {renderedMenu === 'audio' && (
+            <div className={`vjs-menu-page ${navDirection === 'back' ? 'vjs-page-back' : ''}`}>
+              <div className="vjs-submenu-header" onClick={() => switchMenu('main', 'back')}>
                 <i className="material-symbols-rounded">arrow_back</i>
                 <span>Озвучка</span>
               </div>
@@ -377,7 +439,7 @@ export default function VideoPlayer({
                           if (onSourceChange) {
                             onSourceChange(srcOption);
                           }
-                          setActiveMenu(null);
+                          closeMenu();
                         }}
                       >
                         {logoUrl ? (
@@ -405,9 +467,9 @@ export default function VideoPlayer({
             </div>
           )}
 
-          {activeMenu === 'subs' && (
-            <div>
-              <div className="vjs-submenu-header" onClick={() => setActiveMenu('main')}>
+          {renderedMenu === 'subs' && (
+            <div className={`vjs-menu-page ${navDirection === 'back' ? 'vjs-page-back' : ''}`}>
+              <div className="vjs-submenu-header" onClick={() => switchMenu('main', 'back')}>
                 <i className="material-symbols-rounded">arrow_back</i>
                 <span>Субтитри</span>
               </div>
@@ -431,9 +493,9 @@ export default function VideoPlayer({
             </div>
           )}
 
-          {activeMenu === 'quality' && (
-            <div>
-              <div className="vjs-submenu-header" onClick={() => setActiveMenu('main')}>
+          {renderedMenu === 'quality' && (
+            <div className={`vjs-menu-page ${navDirection === 'back' ? 'vjs-page-back' : ''}`}>
+              <div className="vjs-submenu-header" onClick={() => switchMenu('main', 'back')}>
                 <i className="material-symbols-rounded">arrow_back</i>
                 <span>Якість відео</span>
               </div>
@@ -457,9 +519,9 @@ export default function VideoPlayer({
             </div>
           )}
 
-          {activeMenu === 'speed' && (
-            <div>
-              <div className="vjs-submenu-header" onClick={() => setActiveMenu('main')}>
+          {renderedMenu === 'speed' && (
+            <div className={`vjs-menu-page ${navDirection === 'back' ? 'vjs-page-back' : ''}`}>
+              <div className="vjs-submenu-header" onClick={() => switchMenu('main', 'back')}>
                 <i className="material-symbols-rounded">arrow_back</i>
                 <span>Швидкість відтворення</span>
               </div>

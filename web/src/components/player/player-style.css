@@ -102,10 +102,21 @@
   line-height: normal !important;
 }
 
-/* Strip BeerCSS wave pseudo-elements from all Video.js controls */
+/* Strip BeerCSS wave and other pseudo-elements from all Video.js controls and sub-elements */
 .video-js button::after,
+.video-js button::before,
 .video-js .vjs-button::after,
-.video-js .vjs-control::after {
+.video-js .vjs-button::before,
+.video-js .vjs-control::after,
+.video-js .vjs-control::before,
+.video-js .vjs-time-control::after,
+.video-js .vjs-time-control::before,
+.video-js .vjs-time-divider::after,
+.video-js .vjs-time-divider::before,
+.video-js .vjs-time-divider div::after,
+.video-js .vjs-time-divider div::before,
+.video-js .vjs-time-divider span::after,
+.video-js .vjs-time-divider span::before {
   content: none !important;
   display: none !important;
 }
@@ -281,14 +292,24 @@
   color: #fff !important;
 }
 
+/* Play toggle button */
+.video-js .vjs-play-control {
+  margin-right: 8px !important;
+  flex-shrink: 0 !important;
+}
+
 /* Volume Panel */
-.video-js .vjs-volume-panel {
+.video-js .vjs-volume-panel,
+.video-js .vjs-control-bar .vjs-volume-panel {
   display: flex !important;
   align-items: center !important;
   width: auto !important;
+  max-width: none !important;
   flex-shrink: 0 !important;
-  transition: width 0.2s ease !important;
-  margin-right: 6px;
+  transition: width 0.2s cubic-bezier(0.2, 0, 0, 1) !important;
+  margin-right: 12px !important;
+  position: relative !important;
+  z-index: 2 !important;
 }
 
 .video-js .vjs-mute-control {
@@ -297,34 +318,49 @@
   flex-shrink: 0 !important;
 }
 
-.video-js .vjs-volume-control {
-  width: 0;
-  opacity: 0;
-  transition: width 0.2s ease, opacity 0.2s ease;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
+.video-js .vjs-volume-control,
+.video-js .vjs-volume-panel .vjs-volume-control,
+.video-js .vjs-volume-panel .vjs-volume-control.vjs-volume-horizontal {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  transition: width 0.2s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s cubic-bezier(0.2, 0, 0, 1), visibility 0.2s ease !important;
+  overflow: hidden !important;
+  display: flex !important;
+  align-items: center !important;
+  position: static !important;
+  left: auto !important;
+  top: auto !important;
+  height: 40px !important;
+  margin: 0 !important;
+  flex-shrink: 0 !important;
 }
 
 .video-js .vjs-volume-panel:hover .vjs-volume-control,
-.video-js .vjs-volume-panel.vjs-slider-active .vjs-volume-control {
-  width: 72px;
-  opacity: 1;
+.video-js .vjs-volume-panel.vjs-slider-active .vjs-volume-control,
+.video-js .vjs-volume-panel.vjs-hover .vjs-volume-control {
+  width: 72px !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  margin-left: 2px !important;
 }
 
-.video-js .vjs-volume-bar {
-  height: 4px;
-  width: 100%;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 9999px;
-  margin: 0 6px;
-  cursor: pointer;
+.video-js .vjs-volume-bar,
+.video-js .vjs-volume-bar.vjs-slider-horizontal {
+  height: 4px !important;
+  width: 100% !important;
+  background: rgba(255, 255, 255, 0.2) !important;
+  border-radius: 9999px !important;
+  margin: 0 6px !important;
+  cursor: pointer !important;
 }
 
 .video-js .vjs-volume-level {
-  background: var(--vjs-primary);
-  height: 100%;
-  border-radius: 9999px;
+  background: var(--vjs-primary) !important;
+  height: 100% !important;
+  border-radius: 9999px !important;
 }
 
 /* Progress Control */
@@ -407,8 +443,9 @@
   line-height: 40px !important;
   font-size: 13px;
   font-weight: 500;
-  min-width: auto;
-  padding: 0 4px !important;
+  min-width: 0 !important;
+  width: auto !important;
+  padding: 0 !important;
   color: var(--vjs-on-surface-variant);
   box-sizing: border-box !important;
 }
@@ -416,7 +453,20 @@
 .video-js .vjs-current-time,
 .video-js .vjs-duration {
   display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   flex-shrink: 0 !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  letter-spacing: 0.5px !important;
+}
+
+.video-js .vjs-current-time-display,
+.video-js .vjs-duration-display {
+  display: inline-block !important;
+  line-height: 1 !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 .video-js .vjs-time-divider,
@@ -425,17 +475,21 @@
   align-items: center !important;
   justify-content: center !important;
   width: auto !important;
-  min-width: auto !important;
+  min-width: 0 !important;
   flex-shrink: 0 !important;
-  padding: 0 2px !important;
+  padding: 0 4px !important;
+  margin: 0 !important;
   border-radius: 0 !important;
   font-family: Roboto, Arial, sans-serif !important;
   font-size: 13px !important;
   color: var(--vjs-on-surface-variant) !important;
+  background: transparent !important;
+  line-height: 1 !important;
 }
 
 .video-js .vjs-time-divider div,
 .video-js .vjs-time-divider span {
+  display: inline-block !important;
   font-family: Roboto, Arial, sans-serif !important;
   font-size: 13px !important;
   color: var(--vjs-on-surface-variant) !important;
@@ -444,6 +498,9 @@
   font-style: normal !important;
   font-feature-settings: normal !important;
   speak: auto !important;
+  background: transparent !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 .video-js .vjs-remaining-time {
@@ -469,17 +526,54 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
   border: 1px solid var(--vjs-outline-variant);
   overflow: hidden;
-  animation: vjsPopUp 0.2s cubic-bezier(0.2, 0, 0, 1);
+  opacity: 0;
+  transform: translateY(10px) scale(0.96);
+  transition: opacity 0.2s cubic-bezier(0.2, 0, 0, 1), transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+  pointer-events: none;
 }
 
-@keyframes vjsPopUp {
+.vjs-settings-menu.vjs-menu-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.vjs-settings-menu.vjs-menu-closing {
+  opacity: 0;
+  transform: translateY(10px) scale(0.96);
+  pointer-events: none;
+}
+
+.vjs-menu-page {
+  animation: vjsPageEnter 0.2s cubic-bezier(0.2, 0, 0, 1) forwards;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+@keyframes vjsPageEnter {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.97);
+    transform: translateX(12px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateX(0);
+  }
+}
+
+.vjs-menu-page.vjs-page-back {
+  animation: vjsPageBack 0.2s cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+
+@keyframes vjsPageBack {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
