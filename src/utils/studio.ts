@@ -142,11 +142,17 @@ export const KNOWN_STUDIOS: Record<string, StudioDefinition> = {
     aliases: ['так треба продакшн', 'тактребапродакшн', 'так треба', 'tak треба', 'tak treba', 'taktreba', 'ttp'],
     logoFile: 'taktreba.png',
   },
+  cinemasound: {
+    name: 'Cinema Sound Production',
+    aliases: ['cinema sound', 'сінема саунд', 'синема саунд'],
+    logoFile: 'cinemasound.png',
+  },
 
   // Студії озвучки фільмів / серіалів
   dniprofilm: {
     name: 'DniproFilm',
     aliases: ['дніпрофільм', 'дніпрофілм', 'dniprofilm'],
+    logoFile: 'dniprofilm.jpg',
   },
   tsikavaideya: {
     name: 'Цікава Ідея',
@@ -171,6 +177,16 @@ export const KNOWN_STUDIOS: Record<string, StudioDefinition> = {
     aliases: ['bambooua', 'bamboo', 'бамбу'],
     logoFile: 'bamboo.png',
   },
+  ukrdub: {
+    name: 'UkrDub',
+    aliases: ['ukrdub', 'укрдаб'],
+    logoFile: 'ukrdub.png',
+  },
+  blueberry: {
+    name: 'Blueberry Studio',
+    aliases: ['blueberry studio', 'blueberry', 'блюберрі студіо', 'блюберрі'],
+    logoFile: 'blueberry-studio.jpg',
+  },
   sunnysiders: {
     name: 'Sunnysiders',
     aliases: ['sunnysiders', 'санісайдерс'],
@@ -190,6 +206,27 @@ export const KNOWN_STUDIOS: Record<string, StudioDefinition> = {
   robotagolosom: {
     name: 'Робота Голосом',
     aliases: ['робота голосом', 'роботаголосом', 'рідний голос'],
+    logoFile: 'robota-holosom.jpg',
+  },
+  unimay: {
+    name: 'Unimay',
+    aliases: ['unimay', 'юнімей', 'унімей', 'unimay media'],
+    logoFile: 'unimay.jpg',
+  },
+  kachur: {
+    name: 'Студія Качур',
+    aliases: ['студія качур', 'качур', 'kachur', 'kachur studio'],
+    logoFile: 'studio-kachur.jpg',
+  },
+  hatoshi: {
+    name: 'HATOSHI',
+    aliases: ['hatoshi', 'хатоші'],
+    logoFile: 'hatoshi.jpg',
+  },
+  maysternyasliv: {
+    name: 'Майстерня Слів',
+    aliases: ['майстерня слів', 'майстерняслів', 'майстерня слiв', 'maysternya sliv', 'maysterna sliv'],
+    logoFile: 'maysterna-sliv.jpg',
   },
   kit: {
     name: 'КІТ',
@@ -465,11 +502,31 @@ export const KNOWN_STUDIOS: Record<string, StudioDefinition> = {
     aliases: ['shogun', 'сьогун'],
     logoFile: 'shogun.webp',
   },
+  togarashi: {
+    name: 'Togarashi',
+    aliases: ['togarashi', 'тогараші'],
+    logoFile: 'togarashi.jpg',
+  },
+  sviydub: {
+    name: 'СвійDUB',
+    aliases: ['свійdub', 'свій dub', 'свійдаб', 'свій даб', 'sviydub', 'sviy dub', 'svijdub', 'svij dub'],
+    logoFile: 'sviydub.jpg',
+  },
 
   // Субтитри
   subtitles: {
     name: 'Субтитри',
-    aliases: ['субтитри', 'subtitles', 'sub'],
+    aliases: ['субтитри', 'subtitles'],
+  },
+  uaanisub: {
+    name: 'UaAniSub',
+    aliases: ['uaanisub', 'uaani sub', 'ua-ani-sub', 'уаанісаб', 'юаанісаб', 'уа ані саб'],
+    logoFile: 'uaanisub.jpg',
+  },
+  svijsub: {
+    name: 'СвійSUB',
+    aliases: ['свійsub', 'свій sub', 'svijsub', 'svij sub', 'свийsub', 'свійсаб', 'свій саб'],
+    logoFile: 'sviydub.jpg',
   },
   chornyi_veres: {
     name: 'Чорний Верес',
@@ -511,10 +568,11 @@ export function cleanStudioName(rawAudio: string): string {
   // Видаляємо технічні слова про багатоголосий / дубльований
   cleaned = cleaned.replace(/^(багатоголосий|двоголосий|одноголосий|професійний|аматорський)\s+(закадровий|дубльований|дубляж)?\s*[:-]?\s*/i, '').trim();
 
-  // Видаляємо слово "Субтитри " на початку, якщо далі йде назва команди (напр. "Субтитри Чорний Верес" -> "Чорний Верес")
-  if (/^субтитри\s+/i.test(cleaned) && cleaned.length > 9) {
-    cleaned = cleaned.replace(/^субтитри\s+/i, '').trim();
+  // Видаляємо слово "Субтитри" на початку, якщо далі йде назва команди (напр. "Субтитри СвійSUB" -> "СвійSUB", "Субтитри (Чорний Верес)" -> "Чорний Верес")
+  if (/^субтитри[\s:(-]+/i.test(cleaned) && cleaned.length > 9) {
+    cleaned = cleaned.replace(/^субтитри[\s:(-]+/i, '').replace(/\)+$/, '').trim();
   }
+  cleaned = cleaned.replace(/\s*\((?:субтитри|subtitles)\)$/i, '').trim();
 
   if (!cleaned || cleaned.toLowerCase() === 'не визначено' || cleaned.toLowerCase() === 'default') {
     return 'Невідома студія';
@@ -538,9 +596,17 @@ export function detectAudioLang(audioName: string, originalLanguage?: string): s
  * Шукає відому студію та її локальний або зовнішній логотип
  */
 export function resolveStudioInfo(cleanedName: string, fallbackLogo?: string): StudioInfo {
-  const lower = cleanedName.toLowerCase();
+  const lower = cleanedName.toLowerCase().trim();
 
-  for (const info of Object.values(KNOWN_STUDIOS)) {
+  // Спеціальна обробка для загальних субтитрів (щоб не матчити саб-команди типу 'СвійSUB' через підрядок 'sub')
+  if (lower === 'субтитри' || lower === 'subtitles' || lower === 'sub') {
+    return {
+      name: 'Субтитри',
+    };
+  }
+
+  for (const [key, info] of Object.entries(KNOWN_STUDIOS)) {
+    if (key === 'subtitles') continue;
     if (info.aliases.some((alias) => lower.includes(alias))) {
       return {
         name: info.name,
