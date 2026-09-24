@@ -14,9 +14,12 @@ export default function VideoPlayer({
   sources = [],
   selectedSource = null,
   onSourceChange = null,
+  mediaId = null,
 }) {
   const videoNode = useRef(null);
   const playerRef = useRef(null);
+  const restoreTimeRef = useRef(null);
+  const shouldResumePlayRef = useRef(false);
 
   const [activeMenu, setActiveMenu] = useState(null); // null | 'main' | 'quality' | 'audio' | 'speed' | 'subs'
   const activeMenuRef = useRef(null);
@@ -29,6 +32,15 @@ export default function VideoPlayer({
   const [textTracksList, setTextTracksList] = useState([]);
   const [selectedTrackIndex, setSelectedTrackIndex] = useState(-1); // -1 = Off
   const closeTimeoutRef = useRef(null);
+  const sourcesRef = useRef(sources);
+  const selectedSourceRef = useRef(selectedSource);
+  const onSourceChangeRef = useRef(onSourceChange);
+
+  useEffect(() => {
+    sourcesRef.current = sources;
+    selectedSourceRef.current = selectedSource;
+    onSourceChangeRef.current = onSourceChange;
+  }, [sources, selectedSource, onSourceChange]);
 
   const openMenu = (menu) => {
     if (closeTimeoutRef.current) {
@@ -59,6 +71,9 @@ export default function VideoPlayer({
       setIsClosing(false);
     }, 200);
   };
+
+  const closeMenuRef = useRef(closeMenu);
+  closeMenuRef.current = closeMenu;
 
   useEffect(() => {
     if (!videoNode.current) return;
@@ -233,10 +248,126 @@ export default function VideoPlayer({
       player.on('loadedmetadata', updateQl);
     }
 
-    // Close menu on click inside video player
-    player.on('play', () => setActiveMenu(null));
+    // Close menu on click inside video player or when user becomes inactive
+    player.on('play', () => closeMenuRef.current());
+    player.on('userinactive', () => {
+      if (!player.paused()) {
+        closeMenuRef.current();
+      }
+    });
+
+    // Handle watch progress saving
+    const saveProgress = () => {
+      if (!mediaId) return;
+      const cur = player.currentTime();
+      const dur = player.duration();
+      if (!cur || isNaN(cur) || cur < 5) return;
+      // Do not save if near the very end (last 30s)
+      if (dur && !isNaN(dur) && cur > dur - 30) {
+        try {
+          const store = JSON.parse(localStorage.getItem('uafilms_watch_progress') || '{}');
+          delete store[mediaId];
+          localStorage.setItem('uafilms_watch_progress', JSON.stringify(store));
+        } catch {}
+        return;
+      }
+      try {
+        const store = JSON.parse(localStorage.getItem('uafilms_watch_progress') || '{}');
+        store[mediaId] = { time: Math.floor(cur), duration: Math.floor(dur || 0), updated: Date.now() };
+        localStorage.setItem('uafilms_watch_progress', JSON.stringify(store));
+      } catch {}
+    };
+
+    let lastSave = 0;
+    const onTimeUpdate = () => {
+      const now = Date.now();
+      if (now - lastSave > 2500) {
+        lastSave = now;
+        saveProgress();
+      }
+    };
+
+    player.on('timeupdate', onTimeUpdate);
+    player.on('pause', saveProgress);
+    player.on('ended', () => {
+      if (!mediaId) return;
+      try {
+        const store = JSON.parse(localStorage.getItem('uafilms_watch_progress') || '{}');
+        delete store[mediaId];
+        localStorage.setItem('uafilms_watch_progress', JSON.stringify(store));
+      } catch {}
+    });
+
+    // Restore saved playback position or audio-switch position
+    const onLoadedMetadata = () => {
+      let targetTime = null;
+      if (typeof restoreTimeRef.current === 'number' && restoreTimeRef.current > 0) {
+        targetTime = restoreTimeRef.current;
+        restoreTimeRef.current = null;
+      } else if (mediaId) {
+        try {
+          const store = JSON.parse(localStorage.getItem('uafilms_watch_progress') || '{}');
+          const saved = store[mediaId];
+          if (saved && typeof saved.time === 'number' && saved.time > 10) {
+            targetTime = saved.time;
+          }
+        } catch {}
+      }
+
+      if (targetTime !== null && targetTime > 0) {
+        try {
+          player.currentTime(targetTime);
+        } catch {}
+      }
+
+      if (shouldResumePlayRef.current) {
+        shouldResumePlayRef.current = false;
+        player.play().catch(() => {});
+      }
+    };
+
+    player.on('loadedmetadata', onLoadedMetadata);
+
+    // Auto-switch to next audio track / source once if current source fails
+    const failedSources = new Set();
+    let lastSwitchTime = 0;
+
+    const switchToNextSource = () => {
+      const now = Date.now();
+      if (now - lastSwitchTime < 3000) return;
+
+      const curId = selectedSourceRef.current?.id || selectedSourceRef.current?.url;
+      if (curId) failedSources.add(curId);
+
+      const currentSources = (sourcesRef.current || []).filter(
+        (s) => !selectedSourceRef.current?.provider?.id || s.provider?.id === selectedSourceRef.current?.provider?.id
+      );
+
+      const untried = currentSources.filter((s) => !failedSources.has(s.id || s.url));
+      if (untried.length > 0 && onSourceChangeRef.current) {
+        lastSwitchTime = now;
+        const nextSource = untried[0];
+        console.warn('[VideoPlayer] Auto-switching to alternative source:', nextSource.title || nextSource.studio?.name);
+        try {
+          player.error(null);
+        } catch {}
+        onSourceChangeRef.current(nextSource);
+      } else {
+        console.warn('[VideoPlayer] All available sources for provider failed.');
+      }
+    };
+
+    const onError = () => {
+      const err = player.error();
+      if (!err) return;
+      console.warn('[VideoPlayer] Playback error encountered:', err);
+      switchToNextSource();
+    };
+
+    player.on('error', onError);
 
     return () => {
+      saveProgress();
       if (playerRef.current) {
         playerRef.current.dispose();
         playerRef.current = null;
@@ -269,6 +400,13 @@ export default function VideoPlayer({
     const player = playerRef.current;
     if (!player || !src) return;
 
+    // Preserve playback position and playing state across src changes
+    const curTime = player.currentTime();
+    if (typeof curTime === 'number' && curTime > 0) {
+      restoreTimeRef.current = curTime;
+      shouldResumePlayRef.current = !player.paused();
+    }
+
     const mimeType = (type === 'hls' || src.includes('.m3u8') || src.includes('/master.m3u8'))
       ? 'application/x-mpegURL'
       : (type || 'application/x-mpegURL');
@@ -282,6 +420,13 @@ export default function VideoPlayer({
       player.poster(poster);
     }
   }, [src, type, poster]);
+
+  useEffect(() => {
+    const player = playerRef.current;
+    if (player && poster) {
+      player.poster(poster);
+    }
+  }, [poster]);
 
   // Handle Quality selection
   const setQuality = (targetIndex) => {
@@ -328,6 +473,17 @@ export default function VideoPlayer({
     closeMenu();
   };
 
+  // Підрахунок доступних озвучок для поточного провайдера
+  const currentProviderId = selectedSource?.provider?.id;
+  const allSources = sources && sources.length > 0 ? sources : [selectedSource].filter(Boolean);
+  const providerSources = currentProviderId
+    ? allSources.filter((s) => s.provider?.id === currentProviderId)
+    : allSources;
+  const audioList = providerSources.length > 0 ? providerSources : allSources;
+  const uniqueAudioCount = new Set(
+    audioList.map((s) => `${s.studio?.name || s.audioTracks?.[0] || ''}:${s.url}`)
+  ).size;
+
   return (
     <div className="player-wrapper">
       <div data-vjs-player style={{ width: '100%', height: '100%' }}>
@@ -339,6 +495,7 @@ export default function VideoPlayer({
         <div
           className={`vjs-settings-menu ${isClosing ? 'vjs-menu-closing' : 'vjs-menu-open'}`}
           onClick={(e) => e.stopPropagation()}
+          onMouseMove={() => playerRef.current?.reportUserActivity()}
         >
           {renderedMenu === 'main' && (
             <div className={`vjs-menu-page ${navDirection === 'back' ? 'vjs-page-back' : ''}`}>
@@ -354,25 +511,27 @@ export default function VideoPlayer({
                 </div>
               </div>
 
-              <div className="vjs-settings-item" onClick={() => switchMenu('audio', 'forward')}>
-                <div className="vjs-settings-label">
-                  <i className="material-symbols-rounded">mic</i>
-                  <span>Озвучка</span>
+              {uniqueAudioCount > 1 && (
+                <div className="vjs-settings-item" onClick={() => switchMenu('audio', 'forward')}>
+                  <div className="vjs-settings-label">
+                    <i className="material-symbols-rounded">mic</i>
+                    <span>Озвучка</span>
+                  </div>
+                  <div className="vjs-settings-val" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {selectedSource?.studio?.logoUrl && (
+                      <img
+                        src={selectedSource.studio.logoUrl}
+                        alt=""
+                        className="vjs-studio-logo-sm"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    )}
+                    <span style={{ maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {selectedSource?.studio?.name || selectedSource?.audioTracks?.[0] || 'За замовчуванням'}
+                    </span>
+                  </div>
                 </div>
-                <div className="vjs-settings-val" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {selectedSource?.studio?.logoUrl && (
-                    <img
-                      src={selectedSource.studio.logoUrl}
-                      alt=""
-                      className="vjs-studio-logo-sm"
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                    />
-                  )}
-                  <span style={{ maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {selectedSource?.studio?.name || selectedSource?.audioTracks?.[0] || 'За замовчуванням'}
-                  </span>
-                </div>
-              </div>
+              )}
 
               {textTracksList.length > 0 && (
                 <div className="vjs-settings-item" onClick={() => switchMenu('subs', 'forward')}>
@@ -431,6 +590,8 @@ export default function VideoPlayer({
                     const logoUrl = srcOption.studio?.logoUrl;
                     const isSub = srcOption.lang && srcOption.lang !== 'uk';
 
+                    const hasQuality = srcOption.quality && srcOption.quality.toLowerCase() !== 'auto';
+
                     return (
                       <div
                         key={srcOption.id || srcOption.url}
@@ -454,10 +615,12 @@ export default function VideoPlayer({
                         ) : null}
                         <div className="vjs-audio-text-group">
                           <span className="vjs-audio-title">{studioName}</span>
-                          <span className="vjs-audio-sub">
-                            {isSub && <span className="vjs-audio-badge">Субтитри</span>}
-                            {srcOption.quality && <span>{srcOption.quality}</span>}
-                          </span>
+                          {(isSub || hasQuality) && (
+                            <span className="vjs-audio-sub">
+                              {isSub && <span className="vjs-audio-badge">Субтитри</span>}
+                              {hasQuality && <span className="vjs-audio-badge vjs-audio-badge-quality">{srcOption.quality}</span>}
+                            </span>
+                          )}
                         </div>
                       </div>
                     );

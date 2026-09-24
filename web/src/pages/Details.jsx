@@ -41,9 +41,12 @@ const Details = () => {
   const [selectedSource, setSelectedSource] = useState(null);
   const [loadingSources, setLoadingSources] = useState(true);
 
-  // TV Series Navigation
+  // TV Series Navigation & TMDB Season/Episode Stills
   const [season, setSeason] = useState(1);
   const [episode, setEpisode] = useState(1);
+  const [episodesMap, setEpisodesMap] = useState({});
+  const [loadingSeason, setLoadingSeason] = useState(false);
+  const playerRef = useRef(null);
 
   // Calculate available seasons and episodes dynamically
   const availableSeasons = useMemo(() => {
@@ -67,6 +70,25 @@ const Details = () => {
     return Array.from({ length: count }, (_, i) => i + 1);
   }, [currentSeasonObj]);
 
+  const currentEpisodeObj = useMemo(() => {
+    const list = episodesMap[season] || data?.episodes || [];
+    return list.find((e) => e.episodeNumber === episode);
+  }, [episodesMap, data, season, episode]);
+
+  const backdropUrl = data?.backdropUrl || data?.posterUrl || '';
+
+  const playerPoster = useMemo(() => {
+    if (type === 'tv') {
+      return (
+        currentEpisodeObj?.stillUrl ||
+        currentSeasonObj?.posterUrl ||
+        backdropUrl ||
+        data?.posterUrl
+      );
+    }
+    return backdropUrl || data?.posterUrl;
+  }, [type, currentEpisodeObj, currentSeasonObj, backdropUrl, data]);
+
   useEffect(() => {
     if (episode > availableEpisodes.length) {
       setEpisode(1);
@@ -83,6 +105,9 @@ const Details = () => {
       .then((res) => {
         if (active) {
           setData(res.data);
+          if (res.data?.episodes && Array.isArray(res.data.episodes)) {
+            setEpisodesMap({ 1: res.data.episodes });
+          }
           setLoadingMeta(false);
           const favorites = JSON.parse(localStorage.getItem('uafilms_favorites') || '[]');
           setIsFav(favorites.some((f) => f.id == res.data.id));
@@ -100,6 +125,37 @@ const Details = () => {
       active = false;
     };
   }, [id, type]);
+
+  // 1b. Fetch TV Season Details (episodes and preview stills) on season change
+  useEffect(() => {
+    if (type !== 'tv' || !data) return;
+    if (episodesMap[season]) return;
+
+    let cancelled = false;
+    setLoadingSeason(true);
+
+    const targetId = data.imdbId || id;
+    api.get(`/season?id=${targetId}&season=${season}`)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.data?.episodes) {
+          setEpisodesMap((prev) => ({
+            ...prev,
+            [season]: res.data.episodes,
+          }));
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load season episodes:', err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSeason(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [season, type, data, id, episodesMap]);
 
   // 2. Fetch OMSS Sources via SSE (on the fly)
   useEffect(() => {
@@ -221,8 +277,6 @@ const Details = () => {
       </div>
     );
   }
-
-  const backdropUrl = data?.backdropUrl || data?.posterUrl || '';
 
   return (
     <div className="page-transition" style={{ minHeight: '100vh' }}>
@@ -383,6 +437,7 @@ const Details = () => {
 
         {/* BeerCSS M3 Video.js Player */}
         <div
+          ref={playerRef}
           style={{
             width: '100%',
             maxWidth: '1000px',
@@ -397,14 +452,15 @@ const Details = () => {
         >
           {selectedSource ? (
             <VideoPlayer
-              key={selectedSource.id || selectedSource.url}
+              key={type === 'tv' ? `${data?.id || id}_s${season}_e${episode}` : `${data?.id || id}`}
               src={selectedSource.url}
               type={selectedSource.type || 'application/x-mpegURL'}
-              poster={backdropUrl}
+              poster={playerPoster}
               title={data.title}
               sources={sources}
               selectedSource={selectedSource}
               onSourceChange={setSelectedSource}
+              mediaId={`${type}_${data?.id || id}${type === 'tv' ? `_s${season}_e${episode}` : ''}`}
             />
           ) : (
             <div className="row center-align middle-align fill" style={{ opacity: 0.6, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

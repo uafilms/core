@@ -590,6 +590,12 @@
   pointer-events: auto;
 }
 
+.player-wrapper:has(.video-js.vjs-user-inactive.vjs-playing) .vjs-settings-menu {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateY(10px) scale(0.96) !important;
+}
+
 .vjs-settings-menu.vjs-menu-closing {
   opacity: 0;
   transform: translateY(10px) scale(0.96);
@@ -784,11 +790,23 @@
 }
 
 .vjs-audio-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 10px;
-  padding: 1px 4px;
+  padding: 2px 7px;
   background: rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
+  border-radius: 9999px;
   color: var(--vjs-on-surface-variant);
+  font-weight: 500;
+  line-height: 1.2;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.vjs-audio-badge-quality {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--vjs-on-surface);
 }
 
 /* Fullscreen handling */
