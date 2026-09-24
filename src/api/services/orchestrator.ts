@@ -107,6 +107,17 @@ export class OrchestratorService {
       if (targetProviders.length === 0) {
         throw new Error(`PROVIDER_NOT_FOUND: ${providerId}`);
       }
+    } else {
+      // Exclude anime-specific providers if media is definitively not anime
+      const animeSpecificProviders = new Set(['animeon', 'aniworld', 'mikai']);
+      const isAnime = meta.isAnime ?? (
+        meta.originalLanguage === 'ja' ||
+        meta.genres?.some(g => g.toLowerCase().includes('аніме'))
+      );
+
+      if (!isAnime) {
+        targetProviders = providers.filter(p => !animeSpecificProviders.has(p.name.toLowerCase()));
+      }
     }
 
     const sources: OmssSource[] = [];
@@ -165,27 +176,47 @@ export class OrchestratorService {
           let playUrl = raw.url;
           let reqHeaders = raw.headers;
 
+          // Normalize lazy metadata if raw source has direct or proxy URL pointing to known CDNs
+          let lazy = raw.lazy;
+          if (!lazy) {
+            const checkUrl = raw.url;
+            const match = checkUrl.match(/(?:zetvideo\.net|ashdi\.vip)\/(vod|embed|serial)\/([a-zA-Z0-9_-]+)/i);
+            if (match) {
+              const matchedCdn = checkUrl.includes('zetvideo.net') ? 'zetvideo' : 'ashdi';
+              const matchedType = match[1].toLowerCase() as 'vod' | 'embed' | 'serial';
+              const matchedId = match[2];
+              lazy = {
+                cdn: matchedCdn,
+                type: matchedType,
+                id: matchedId,
+                url: `/master.m3u8?cdn=${matchedCdn}&type=${matchedType}&id=${matchedId}`,
+                directUrl: checkUrl,
+              };
+            }
+          }
+
           if (platform === 'web') {
-            if (raw.lazy) {
-              if (raw.lazy.directUrl) {
-                playUrl = `${proxyHost}/master.m3u8?url=${encodeURIComponent(raw.lazy.directUrl)}`;
-              } else if (raw.lazy.url && raw.lazy.url.startsWith('/master.m3u8')) {
-                playUrl = `${proxyHost}${raw.lazy.url}`;
-              } else {
+            if (lazy) {
+              if (lazy.cdn && lazy.id) {
                 const params = new URLSearchParams();
-                if (raw.lazy.cdn) params.set('cdn', raw.lazy.cdn);
-                if (raw.lazy.type) params.set('type', raw.lazy.type);
-                if (raw.lazy.id) params.set('id', raw.lazy.id);
-                if (raw.lazy.url) params.set('url', raw.lazy.url);
+                params.set('cdn', lazy.cdn);
+                params.set('type', lazy.type || 'vod');
+                params.set('id', lazy.id);
                 playUrl = `${proxyHost}/master.m3u8?${params.toString()}`;
+              } else if (lazy.url && lazy.url.startsWith('/master.m3u8')) {
+                playUrl = `${proxyHost}${lazy.url}`;
+              } else if (lazy.directUrl) {
+                playUrl = `${proxyHost}/master.m3u8?url=${encodeURIComponent(lazy.directUrl)}`;
+              } else if (lazy.url) {
+                playUrl = `${proxyHost}/master.m3u8?url=${encodeURIComponent(lazy.url)}`;
               }
             } else if (raw.url.startsWith('http')) {
               playUrl = `${proxyHost}/master.m3u8?url=${encodeURIComponent(raw.url)}`;
             }
           } else {
             // Native platform: if lazy, try pre-resolving or keeping direct URL
-            if (raw.lazy) {
-              playUrl = raw.lazy.directUrl || raw.lazy.url || raw.url;
+            if (lazy) {
+              playUrl = lazy.directUrl || lazy.url || raw.url;
             }
           }
 

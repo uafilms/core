@@ -108,9 +108,9 @@ streamRouter.get('/subs.vtt', async (c) => {
     content = content.replace(/(\r?\n|^)(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}\.\d{3})/g, '$1$2 --> 00:$3');
 
     // 2. Додаємо X-TIMESTAMP-MAP для точної синхронізації MPEGTS PTS у HLS
-    if (!content.includes('X-TIMESTAMP-MAP')) {
-      content = content.replace(/^WEBVTT[^\r\n]*/, '$&\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000');
-    }
+    // Не додаємо штучний X-TIMESTAMP-MAP, оскільки це спричиняє розсинхрон і затримку (~1.5-3 сек)
+    // у VHS через різницю PTS аудіо/відео та LOCAL time.
+    // WebVTT таймкоди вже синхронізовані з початком потоку (0:00).
 
     return c.text(content, 200, {
       'Content-Type': 'text/vtt; charset=utf-8',
@@ -143,6 +143,33 @@ streamRouter.get('/master.m3u8', async (c) => {
   let streamUrl: string | undefined;
   let extractedSubtitles: Subtitle[] = [];
 
+  const pickResolvedStreamUrl = (first: any): string | undefined => {
+    if (!first) return undefined;
+    if (typeof first === 'string') {
+      if (!first.includes('/master.m3u8')) return first;
+      try {
+        const u = new URL(first, 'http://localhost');
+        const inner = u.searchParams.get('url');
+        if (inner) return decodeURIComponent(inner);
+      } catch {}
+      return first;
+    }
+    const candidates = [first.lazy?.directUrl, first.lazy?.url, first.url];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate) {
+        if (!candidate.includes('/master.m3u8')) {
+          return candidate;
+        }
+        try {
+          const u = new URL(candidate, 'http://localhost');
+          const inner = u.searchParams.get('url');
+          if (inner) return decodeURIComponent(inner);
+        } catch {}
+      }
+    }
+    return first.url || first.lazy?.url;
+  };
+
   if (rawUrl) {
     if (rawUrl.includes('.m3u8') && !rawUrl.includes('/master.m3u8')) {
       streamUrl = rawUrl;
@@ -151,16 +178,16 @@ streamRouter.get('/master.m3u8', async (c) => {
         const extracted = await extractVod(rawUrl);
         if (extracted) {
           if (typeof extracted === 'string') {
-            streamUrl = extracted;
+            streamUrl = pickResolvedStreamUrl(extracted);
           } else if ('sources' in (extracted as any) && Array.isArray((extracted as any).sources)) {
             const first = (extracted as any).sources[0];
-            streamUrl = first?.lazy?.url || first?.url;
+            streamUrl = pickResolvedStreamUrl(first);
             if (first?.subtitles && Array.isArray(first.subtitles)) {
               extractedSubtitles = first.subtitles;
             }
           } else if (Array.isArray(extracted) && extracted.length > 0) {
             const first = extracted[0];
-            streamUrl = typeof first === 'string' ? first : ((first as any).lazy?.url || (first as any).url);
+            streamUrl = pickResolvedStreamUrl(first);
             if (typeof first === 'object' && first?.subtitles && Array.isArray(first.subtitles)) {
               extractedSubtitles = first.subtitles;
             }
@@ -180,21 +207,21 @@ streamRouter.get('/master.m3u8', async (c) => {
 
       if (extracted) {
         if (typeof extracted === 'string') {
-          streamUrl = extracted;
+          streamUrl = pickResolvedStreamUrl(extracted);
         } else if ('sources' in (extracted as any) && Array.isArray((extracted as any).sources)) {
           const first = (extracted as any).sources[0];
-          streamUrl = first?.lazy?.url || first?.url;
+          streamUrl = pickResolvedStreamUrl(first);
           if (first?.subtitles && Array.isArray(first.subtitles)) {
             extractedSubtitles = first.subtitles;
           }
         } else if (Array.isArray(extracted) && extracted.length > 0) {
           const first = extracted[0];
-          streamUrl = typeof first === 'string' ? first : ((first as any).lazy?.url || (first as any).url);
+          streamUrl = pickResolvedStreamUrl(first);
           if (typeof first === 'object' && first?.subtitles && Array.isArray(first.subtitles)) {
             extractedSubtitles = first.subtitles;
           }
         } else if (typeof extracted === 'object' && 'url' in (extracted as any)) {
-          streamUrl = (extracted as any).url;
+          streamUrl = pickResolvedStreamUrl(extracted);
           if ((extracted as any).subtitles && Array.isArray((extracted as any).subtitles)) {
             extractedSubtitles = (extracted as any).subtitles;
           }
@@ -312,12 +339,14 @@ streamRouter.get('/master.m3u8', async (c) => {
     const proxyHost = `${proto}://${host}`;
 
     const cacheKey = `${proxyHost}:${streamUrl}:${extractedSubtitles.length}`;
+    // Master playlists are dynamic or short-lived, while child media playlists can be cached briefly
+    const isMaster = manifestData.includes('#EXT-X-STREAM-INF');
     const cachedM3u8 = m3u8PlaylistCache.get<string>(cacheKey);
     if (cachedM3u8) {
       return c.text(cachedM3u8, 200, {
         'Content-Type': 'application/vnd.apple.mpegurl',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=86400',
+        'Cache-Control': isMaster ? 'no-cache' : 'public, max-age=3600',
       });
     }
 
@@ -326,12 +355,14 @@ streamRouter.get('/master.m3u8', async (c) => {
       subtitles: extractedSubtitles,
     });
 
-    m3u8PlaylistCache.set(cacheKey, modifiedM3u8, 24 * 60 * 60 * 1000);
+    if (!isMaster) {
+      m3u8PlaylistCache.set(cacheKey, modifiedM3u8, 60 * 60 * 1000);
+    }
 
     return c.text(modifiedM3u8, 200, {
       'Content-Type': 'application/vnd.apple.mpegurl',
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'public, max-age=86400',
+      'Cache-Control': isMaster ? 'no-cache' : 'public, max-age=3600',
     });
   } catch (err: unknown) {
     logError('stream', `m3u8 fetch error: ${(err as Error).message}`);
