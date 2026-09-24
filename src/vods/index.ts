@@ -43,8 +43,27 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
     try {
       const parsed = new URL(url.startsWith('http') ? url : `http://localhost${url}`);
       const explicitCdn = parsed.searchParams.get('cdn');
-      if (explicitCdn && explicitCdn.toLowerCase() !== 'animeon') {
-        const targetExtractor = vodExtractors.find(e => e.name.toLowerCase() === explicitCdn.toLowerCase());
+      if (explicitCdn) {
+        const lowerCdn = explicitCdn.toLowerCase();
+        if (lowerCdn === 'animeon') {
+          const epId = parsed.searchParams.get('id') || parsed.searchParams.get('episodeId');
+          if (epId) {
+            const apiRes = await httpRequest<{ videoUrl?: string }>(`https://animeon.club/api/player/${epId}/episode`, {
+              headers: {
+                Referer: 'https://animeon.club/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+              },
+              signal: options.signal,
+              timeout: 8000,
+            });
+            if (apiRes.data?.videoUrl) {
+              return extractVod(apiRes.data.videoUrl, options);
+            }
+          }
+          return null;
+        }
+
+        const targetExtractor = vodExtractors.find(e => e.name.toLowerCase() === lowerCdn);
         if (targetExtractor) {
           try {
             return await targetExtractor.extract(url, options);
@@ -52,10 +71,16 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
             return null;
           }
         }
+        return null;
       }
     } catch {
-      // fallback
+      return null;
     }
+  }
+
+  // Якщо посилання на Tortuga — вона офлайн
+  if (url.includes('tortuga.tw') || url.includes('tortuga.wtf')) {
+    return null;
   }
 
   // Якщо передали наш proxy URL з параметром url
@@ -139,7 +164,10 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
     if (res) return res;
   }
 
-  if (url.includes('cdn=moonanime') || url.includes('moonanime') || url.includes('mooncdn') || url.includes('s.moonanime')) {
+  if (
+    url.includes('cdn=moonanime') ||
+    (!url.includes('/master.m3u8') && (url.includes('moonanime') || url.includes('mooncdn') || url.includes('s.moonanime')))
+  ) {
     const res = await moonAnimeVod.extract(url, options);
     if (res) return res;
   }

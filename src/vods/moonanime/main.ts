@@ -27,6 +27,20 @@ export class MoonAnimeVodExtractor implements VodExtractor {
     const trimmed = url.trim();
     if (!trimmed) return null;
 
+    // Case 0: If proxy URL with url= was passed, unwrap it
+    if (trimmed.includes('/master.m3u8') && trimmed.includes('url=')) {
+      try {
+        const u = new URL(trimmed.startsWith('http') ? trimmed : `http://localhost${trimmed}`);
+        const inner = u.searchParams.get('url');
+        if (inner) return this.extract(decodeURIComponent(inner), options);
+      } catch {}
+    }
+
+    // Never treat self-proxy /master.m3u8 as a raw video stream
+    if (trimmed.includes('/master.m3u8')) {
+      return null;
+    }
+
     // Case 1: Raw decrypted string passed directly (e.g. [1080p]url,[720p]url or direct M3U8)
     if (trimmed.includes('[') && trimmed.includes(']') && trimmed.includes('http')) {
       return this.parseQualities(trimmed);

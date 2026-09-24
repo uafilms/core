@@ -105,28 +105,7 @@ export async function getKinoUkrDb(
       }
     }
 
-    // 2. Add Tortuga embed lazy routes if present
-    if (row.tortuga && row.tortuga.includes('embed/')) {
-      const tortugaId = extractIdFromPath(row.tortuga);
-      if (tortugaId) {
-        const tortugaStream: StreamSource = {
-          title: 'Tortuga (Mirror)',
-          url: `/master.m3u8?cdn=tortuga&type=embed&id=${tortugaId}`,
-          lazy: {
-            cdn: 'tortuga',
-            type: 'embed',
-            id: tortugaId,
-            url: `https://tortuga.tw/embed/${tortugaId}`,
-          },
-        };
-
-        const targetSeason = seasonsMap.get(1) || new Map<number, StreamSource[]>();
-        const epSources = targetSeason.get(1) || [];
-        epSources.push(tortugaStream);
-        targetSeason.set(1, epSources);
-        seasonsMap.set(1, targetSeason);
-      }
-    }
+    // 2. Add Tortuga embed lazy routes if present (discontinued, skip)
 
     const seasons: Season[] = [];
     for (const [sNum, epMap] of seasonsMap.entries()) {

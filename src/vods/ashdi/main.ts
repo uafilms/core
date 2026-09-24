@@ -34,6 +34,17 @@ export class AshdiVodExtractor implements VodExtractor {
       }
     }
 
+    // Видаляємо деструктивні параметри типу geoblock=ua
+    try {
+      const u = new URL(targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`);
+      if (u.searchParams.has('geoblock')) {
+        u.searchParams.delete('geoblock');
+        targetUrl = u.toString();
+      }
+    } catch {
+      targetUrl = targetUrl.replace(/([?&])geoblock=[^&]*(&|$)/i, '$1').replace(/[?&]$/, '');
+    }
+
     const normalizedUrl = normalizeAshdiUrl(targetUrl);
 
     if (normalizedUrl.includes('.m3u8') && !normalizedUrl.includes('/master.m3u8')) {
@@ -50,6 +61,9 @@ export class AshdiVodExtractor implements VodExtractor {
       let fetchUrl = normalizedUrl;
       try {
         const u = new URL(fetchUrl.startsWith('http') ? fetchUrl : `https://${fetchUrl}`);
+        if (u.searchParams.has('geoblock')) {
+          u.searchParams.delete('geoblock');
+        }
         if (/\/serial\/\d+/i.test(u.pathname)) {
           u.searchParams.delete('season');
           u.searchParams.delete('episode');
@@ -57,6 +71,8 @@ export class AshdiVodExtractor implements VodExtractor {
             u.searchParams.set('multivoice', '');
           }
           fetchUrl = u.toString().replace(/multivoice=(&|$)/, 'multivoice$1').replace(/\?$/, '');
+        } else {
+          fetchUrl = u.toString().replace(/\?$/, '');
         }
       } catch {
         // ignore
@@ -120,7 +136,7 @@ export class AshdiVodExtractor implements VodExtractor {
       return null;
     }
 
-    // Якщо це масив озвучок фільму: [{ title: '...', file: '...' }]
+    // Якщо це масив озвучок фільму: [{ title: '...', file: '...', id: '...' }]
     if (Array.isArray(parsed) && parsed[0]?.file && !parsed[0]?.folder) {
       const sources: StreamSource[] = parsed.map(item => ({
         title: item.title || 'Ashdi',
@@ -130,7 +146,7 @@ export class AshdiVodExtractor implements VodExtractor {
         subtitles: item.subtitle ? parseAshdiSubtitles(item.subtitle) : subtitles,
       }));
 
-      return { sources: sortSources(sources) };
+      return { sources };
     }
 
     // Якщо це структура серіалу (folder / nested)

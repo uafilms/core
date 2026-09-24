@@ -52,7 +52,7 @@ function buildSourceFromUrl(url: string, dubTitle: string, poster?: string | nul
       cdn: 'ashdi',
       type: 'vod',
       id: ashdiId || undefined,
-      url: fullUrl,
+      url: ashdiId ? `/master.m3u8?cdn=ashdi&type=vod&id=${ashdiId}` : fullUrl,
     },
   };
 }
@@ -182,7 +182,7 @@ export async function getUakinoApp(
     return {
       provider: 'uakino',
       type: 'movie',
-      sources: sortSources(sources),
+      sources,
     };
   }
 

@@ -22,17 +22,47 @@ export async function resolveFrankoFile(
   signal?: AbortSignal
 ): Promise<string | null> {
   try {
+    let token = req.bootstrap_token;
+    let translation = req.translation;
+    if (!token || !translation) {
+      const pageUrl = `https://franko.uacdn.online/show/${req.id}/${translation ? `?translation=${translation}` : ''}`;
+      const pageRes = await httpRequest<string>(pageUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+          Referer: 'https://uakino.watch/',
+        },
+        signal,
+        timeout: 10000,
+      });
+      const match = pageRes.data.match(/window\.__PLAYER_PAYLOAD__\s*=\s*(\{[\s\S]*?\});/);
+      if (match) {
+        try {
+          const payload = JSON.parse(match[1]) as FrankoPlayerPayload;
+          if (!token) token = payload.player_files_token;
+          if (!translation && payload.translate) {
+            translation = payload.translate;
+          }
+        } catch {}
+      }
+      if (!token) {
+        const tokenMatch = pageRes.data.match(/"player_files_token"\s*:\s*"([^"]+)"/);
+        if (tokenMatch) token = tokenMatch[1];
+      }
+    }
+
     const res = await httpRequest<FrankoFilesResponse>(
       'https://franko.uacdn.online/api/player/files',
       {
         method: 'POST',
         data: {
           id: req.id,
-          translation: req.translation,
+          translation: translation || 0,
           season_number: req.season_number ?? null,
           episode_number: req.episode_number ?? null,
           force_cdn: req.force_cdn || '',
           turnstile_token: req.turnstile_token || '',
+          bootstrap_token: token || '',
         },
         headers: {
           'Content-Type': 'application/json',
@@ -71,7 +101,7 @@ export class FrankoVodExtractor implements VodExtractor {
         sources: [
           {
             quality: '1080p',
-            title: 'Franko CDN',
+            title: 'Franko',
             url: trimmed,
             mime: 'application/x-mpegURL',
             headers: {
@@ -85,14 +115,30 @@ export class FrankoVodExtractor implements VodExtractor {
     // 2. Lazy stream route: /master.m3u8?cdn=franko&id=...&translation=...
     if (trimmed.includes('cdn=franko') || (trimmed.includes('/master.m3u8') && trimmed.includes('franko'))) {
       const urlObj = new URL(trimmed, 'http://localhost');
-      const id = parseInt(urlObj.searchParams.get('id') || '0', 10);
-      const translation = parseInt(urlObj.searchParams.get('translation') || '0', 10);
-      const season = urlObj.searchParams.get('season') ? parseInt(urlObj.searchParams.get('season')!, 10) : null;
-      const episode = urlObj.searchParams.get('episode') ? parseInt(urlObj.searchParams.get('episode')!, 10) : null;
+      const rawId = urlObj.searchParams.get('id') || '';
+      let id = 0;
+      let translation = parseInt(urlObj.searchParams.get('translation') || '0', 10);
+      let season = urlObj.searchParams.get('season') ? parseInt(urlObj.searchParams.get('season')!, 10) : null;
+      let episode = urlObj.searchParams.get('episode') ? parseInt(urlObj.searchParams.get('episode')!, 10) : null;
 
-      if (id && translation) {
+      if (rawId.includes('_')) {
+        const parts = rawId.split('_').map(Number);
+        if (parts.length >= 4) {
+          id = parts[0];
+          season = parts[1];
+          episode = parts[2];
+          translation = parts[3];
+        } else if (parts.length === 2) {
+          id = parts[0];
+          translation = parts[1];
+        }
+      } else {
+        id = parseInt(rawId || '0', 10);
+      }
+
+      if (id) {
         const file = await resolveFrankoFile(
-          { id, translation, season_number: season, episode_number: episode },
+          { id, translation: translation || undefined, season_number: season, episode_number: episode },
           options.signal
         );
         if (file) {
@@ -100,7 +146,7 @@ export class FrankoVodExtractor implements VodExtractor {
             sources: [
               {
                 quality: '1080p',
-                title: 'Franko CDN',
+                title: 'Franko',
                 url: file,
                 mime: 'application/x-mpegURL',
                 headers: {
@@ -111,6 +157,7 @@ export class FrankoVodExtractor implements VodExtractor {
           };
         }
       }
+      return null;
     }
 
     // 3. Resolve show ID or fetch player page
@@ -122,7 +169,11 @@ export class FrankoVodExtractor implements VodExtractor {
       showId = parseInt(showMatch[1], 10);
     }
 
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    if (
+      (trimmed.startsWith('http://') || trimmed.startsWith('https://')) &&
+      !trimmed.includes('/master.m3u8') &&
+      !trimmed.includes('localhost')
+    ) {
       try {
         const res = await httpRequest<string>(trimmed, {
           headers: {
@@ -178,7 +229,7 @@ export class FrankoVodExtractor implements VodExtractor {
         let streamUrl = lazyUrl;
         if (options.prefetch) {
           const file = await resolveFrankoFile(
-            { id: payload.id, translation: t.id },
+            { id: payload.id, translation: t.id, bootstrap_token: payload.player_files_token },
             options.signal
           );
           if (file) streamUrl = file;
@@ -197,7 +248,7 @@ export class FrankoVodExtractor implements VodExtractor {
           lazy: {
             cdn: 'franko',
             type: 'hls',
-            id: String(payload.id),
+            id: `${payload.id}_${t.id}`,
             url: lazyUrl,
           },
         });

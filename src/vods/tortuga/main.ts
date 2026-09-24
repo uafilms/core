@@ -11,59 +11,8 @@ export class TortugaVodExtractor implements VodExtractor {
   /**
    * Головний метод витягування потоків з Tortuga VOD / Embed сторінок
    */
-  async extract(url: string, options: VodExtractionOptions = {}): Promise<VodExtractionResult | null> {
-    if (!url) return null;
-
-    let targetUrl = url;
-
-    // Підтримка lazy routes вигляду /master.m3u8?cdn=tortuga&type=vod&id=123
-    if (targetUrl.includes('cdn=tortuga')) {
-      try {
-        const parsed = new URL(targetUrl.startsWith('http') ? targetUrl : `http://localhost${targetUrl}`);
-        const id = parsed.searchParams.get('id');
-        const type = parsed.searchParams.get('type') || 'vod';
-        if (id) {
-          targetUrl = `https://tortuga.tw/${type}/${id}`;
-        }
-      } catch {
-        // ігноруємо помилку парсингу URL
-      }
-    }
-
-    // Якщо це прямий m3u8
-    if (targetUrl.includes('.m3u8')) {
-      return {
-        sources: [{
-          title: 'Tortuga',
-          url: targetUrl,
-          mime: 'application/x-mpegURL',
-        }],
-      };
-    }
-
-    // Якщо це /vod/ (фільм)
-    if (targetUrl.includes('/vod/')) {
-      const vod = await this.parseVod(targetUrl, options);
-      if (!vod || !vod.file) return null;
-
-      return {
-        sources: [{
-          title: 'Tortuga',
-          url: vod.file,
-          poster: vod.poster,
-          subtitles: vod.subtitle ? parsePlayerjsSubtitles(vod.subtitle) : undefined,
-          mime: 'application/x-mpegURL',
-        }],
-      };
-    }
-
-    // Якщо це /embed/ (серіал)
-    if (targetUrl.includes('/embed/')) {
-      const embedSeasons = await this.parseEmbed(targetUrl, options);
-      if (!embedSeasons || embedSeasons.length === 0) return null;
-      return { seasons: sortSeasons(embedSeasons) };
-    }
-
+  async extract(_url: string, _options: VodExtractionOptions = {}): Promise<VodExtractionResult | null> {
+    // Tortuga CDN повністю відключений / не працює (404 на всіх VOD / embed)
     return null;
   }
 

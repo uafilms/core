@@ -331,6 +331,33 @@ export async function getUaflix(
     let discoveredSeasons: Season[] | undefined;
 
     for (const tab of playerTabs) {
+      if (tab.iframeSrc.includes('tortuga.tw') || tab.iframeSrc.includes('tortuga.wtf')) {
+        continue;
+      }
+
+      // If tab iframe is a direct VOD (e.g. zetvideo.net/vod/123 or ashdi.vip/vod/123), create lazy stream directly without pre-fetching
+      const vodMatch = tab.iframeSrc.match(/(?:(zetvideo)\.net|(ashdi)\.vip)\/(vod)\/([a-zA-Z0-9_-]+)/i);
+      if (vodMatch) {
+        const cdnName = (vodMatch[1] || vodMatch[2]).toLowerCase();
+        const type = vodMatch[3].toLowerCase() as 'vod';
+        const id = vodMatch[4];
+        allSources.push({
+          title: tab.label !== 'Плеєр 1' && tab.label !== 'Дивитись онлайн' ? tab.label : (cdnName === 'zetvideo' ? 'ZetVideo' : cdnName === 'ashdi' ? 'Ashdi' : 'Tortuga'),
+          url: `/master.m3u8?cdn=${cdnName}&type=${type}&id=${id}`,
+          lazy: {
+            cdn: cdnName,
+            type,
+            id,
+            url: `/master.m3u8?cdn=${cdnName}&type=${type}&id=${id}`,
+            directUrl: tab.iframeSrc,
+          },
+          headers: {
+            Referer: pageUrl,
+          },
+        });
+        continue;
+      }
+
       const vodResult = await extractVod(tab.iframeSrc, {
         referer: pageUrl,
         signal: options?.signal,

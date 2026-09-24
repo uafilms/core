@@ -9,6 +9,7 @@ export interface FrankoPlayerPayload {
   is_serial: boolean;
   type?: 'movie' | 'serial' | string;
   cover_url?: string;
+  player_files_token?: string;
   translations?: FrankoTranslation[];
   seasons?: Record<string, number>;
   season?: number;
@@ -19,11 +20,12 @@ export interface FrankoPlayerPayload {
 
 export interface FrankoFilesRequest {
   id: number;
-  translation: number;
+  translation?: number;
   season_number?: number | null;
   episode_number?: number | null;
   force_cdn?: string;
   turnstile_token?: string;
+  bootstrap_token?: string;
 }
 
 export interface FrankoFilesResponse {

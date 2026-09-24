@@ -249,22 +249,7 @@ export async function getKinoUkrWeb(
             logWarn('kinoukr', `ashdi serial extraction error: ${err}`);
           }
         } else if (details.cdn === 'tortuga' && details.type === 'embed') {
-          const tortugaStream: StreamSource = {
-            title: 'Tortuga (Mirror)',
-            url: `/master.m3u8?cdn=tortuga&type=embed&id=${details.id}`,
-            lazy: {
-              cdn: 'tortuga',
-              type: 'embed',
-              id: details.id,
-              url: src,
-            },
-          };
-
-          const targetSeason = seasonsMap.get(1) || new Map<number, StreamSource[]>();
-          const epSources = targetSeason.get(1) || [];
-          epSources.push(tortugaStream);
-          targetSeason.set(1, epSources);
-          seasonsMap.set(1, targetSeason);
+          // Tortuga CDN is discontinued, skip
         }
       }
 

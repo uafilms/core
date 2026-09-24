@@ -11,5 +11,15 @@ export function normalizeAshdiUrl(rawUrl: string): string {
   if (url.startsWith('//')) {
     url = 'https:' + url;
   }
+  // Вирізаємо блокуючий параметр geoblock
+  if (url.includes('geoblock=')) {
+    try {
+      const u = new URL(url.startsWith('http') ? url : `https://${url}`);
+      u.searchParams.delete('geoblock');
+      url = u.toString().replace(/\?$/, '');
+    } catch {
+      url = url.replace(/([?&])geoblock=[^&]*(&|$)/i, '$1').replace(/[?&]$/, '');
+    }
+  }
   return url;
 }

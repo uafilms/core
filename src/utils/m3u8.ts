@@ -125,9 +125,17 @@ export function parseMasterPlaylist(
         nextIsStreamUrl = true;
         nextIsSegmentUrl = false;
 
-        // Витягуємо висоту роздільної здатності для обходу заниження якості (наприклад, Ashdi підставляє 480 замість 720/1080)
+        // Витягуємо висоту роздільної здатності для обходу заниження якості (тільки якщо вказано стандартні 1080/720/480/2160)
         const resMatch = trimmed.match(/RESOLUTION=\d+x(\d+)/i);
-        currentStreamHeight = resMatch ? resMatch[1] : undefined;
+        if (resMatch) {
+          const h = parseInt(resMatch[1], 10);
+          if (h >= 1000) currentStreamHeight = '1080';
+          else if (h >= 700) currentStreamHeight = '720';
+          else if (h >= 450) currentStreamHeight = '480';
+          else currentStreamHeight = undefined;
+        } else {
+          currentStreamHeight = undefined;
+        }
       } else if (trimmed.startsWith('#EXTINF') || trimmed.startsWith('#EXT-X-BYTERANGE')) {
         newLines.push(trimmed);
         nextIsSegmentUrl = true;
@@ -143,9 +151,8 @@ export function parseMasterPlaylist(
 
       if (nextIsStreamUrl) {
         let streamTargetUrl = absoluteUrl;
-        // Якщо Ashdi примусово підставив 480p для потоку 720p/1080p/2160p — відновлюємо справжній URL потоку
-        if (currentStreamHeight && (streamTargetUrl.includes('ashdi.vip') || /\/hls\/\d+\//.test(streamTargetUrl))) {
-          streamTargetUrl = streamTargetUrl.replace(/\/hls\/\d+\//, `/hls/${currentStreamHeight}/`);
+        if (currentStreamHeight && streamTargetUrl.includes('ashdi.vip') && /\/hls\/480\//.test(streamTargetUrl)) {
+          streamTargetUrl = streamTargetUrl.replace(/\/hls\/480\//, `/hls/${currentStreamHeight}/`);
         }
         newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(streamTargetUrl)}`);
         nextIsStreamUrl = false;
