@@ -38,6 +38,26 @@ export const vodExtractors: VodExtractor[] = [
 export async function extractVod(url: string, options: VodExtractionOptions = {}): Promise<VodExtractionResult | null> {
   if (!url) return null;
 
+  // 1. Якщо явно вказано параметр cdn, викликаємо ВИКЛЮЧНО відповідний екстрактор
+  if (url.includes('cdn=')) {
+    try {
+      const parsed = new URL(url.startsWith('http') ? url : `http://localhost${url}`);
+      const explicitCdn = parsed.searchParams.get('cdn');
+      if (explicitCdn && explicitCdn.toLowerCase() !== 'animeon') {
+        const targetExtractor = vodExtractors.find(e => e.name.toLowerCase() === explicitCdn.toLowerCase());
+        if (targetExtractor) {
+          try {
+            return await targetExtractor.extract(url, options);
+          } catch {
+            return null;
+          }
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }
+
   // Якщо передали наш proxy URL з параметром url
   if (url.includes('/master.m3u8') && url.includes('url=')) {
     try {

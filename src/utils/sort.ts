@@ -1,4 +1,4 @@
-import type { Episode, Season, StreamSource, SearchResult } from '../types/media.js';
+import type { Episode, Season, StreamSource, SearchResult, MediaType } from '../types/media.js';
 
 /**
  * Вага якості відео (більше = краще)
@@ -86,35 +86,196 @@ export function sortSeasons(seasons: Season[]): Season[] {
 }
 
 /**
- * Сортування результатів пошуку за точністю назви та року
+ * Очищує рядок від розділових знаків та апострофів для зіставлення назв
  */
-export function sortSearchResults(results: SearchResult[], query: string, targetYear?: number): SearchResult[] {
-  const cleanQ = query.trim().toLowerCase();
-
-  return [...results].sort((a, b) => {
-    const aTitle = a.title.toLowerCase();
-    const bTitle = b.title.toLowerCase();
-
-    // 1. Точний збіг назви
-    const aExact = aTitle === cleanQ ? 1 : 0;
-    const bExact = bTitle === cleanQ ? 1 : 0;
-    if (bExact !== aExact) return bExact - aExact;
-
-    // 2. Починається з пошукового запиту
-    const aStarts = aTitle.startsWith(cleanQ) ? 1 : 0;
-    const bStarts = bTitle.startsWith(cleanQ) ? 1 : 0;
-    if (bStarts !== aStarts) return bStarts - aStarts;
-
-    // 3. Збіг року (якщо заданий)
-    if (targetYear) {
-      const aYearDiff = a.year ? Math.abs(a.year - targetYear) : 99;
-      const bYearDiff = b.year ? Math.abs(b.year - targetYear) : 99;
-      if (aYearDiff !== bYearDiff) return aYearDiff - bYearDiff;
-    }
-
-    return 0;
-  });
+export function normalizeTitle(text?: string): string {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/&amp;/g, '&')
+    .replace(/['’`ʼ]/g, '')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-export const rankSearchResults = sortSearchResults;
+/**
+ * Службові слова та сполучники, які ігноруються при порядовому порівнянні токенів
+ */
+const STOP_WORDS = new Set([
+  'і', 'й', 'та', 'в', 'у', 'на', 'з', 'зі', 'із', 'по', 'за', 'до', 'про', 'від', 'для',
+  'a', 'an', 'the', 'and', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by'
+]);
 
+/**
+ * Розбиває назву на значущі токени
+ */
+export function tokenizeTitle(text?: string): string[] {
+  const norm = normalizeTitle(text);
+  if (!norm) return [];
+  const words = norm.split(' ');
+  const filtered = words.filter(w => !STOP_WORDS.has(w) && w.length > 1);
+  return filtered.length > 0 ? filtered : words;
+}
+
+/**
+ * Оцінює релевантність результату пошуку відносно запиту (0..100+)
+ */
+export function scoreSearchResult(
+  result: SearchResult,
+  query: string,
+  targetYear?: number,
+  targetType?: MediaType
+): number {
+  const normQ = normalizeTitle(query);
+  if (!normQ) return 0;
+
+  const qTokens = tokenizeTitle(query);
+  // Якщо запит — лише число або IMDb ID (tt1234567)
+  if (/^tt\d+$/.test(query.trim())) {
+    if (result.id && result.id.includes(query.trim())) return 1000;
+  }
+
+  const candidateTitles = [result.title, result.originalTitle].filter(Boolean) as string[];
+  let bestScore = 0;
+
+  for (const candTitle of candidateTitles) {
+    const normCand = normalizeTitle(candTitle);
+    if (!normCand) continue;
+
+    // 1. Точний збіг
+    if (normCand === normQ) {
+      bestScore = Math.max(bestScore, 100);
+      continue;
+    }
+
+    // 2. Префіксний збіг (наприклад, "Посіпаки" і "Посіпаки: Становлення лиходія")
+    if (normCand.startsWith(normQ) || normQ.startsWith(normCand)) {
+      const ratio = Math.min(normQ.length, normCand.length) / Math.max(normQ.length, normCand.length);
+      bestScore = Math.max(bestScore, 80 + Math.round(ratio * 15));
+      continue;
+    }
+
+    // 3. Підрядок (якщо рядок достатньо довгий)
+    if (
+      (normCand.includes(normQ) && normQ.length >= 4) ||
+      (normQ.includes(normCand) && normCand.length >= 4)
+    ) {
+      const ratio = Math.min(normQ.length, normCand.length) / Math.max(normQ.length, normCand.length);
+      bestScore = Math.max(bestScore, 65 + Math.round(ratio * 15));
+      continue;
+    }
+
+    // 4. Збіг токенів
+    const candTokens = tokenizeTitle(candTitle);
+    if (qTokens.length > 0 && candTokens.length > 0) {
+      // Текстові токени (без чистих цифр, якщо є текст)
+      const textQTokens = qTokens.filter(t => !/^\d+$/.test(t));
+      const tokensToCheck = textQTokens.length > 0 ? textQTokens : qTokens;
+
+      const matchedTokens = tokensToCheck.filter(qt =>
+        candTokens.some(ct => ct === qt || (ct.length >= 4 && qt.length >= 4 && (ct.includes(qt) || qt.includes(ct))))
+      );
+
+      const matchRatio = matchedTokens.length / tokensToCheck.length;
+
+      if (tokensToCheck.length === 1) {
+        if (matchRatio === 1) {
+          bestScore = Math.max(bestScore, 70);
+        }
+      } else if (tokensToCheck.length === 2) {
+        if (matchRatio === 1) {
+          bestScore = Math.max(bestScore, 85);
+        } else {
+          // Якщо для 2-слівного запиту збіглося лише одне слово — це недостатній збіг
+          bestScore = Math.max(bestScore, 20);
+        }
+      } else {
+        if (matchRatio === 1) {
+          bestScore = Math.max(bestScore, 85);
+        } else if (matchRatio >= 0.75) {
+          bestScore = Math.max(bestScore, 65);
+        } else if (matchRatio >= 0.6) {
+          bestScore = Math.max(bestScore, 35);
+        } else {
+          bestScore = Math.max(bestScore, Math.round(matchRatio * 25));
+        }
+      }
+    }
+  }
+
+  // Якщо немає релевантного збігу взагалі, повертаємо 0
+  if (bestScore === 0) return 0;
+
+  // 5. Невідповідність типу медіа (movie vs tv)
+  const itemType = result.type || (result as any).mediaType;
+  if (targetType && itemType) {
+    if (targetType === 'movie' && itemType === 'tv') {
+      bestScore = Math.max(0, bestScore - 40);
+    } else if (targetType === 'tv' && itemType === 'movie') {
+      bestScore = Math.max(0, bestScore - 40);
+    }
+  }
+
+  // 6. Вплив року випуску (якщо відомий)
+  if (targetYear && result.year) {
+    const yearDiff = Math.abs(result.year - targetYear);
+    if (yearDiff === 0) {
+      bestScore += 10;
+    } else if (yearDiff === 1) {
+      bestScore += 5;
+    } else if (yearDiff >= 2) {
+      // Якщо рік відрізняється на 2+ роки і назва не була точним збігом — штрафуємо
+      if (bestScore < 95) {
+        bestScore = Math.max(0, bestScore - Math.min(40, yearDiff * 10));
+      }
+    }
+  }
+
+  return bestScore;
+}
+
+/**
+ * Перевіряє, чи результат пошуку є валідним збігом для заданого запиту
+ */
+export function isSearchResultMatch(
+  result: SearchResult,
+  query: string,
+  targetYear?: number,
+  targetType?: MediaType,
+  minScore: number = 50
+): boolean {
+  if (!result || !query) return false;
+  return scoreSearchResult(result, query, targetYear, targetType) >= minScore;
+}
+
+/**
+ * Фільтрація та ранжування результатів пошуку:
+ * Відкидає випадкові/нерелевантні збіги (DLE стоп-слова, помилкові збіги) і сортує за релевантністю
+ */
+export function rankSearchResults(
+  results: SearchResult[],
+  query: string,
+  targetYear?: number,
+  targetType?: MediaType
+): SearchResult[] {
+  if (!results || results.length === 0 || !query) return [];
+
+  // Якщо запит — IMDb ID (tt...)
+  if (/^tt\d+$/.test(query.trim())) {
+    return results;
+  }
+
+  const scored = results
+    .map(result => ({
+      result,
+      score: scoreSearchResult(result, query, targetYear, targetType),
+    }))
+    .filter(item => item.score >= 50);
+
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored.map(item => item.result);
+}
+
+export const sortSearchResults = rankSearchResults;

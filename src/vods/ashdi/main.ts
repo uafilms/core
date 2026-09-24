@@ -16,7 +16,7 @@ export class AshdiVodExtractor implements VodExtractor {
     let targetUrl = url;
 
     // Підтримка lazy routes вигляду /master.m3u8?cdn=ashdi&type=vod&id=123
-    if (targetUrl.includes('cdn=ashdi') || targetUrl.includes('/master.m3u8')) {
+    if (targetUrl.includes('cdn=ashdi') || (targetUrl.includes('/master.m3u8') && !targetUrl.includes('cdn='))) {
       try {
         const parsed = new URL(targetUrl.startsWith('http') ? targetUrl : `http://localhost${targetUrl}`);
         const innerUrl = parsed.searchParams.get('url');

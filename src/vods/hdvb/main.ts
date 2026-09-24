@@ -19,7 +19,7 @@ export class HdvbVodExtractor implements VodExtractor {
     let targetUrl = url;
 
     // Підтримка lazy routes /master.m3u8?cdn=hdvb&url=...
-    if (targetUrl.includes('cdn=hdvb') || targetUrl.includes('/master.m3u8')) {
+    if (targetUrl.includes('cdn=hdvb') || (targetUrl.includes('/master.m3u8') && !targetUrl.includes('cdn='))) {
       try {
         const parsed = new URL(targetUrl.startsWith('http') ? targetUrl : `http://localhost${targetUrl}`);
         const innerUrl = parsed.searchParams.get('url');
