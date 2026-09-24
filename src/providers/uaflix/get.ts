@@ -27,6 +27,11 @@ interface EpisodeLink {
   url: string;
 }
 
+// In-memory cache for serials with full multi-episode playlists (e.g. ashdi/zetvideo /serial/)
+// Key: serial main page URL -> Value: ProviderResult with full seasons/episodes
+const serialCache = new Map<string, { result: ProviderResult; timestamp: number }>();
+const SERIAL_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
 function extractPlayerTabs($: cheerio.CheerioAPI): PlayerTab[] {
   const tabs: PlayerTab[] = [];
   const labels: string[] = [];
@@ -147,6 +152,12 @@ export async function getUaflix(
 
   if (!pageUrl) return null;
 
+  // Check in-memory cache for full serial result
+  const cachedSerial = serialCache.get(pageUrl);
+  if (cachedSerial && Date.now() - cachedSerial.timestamp < SERIAL_CACHE_TTL) {
+    return cachedSerial.result;
+  }
+
   try {
     const mainHtml = await getHtml(pageUrl, {
       signal: options?.signal,
@@ -195,11 +206,13 @@ export async function getUaflix(
           });
 
           if (serialVod?.seasons && serialVod.seasons.length > 0) {
-            return {
+            const result: ProviderResult = {
               provider: 'uaflix',
               type: 'tv',
               seasons: serialVod.seasons,
             };
+            serialCache.set(pageUrl, { result, timestamp: Date.now() });
+            return result;
           }
         }
       }
@@ -341,11 +354,13 @@ export async function getUaflix(
     }
 
     if (discoveredSeasons && discoveredSeasons.length > 0) {
-      return {
+      const result: ProviderResult = {
         provider: 'uaflix',
         type: 'tv',
         seasons: sortSeasons(discoveredSeasons),
       };
+      serialCache.set(pageUrl, { result, timestamp: Date.now() });
+      return result;
     }
 
     if (allSources.length > 0) {
