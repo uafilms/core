@@ -42,10 +42,8 @@ export interface MediaDetails {
 }
 
 export class TmdbService {
-  private static readonly DEFAULT_TOKEN = 'REPLACED_TMDB_TOKEN';
-
   private static getToken(): string {
-    return process.env.TMDB_TOKEN || this.DEFAULT_TOKEN;
+    return process.env.TMDB_TOKEN || '';
   }
 
   private static getHeaders() {
