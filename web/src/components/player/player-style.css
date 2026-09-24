@@ -313,8 +313,7 @@
   width: auto !important;
   max-width: none !important;
   flex-shrink: 0 !important;
-  transition: width 0.2s cubic-bezier(0.2, 0, 0, 1) !important;
-  margin-right: 12px !important;
+  margin-right: 6px !important;
   position: relative !important;
   z-index: 2 !important;
 }
@@ -351,13 +350,13 @@
   width: 72px !important;
   opacity: 1 !important;
   visibility: visible !important;
-  margin-left: 2px !important;
 }
 
 .video-js .vjs-volume-bar,
 .video-js .vjs-volume-bar.vjs-slider-horizontal {
   height: 4px !important;
-  width: 100% !important;
+  width: auto !important;
+  flex: 1 1 auto !important;
   background: rgba(255, 255, 255, 0.2) !important;
   border-radius: 9999px !important;
   margin: 0 6px !important;
