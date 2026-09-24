@@ -101,6 +101,7 @@ streamRouter.get('/master.m3u8', async (c) => {
   const isHdvb = streamUrl.includes('hdvbua.pro') || streamUrl.includes('vidcache');
   const isFranko = streamUrl.includes('factorios.live') || streamUrl.includes('uacdn.online');
   const isTortuga = streamUrl.includes('tortuga.tw') || streamUrl.includes('tortuga.wtf') || streamUrl.includes('tortuga');
+  const isZetvideo = streamUrl.includes('zetvideo.net');
 
   if (isAshdi) {
     headers['Origin'] = 'https://ashdi.vip';
@@ -123,6 +124,9 @@ streamRouter.get('/master.m3u8', async (c) => {
   } else if (isTortuga) {
     headers['Referer'] = 'https://uaserials.com/';
     headers['Origin'] = 'https://uaserials.com';
+  } else if (isZetvideo) {
+    headers['Origin'] = 'https://zetvideo.net';
+    headers['Referer'] = 'https://uafix.net/';
   }
 
   // 3. Fetch manifest and rewrite

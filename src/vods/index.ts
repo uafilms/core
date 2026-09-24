@@ -8,6 +8,7 @@ import { moonAnimeVod } from './moonanime/main.js';
 import { frankoVod } from './franko/main.js';
 import { bunnyVod } from './bunny/main.js';
 import { aniWorldVod } from './aniworld/main.js';
+import { zetvideoVod } from './zetvideo/main.js';
 
 export { tortugaVod } from './tortuga/main.js';
 export { ashdiVod } from './ashdi/main.js';
@@ -17,6 +18,7 @@ export { moonAnimeVod } from './moonanime/main.js';
 export { frankoVod, resolveFrankoFile } from './franko/main.js';
 export { bunnyVod } from './bunny/main.js';
 export { aniWorldVod } from './aniworld/main.js';
+export { zetvideoVod } from './zetvideo/main.js';
 
 export const vodExtractors: VodExtractor[] = [
   tortugaVod,
@@ -27,6 +29,7 @@ export const vodExtractors: VodExtractor[] = [
   frankoVod,
   bunnyVod,
   aniWorldVod,
+  zetvideoVod,
 ];
 
 /**
@@ -133,6 +136,11 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
 
   if (url.includes('cdn=ashdi') || url.includes('ashdi.vip') || url.includes('0yql3tj') || url.includes('oyql3tj')) {
     const res = await ashdiVod.extract(url, options);
+    if (res) return res;
+  }
+
+  if (url.includes('cdn=zetvideo') || url.includes('zetvideo.net')) {
+    const res = await zetvideoVod.extract(url, options);
     if (res) return res;
   }
 
