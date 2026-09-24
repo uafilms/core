@@ -342,6 +342,18 @@ export default function VideoPlayer({
         >
           {renderedMenu === 'main' && (
             <div className={`vjs-menu-page ${navDirection === 'back' ? 'vjs-page-back' : ''}`}>
+              <div className="vjs-settings-item" onClick={() => switchMenu('quality', 'forward')}>
+                <div className="vjs-settings-label">
+                  <i className="material-symbols-rounded">hd</i>
+                  <span>Якість</span>
+                </div>
+                <div className="vjs-settings-val">
+                  {selectedQuality === -1
+                    ? 'Auto'
+                    : qualities.find((q) => q.index === selectedQuality)?.label || 'Auto'}
+                </div>
+              </div>
+
               <div className="vjs-settings-item" onClick={() => switchMenu('audio', 'forward')}>
                 <div className="vjs-settings-label">
                   <i className="material-symbols-rounded">mic</i>
@@ -375,18 +387,6 @@ export default function VideoPlayer({
                   </div>
                 </div>
               )}
-
-              <div className="vjs-settings-item" onClick={() => switchMenu('quality', 'forward')}>
-                <div className="vjs-settings-label">
-                  <i className="material-symbols-rounded">hd</i>
-                  <span>Якість</span>
-                </div>
-                <div className="vjs-settings-val">
-                  {selectedQuality === -1
-                    ? 'Auto'
-                    : qualities.find((q) => q.index === selectedQuality)?.label || 'Auto'}
-                </div>
-              </div>
 
               <div className="vjs-settings-item" onClick={() => switchMenu('speed', 'forward')}>
                 <div className="vjs-settings-label">
