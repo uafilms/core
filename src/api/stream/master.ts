@@ -4,8 +4,127 @@ import { extractVod } from '../../vods/index.js';
 import { parseMasterPlaylist, stripCorsProxy } from '../../utils/m3u8.js';
 import { logWarn, logError } from '../../utils/logger.js';
 import { m3u8PlaylistCache } from '../services/cache.js';
+import type { Subtitle } from '../../types/media.js';
 
 export const streamRouter = new Hono();
+
+// HLS Media Playlist для субтитрів (/subs.m3u8)
+streamRouter.get('/subs.m3u8', async (c) => {
+  const query = c.req.query();
+  const cdn = query.cdn;
+  const id = query.id;
+  const lang = query.lang || 'ua';
+  const rawUrl = query.url;
+
+  const host = c.req.header('host') || 'localhost:3000';
+  const proto = c.req.header('x-forwarded-proto') || 'http';
+  const proxyHost = `${proto}://${host}`;
+
+  let vttUrl = `${proxyHost}/subs.vtt`;
+  const params = new URLSearchParams();
+  if (cdn) params.set('cdn', cdn);
+  if (id) params.set('id', id);
+  if (lang) params.set('lang', lang);
+  if (rawUrl) params.set('url', rawUrl);
+
+  const queryString = params.toString();
+  if (queryString) {
+    vttUrl += `?${queryString}`;
+  }
+
+  // Віддаємо валідний HLS Media Playlist для субтитрів (RFC 8216)
+  const playlist = [
+    '#EXTM3U',
+    '#EXT-X-VERSION:3',
+    '#EXT-X-TARGETDURATION:10800',
+    '#EXT-X-MEDIA-SEQUENCE:0',
+    '#EXT-X-PLAYLIST-TYPE:VOD',
+    '#EXTINF:10800.0,',
+    vttUrl,
+    '#EXT-X-ENDLIST',
+  ].join('\n');
+
+  return c.text(playlist, 200, {
+    'Content-Type': 'application/vnd.apple.mpegurl',
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'public, max-age=86400',
+  });
+});
+
+// Роут для віддачі сегменту/файлу WebVTT (/subs.vtt)
+streamRouter.get('/subs.vtt', async (c) => {
+  const query = c.req.query();
+  const cdn = query.cdn;
+  const id = query.id;
+  const lang = query.lang || 'ua';
+  const rawUrl = query.url;
+
+  let targetUrl = rawUrl;
+
+  if (!targetUrl && cdn && id) {
+    if (cdn === 'ashdi') {
+      targetUrl = `https://ashdi.vip/player/subtitle/${id}_${lang}.vtt`;
+    } else if (cdn === 'zetvideo') {
+      targetUrl = `https://zetvideo.net/player/subtitle/${id}_${lang}.vtt`;
+    } else if (cdn === 'hdvb') {
+      targetUrl = `https://s11.hdvbua.pro/media/content/stream/2025/${id}/subtitle.vtt`;
+    }
+  }
+
+  if (!targetUrl) {
+    return c.text('WEBVTT\n\n', 404, {
+      'Content-Type': 'text/vtt; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    });
+  }
+
+  try {
+    const subUrl = stripCorsProxy(targetUrl);
+    const subHeaders: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+    };
+    if (subUrl.includes('ashdi.vip')) {
+      subHeaders['Origin'] = 'https://ashdi.vip';
+      subHeaders['Referer'] = 'https://ashdi.vip/';
+    } else if (subUrl.includes('zetvideo.net')) {
+      subHeaders['Origin'] = 'https://zetvideo.net';
+      subHeaders['Referer'] = 'https://uafix.net/';
+    } else if (subUrl.includes('hdvbua.pro') || subUrl.includes('vidcache')) {
+      subHeaders['Referer'] = 'https://eneyida.tv/';
+    }
+
+    const res = await axios.get<string>(subUrl, {
+      headers: subHeaders,
+      responseType: 'text',
+      timeout: 10000,
+    });
+
+    let content = res.data;
+
+    // 1. Нормалізуємо таймкоди WebVTT: перетворюємо MM:SS.mmm на 00:MM:SS.mmm
+    content = content.replace(/(\r?\n|^)(\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}\.\d{3})/g, '$100:$2 --> 00:$3');
+    content = content.replace(/(\r?\n|^)(\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})/g, '$100:$2 --> $3');
+    content = content.replace(/(\r?\n|^)(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}\.\d{3})/g, '$1$2 --> 00:$3');
+
+    // 2. Додаємо X-TIMESTAMP-MAP для точної синхронізації MPEGTS PTS у HLS
+    if (!content.includes('X-TIMESTAMP-MAP')) {
+      content = content.replace(/^WEBVTT[^\r\n]*/, '$&\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000');
+    }
+
+    return c.text(content, 200, {
+      'Content-Type': 'text/vtt; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=86400',
+    });
+  } catch (err: unknown) {
+    logWarn('stream', `subtitle proxy error: ${(err as Error).message}`);
+    return c.text('WEBVTT\n\n', 200, {
+      'Content-Type': 'text/vtt; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    });
+  }
+});
 
 streamRouter.get('/master.m3u8', async (c) => {
   const query = c.req.query();
@@ -16,7 +135,13 @@ streamRouter.get('/master.m3u8', async (c) => {
   const translation = query.translation;
   const episodeId = query.episodeId;
 
+  // Пряме перенаправлення для субтитрів, якщо запитано через /master.m3u8
+  if (rawUrl && (rawUrl.endsWith('.vtt') || rawUrl.endsWith('.srt') || rawUrl.includes('/subtitle/'))) {
+    return c.redirect(`/subs.vtt?url=${encodeURIComponent(rawUrl)}`);
+  }
+
   let streamUrl: string | undefined;
+  let extractedSubtitles: Subtitle[] = [];
 
   if (rawUrl) {
     if (rawUrl.includes('.m3u8') && !rawUrl.includes('/master.m3u8')) {
@@ -28,10 +153,17 @@ streamRouter.get('/master.m3u8', async (c) => {
           if (typeof extracted === 'string') {
             streamUrl = extracted;
           } else if ('sources' in (extracted as any) && Array.isArray((extracted as any).sources)) {
-            streamUrl = (extracted as any).sources[0]?.url;
+            const first = (extracted as any).sources[0];
+            streamUrl = first?.lazy?.url || first?.url;
+            if (first?.subtitles && Array.isArray(first.subtitles)) {
+              extractedSubtitles = first.subtitles;
+            }
           } else if (Array.isArray(extracted) && extracted.length > 0) {
             const first = extracted[0];
-            streamUrl = typeof first === 'string' ? first : (first as any).url;
+            streamUrl = typeof first === 'string' ? first : ((first as any).lazy?.url || (first as any).url);
+            if (typeof first === 'object' && first?.subtitles && Array.isArray(first.subtitles)) {
+              extractedSubtitles = first.subtitles;
+            }
           }
         }
       } catch (err: unknown) {
@@ -40,7 +172,7 @@ streamRouter.get('/master.m3u8', async (c) => {
     }
   }
 
-  // 1. If still not resolved and lazy params are provided, resolve target URL via VOD extractors
+  // 2. If still not resolved and lazy params are provided, resolve target URL via VOD extractors
   if (!streamUrl && (cdn || episodeId || (type && id) || translation)) {
     try {
       const fullUrl = c.req.url;
@@ -50,12 +182,22 @@ streamRouter.get('/master.m3u8', async (c) => {
         if (typeof extracted === 'string') {
           streamUrl = extracted;
         } else if ('sources' in (extracted as any) && Array.isArray((extracted as any).sources)) {
-          streamUrl = (extracted as any).sources[0]?.url;
+          const first = (extracted as any).sources[0];
+          streamUrl = first?.lazy?.url || first?.url;
+          if (first?.subtitles && Array.isArray(first.subtitles)) {
+            extractedSubtitles = first.subtitles;
+          }
         } else if (Array.isArray(extracted) && extracted.length > 0) {
           const first = extracted[0];
-          streamUrl = typeof first === 'string' ? first : (first as any).url;
+          streamUrl = typeof first === 'string' ? first : ((first as any).lazy?.url || (first as any).url);
+          if (typeof first === 'object' && first?.subtitles && Array.isArray(first.subtitles)) {
+            extractedSubtitles = first.subtitles;
+          }
         } else if (typeof extracted === 'object' && 'url' in (extracted as any)) {
           streamUrl = (extracted as any).url;
+          if ((extracted as any).subtitles && Array.isArray((extracted as any).subtitles)) {
+            extractedSubtitles = (extracted as any).subtitles;
+          }
         }
       }
     } catch (err: unknown) {
@@ -89,7 +231,7 @@ streamRouter.get('/master.m3u8', async (c) => {
 
   streamUrl = stripCorsProxy(streamUrl);
 
-  // 2. Select appropriate headers based on target CDN
+  // 3. Select appropriate headers based on target CDN
   const headers: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': '*/*',
@@ -110,9 +252,16 @@ streamRouter.get('/master.m3u8', async (c) => {
     headers['Origin'] = 'https://moonanime.art';
     headers['Referer'] = 'https://moonanime.art/';
     headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0';
-    headers['Sec-Fetch-Dest'] = 'empty';
-    headers['Sec-Fetch-Mode'] = 'cors';
-    headers['Sec-Fetch-Site'] = 'same-site';
+    headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+    headers['Accept-Language'] = 'en-US,en;q=0.9';
+    headers['Sec-Fetch-Dest'] = 'document';
+    headers['Sec-Fetch-Mode'] = 'navigate';
+    headers['Sec-Fetch-Site'] = 'none';
+    headers['Sec-Fetch-User'] = '?1';
+    headers['Upgrade-Insecure-Requests'] = '1';
+    headers['Priority'] = 'u=0, i';
+    headers['Pragma'] = 'no-cache';
+    headers['Cache-Control'] = 'no-cache';
   } else if (isBamboo) {
     headers['Origin'] = 'https://bambooua.com';
     headers['Referer'] = 'https://bambooua.com/';
@@ -129,19 +278,40 @@ streamRouter.get('/master.m3u8', async (c) => {
     headers['Referer'] = 'https://uafix.net/';
   }
 
-  // 3. Fetch manifest and rewrite
+  // 4. Fetch manifest and rewrite
   try {
-    const res = await axios.get<string>(streamUrl, {
-      headers,
-      responseType: 'text',
-      timeout: 10000,
-    });
+    let manifestData: string;
+    try {
+      const res = await axios.get<string>(streamUrl, {
+        headers,
+        responseType: 'text',
+        timeout: 10000,
+      });
+      manifestData = res.data;
+    } catch (fetchErr: unknown) {
+      logWarn('stream', `Failed fetching manifest from ${streamUrl}: ${(fetchErr as any).message}`);
+      if ((fetchErr as any).response) {
+        logWarn('stream', `Fetch response data: ${JSON.stringify((fetchErr as any).response.data)}`);
+      }
+      // Якщо Ashdi повернув помилку (наприклад, 404) на відновлений потік 1080/720/2160 — пробуємо резервний 480
+      if (streamUrl.includes('ashdi.vip') && /\/hls\/(?:1080|2160|1440|720)\//.test(streamUrl)) {
+        const fallbackUrl = streamUrl.replace(/\/hls\/(?:1080|2160|1440|720)\//, '/hls/480/');
+        const fallbackRes = await axios.get<string>(fallbackUrl, {
+          headers,
+          responseType: 'text',
+          timeout: 10000,
+        });
+        manifestData = fallbackRes.data;
+      } else {
+        throw fetchErr;
+      }
+    }
 
     const host = c.req.header('host') || 'localhost:3000';
     const proto = c.req.header('x-forwarded-proto') || 'http';
     const proxyHost = `${proto}://${host}`;
 
-    const cacheKey = `${proxyHost}:${streamUrl}`;
+    const cacheKey = `${proxyHost}:${streamUrl}:${extractedSubtitles.length}`;
     const cachedM3u8 = m3u8PlaylistCache.get<string>(cacheKey);
     if (cachedM3u8) {
       return c.text(cachedM3u8, 200, {
@@ -151,8 +321,9 @@ streamRouter.get('/master.m3u8', async (c) => {
       });
     }
 
-    const modifiedM3u8 = parseMasterPlaylist(res.data, streamUrl, proxyHost, {
+    const modifiedM3u8 = parseMasterPlaylist(manifestData, streamUrl, proxyHost, {
       corsProxySegments: isMoon || isAshdi || isBamboo,
+      subtitles: extractedSubtitles,
     });
 
     m3u8PlaylistCache.set(cacheKey, modifiedM3u8, 24 * 60 * 60 * 1000);
