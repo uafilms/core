@@ -53,6 +53,7 @@ export interface MediaMetadata {
   tmdbId?: number;
   title: string;
   originalTitle?: string;
+  originalLanguage?: string;
   year?: number;
   type: MediaType;
   season?: number;

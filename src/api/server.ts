@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
@@ -26,6 +27,9 @@ app.use('*', cors({
   allowHeaders: ['Content-Type', 'Accept', 'Authorization', 'Range', 'x-api-key'],
   exposeHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges'],
 }));
+
+// Serve static logos
+app.use('/logos/*', serveStatic({ root: './public' }));
 
 // Serve frontend SPA from web/dist if built
 const distDir = path.resolve(process.cwd(), 'web/dist');
@@ -66,6 +70,7 @@ if (hasWebDist) {
       p.startsWith('/api') ||
       p.startsWith('/v1') ||
       p.startsWith('/master.m3u8') ||
+      p.startsWith('/subs') ||
       p === '/home' ||
       p === '/details' ||
       p === '/comments'

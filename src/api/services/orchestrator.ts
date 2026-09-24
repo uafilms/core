@@ -4,6 +4,8 @@ import type { OmssSource, OmssSubtitle, OmssDiagnostic, PlatformType, OmssQualit
 import { providers } from '../../providers/index.js';
 import { extractVod } from '../../vods/index.js';
 import { detectCdn } from '../../utils/cdn.js';
+import { isSearchResultMatch } from '../../utils/sort.js';
+import { cleanStudioName, detectAudioLang, resolveStudioInfo } from '../../utils/studio.js';
 import { omssSourceResolutionCache } from '../services/cache.js';
 
 interface OrchestratorOptions {
@@ -125,11 +127,24 @@ export class OrchestratorService {
           searchResults = await provider.search(meta.title, { meta });
         }
 
+        // If still no results, fallback to original title if available
+        if ((!searchResults || searchResults.length === 0) && meta.originalTitle && meta.originalTitle !== meta.title) {
+          searchResults = await provider.search(meta.originalTitle, { meta });
+        }
+
         if (!searchResults || searchResults.length === 0) {
           return;
         }
 
-        const target = searchResults[0];
+        // Find candidate that actually matches meta
+        const target = searchResults.find(r =>
+          (meta.title && isSearchResultMatch(r, meta.title, meta.year, meta.type)) ||
+          (meta.originalTitle && isSearchResultMatch(r, meta.originalTitle, meta.year, meta.type))
+        ) || (meta.title && isSearchResultMatch(searchResults[0], meta.title, meta.year, meta.type) ? searchResults[0] : null);
+
+        if (!target) {
+          return;
+        }
         const res = await provider.get(target, { meta });
         if (!res) return;
 
@@ -184,8 +199,14 @@ export class OrchestratorService {
           }
           seenSourceUrls.add(playUrl);
 
-          const audioName = raw.audio || raw.title || 'Ukrainian';
-          const audioTracks = [audioName.includes('(') ? audioName : `Ukrainian (${audioName})`];
+          const rawAudioName = raw.audio || raw.title || 'Озвучення';
+          const studioCleaned = cleanStudioName(rawAudioName);
+          const studio = resolveStudioInfo(studioCleaned, raw.poster || undefined);
+          if (studio.logoUrl && studio.logoUrl.startsWith('/logos/')) {
+            studio.logoUrl = `${proxyHost}${studio.logoUrl}`;
+          }
+          const audioTracks = [studio.name];
+          const lang = detectAudioLang(rawAudioName, meta.originalLanguage);
 
           const sourceObj: OmssSource = {
             id: randomUUID(),
@@ -194,6 +215,8 @@ export class OrchestratorService {
             type: inferType(raw.url, raw.mime),
             quality: normalizeQuality(raw.quality),
             audioTracks,
+            lang,
+            studio,
             provider: {
               id: cdn.id,
               name: cdn.name,

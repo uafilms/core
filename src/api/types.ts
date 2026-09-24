@@ -26,6 +26,11 @@ export interface OmssRootResponse {
 export type OmssVideoType = 'hls' | 'mp4' | 'mkv' | 'dash';
 export type OmssQuality = '8K' | '4K' | 'QHD' | 'FHD' | 'HD' | 'SD' | 'Auto';
 
+export interface OmssStudioInfo {
+  name: string;
+  logoUrl?: string;
+}
+
 export interface OmssSource {
   id: string;
   url: string;
@@ -33,6 +38,8 @@ export interface OmssSource {
   type: OmssVideoType;
   quality: OmssQuality;
   audioTracks: string[];
+  lang?: string;
+  studio?: OmssStudioInfo;
   provider: {
     id: string;
     name: string;

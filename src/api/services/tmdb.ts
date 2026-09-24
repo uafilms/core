@@ -27,6 +27,12 @@ export interface CatalogResponse {
   total_results?: number;
 }
 
+export interface SeasonInfo {
+  seasonNumber: number;
+  name?: string;
+  episodeCount: number;
+}
+
 export interface MediaDetails {
   id: number | string;
   imdbId?: string;
@@ -39,6 +45,9 @@ export interface MediaDetails {
   overview?: string;
   genres?: string[];
   imdbRating?: string | number | null;
+  numberOfSeasons?: number;
+  numberOfEpisodes?: number;
+  seasons?: SeasonInfo[];
 }
 
 export class TmdbService {
@@ -91,7 +100,8 @@ export class TmdbService {
 
         const data = res.data;
         const title = data.title || data.name || '';
-        const originalTitle = data.original_title || data.original_name;
+        const originalTitle = (data.original_title || data.original_name || '').replace(/&amp;/g, '&');
+        const originalLanguage = data.original_language || undefined;
         const dateStr = data.release_date || data.first_air_date || '';
         const year = dateStr ? parseInt(dateStr.split('-')[0], 10) : undefined;
         const imdbId = data.external_ids?.imdb_id || (id.startsWith('tt') ? id : undefined);
@@ -102,6 +112,7 @@ export class TmdbService {
           imdbId,
           title,
           originalTitle,
+          originalLanguage,
           year,
           type,
         };
@@ -175,18 +186,32 @@ export class TmdbService {
           timeout: 6000,
         });
         const d = res.data;
+        let seasons: SeasonInfo[] | undefined;
+        if (type === 'tv' && Array.isArray(d.seasons)) {
+          const regularSeasons = d.seasons.filter((s: any) => s.season_number > 0);
+          const seasonsToUse = regularSeasons.length > 0 ? regularSeasons : d.seasons;
+          seasons = seasonsToUse.map((s: any) => ({
+            seasonNumber: s.season_number,
+            name: s.name || `Сезон ${s.season_number}`,
+            episodeCount: s.episode_count || 1,
+          }));
+        }
+
         const details: MediaDetails = {
           id: d.id,
           imdbId: d.external_ids?.imdb_id,
           type,
           title: d.title || d.name || '',
-          originalTitle: d.original_title || d.original_name,
+          originalTitle: (d.original_title || d.original_name || '').replace(/&amp;/g, '&'),
           year: (d.release_date || d.first_air_date) ? parseInt((d.release_date || d.first_air_date).split('-')[0], 10) : null,
           posterUrl: d.poster_path ? `https://image.tmdb.org/t/p/w500${d.poster_path}` : null,
           backdropUrl: d.backdrop_path ? `https://image.tmdb.org/t/p/w1280${d.backdrop_path}` : null,
           overview: d.overview,
           genres: (d.genres || []).map((g: any) => g.name),
           imdbRating: d.vote_average ? d.vote_average.toFixed(1) : null,
+          numberOfSeasons: d.number_of_seasons || (seasons ? seasons.length : undefined),
+          numberOfEpisodes: d.number_of_episodes,
+          seasons,
         };
         metaCache.set(cacheKey, details, 3600);
         return details;
@@ -219,6 +244,14 @@ export class TmdbService {
           overview: `Рік: ${row.year || '-'}. Озвучення та перегляд онлайн українською.`,
           genres: row.is_tv ? ['Серіал'] : ['Фільм'],
           imdbRating: row.imdb_rating || null,
+          numberOfSeasons: row.is_tv ? (row.season || 1) : undefined,
+          seasons: row.is_tv
+            ? Array.from({ length: row.season || 1 }, (_, i) => ({
+                seasonNumber: i + 1,
+                name: `Сезон ${i + 1}`,
+                episodeCount: 24,
+              }))
+            : undefined,
         };
         metaCache.set(cacheKey, details, 3600);
         return details;
