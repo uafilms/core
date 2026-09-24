@@ -80,6 +80,25 @@ catalogRouter.get('/details', async (c) => {
   }
 });
 
+catalogRouter.get('/season', async (c) => {
+  const id = c.req.query('id');
+  const seasonNumber = parseInt(c.req.query('season') || '1', 10);
+
+  if (!id) {
+    return c.json({ error: 'Missing required query parameter: id' }, 400);
+  }
+
+  try {
+    const seasonDetails = await TmdbService.getSeasonDetails(id, seasonNumber);
+    if (!seasonDetails) {
+      return c.json({ error: 'Season details not found' }, 404);
+    }
+    return c.json(seasonDetails);
+  } catch (err: unknown) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 catalogRouter.get('/comments', async (c) => {
   const imdbId = c.req.query('imdb_id');
   const page = parseInt(c.req.query('page') || '1', 10);

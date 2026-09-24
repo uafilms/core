@@ -31,6 +31,24 @@ export interface SeasonInfo {
   seasonNumber: number;
   name?: string;
   episodeCount: number;
+  posterUrl?: string | null;
+}
+
+export interface EpisodeInfo {
+  episodeNumber: number;
+  name?: string;
+  overview?: string;
+  stillUrl?: string | null;
+  runtime?: number | null;
+  airDate?: string | null;
+}
+
+export interface SeasonDetails {
+  seasonNumber: number;
+  name: string;
+  overview?: string;
+  posterUrl?: string | null;
+  episodes: EpisodeInfo[];
 }
 
 export interface MediaDetails {
@@ -48,6 +66,7 @@ export interface MediaDetails {
   numberOfSeasons?: number;
   numberOfEpisodes?: number;
   seasons?: SeasonInfo[];
+  episodes?: EpisodeInfo[];
 }
 
 export class TmdbService {
@@ -92,7 +111,7 @@ export class TmdbService {
           }
         }
 
-        const url = `https://api.themoviedb.org/3/${type}/${tmdbNumericId}?append_to_response=external_ids&language=uk-UA`;
+        const url = `https://api.themoviedb.org/3/${type}/${tmdbNumericId}?append_to_response=external_ids,keywords&language=uk-UA`;
         const res = await axios.get<any>(url, {
           headers: this.getHeaders(),
           timeout: 5000,
@@ -102,6 +121,25 @@ export class TmdbService {
         const title = data.title || data.name || '';
         const originalTitle = (data.original_title || data.original_name || '').replace(/&amp;/g, '&');
         const originalLanguage = data.original_language || undefined;
+        const genres = Array.isArray(data.genres) ? data.genres.map((g: any) => g.name || '').filter(Boolean) : [];
+        const genreIds: number[] = Array.isArray(data.genres) ? data.genres.map((g: any) => g.id) : [];
+        const originCountries: string[] = Array.isArray(data.origin_country) ? data.origin_country : [];
+        const productionCountries: string[] = Array.isArray(data.production_countries) ? data.production_countries.map((c: any) => c.iso_3166_1) : [];
+
+        // Check if media is anime:
+        // 1. Japanese animation (genre 16 + origin JP / lang ja)
+        // 2. Keyword 'anime'
+        const keywordsList: string[] = [
+          ...(data.keywords?.results || []),
+          ...(data.keywords?.keywords || []),
+        ].map((k: any) => (k.name || '').toLowerCase());
+
+        const isJapanese = originalLanguage === 'ja' || originCountries.includes('JP') || productionCountries.includes('JP');
+        const isAnimation = genreIds.includes(16) || genres.some((g: string) => g.toLowerCase().includes('мульт') || g.toLowerCase().includes('анімац'));
+        const hasAnimeKeyword = keywordsList.some((k: string) => k.includes('anime'));
+
+        const isAnime = hasAnimeKeyword || (isAnimation && isJapanese);
+
         const dateStr = data.release_date || data.first_air_date || '';
         const year = dateStr ? parseInt(dateStr.split('-')[0], 10) : undefined;
         const imdbId = data.external_ids?.imdb_id || (id.startsWith('tt') ? id : undefined);
@@ -113,6 +151,8 @@ export class TmdbService {
           title,
           originalTitle,
           originalLanguage,
+          genres,
+          isAnime,
           year,
           type,
         };
@@ -194,7 +234,20 @@ export class TmdbService {
             seasonNumber: s.season_number,
             name: s.name || `Сезон ${s.season_number}`,
             episodeCount: s.episode_count || 1,
+            posterUrl: s.poster_path ? `https://image.tmdb.org/t/p/w500${s.poster_path}` : null,
           }));
+        }
+
+        let episodes: EpisodeInfo[] | undefined;
+        if (type === 'tv' && seasons && seasons.length > 0) {
+          try {
+            const seasonDetails = await this.getSeasonDetails(tmdbNumericId, seasons[0].seasonNumber);
+            if (seasonDetails?.episodes?.length) {
+              episodes = seasonDetails.episodes;
+            }
+          } catch {
+            // ignore
+          }
         }
 
         const details: MediaDetails = {
@@ -212,6 +265,7 @@ export class TmdbService {
           numberOfSeasons: seasons ? seasons.length : d.number_of_seasons,
           numberOfEpisodes: d.number_of_episodes,
           seasons,
+          episodes,
         };
         metaCache.set(cacheKey, details, 3600);
         return details;
@@ -258,6 +312,62 @@ export class TmdbService {
       }
     } catch (err) {
       logWarn('tmdb', `local db fallback failed: ${(err as Error).message}`);
+    }
+
+    return null;
+  }
+
+  static async getSeasonDetails(id: string, seasonNumber: number): Promise<SeasonDetails | null> {
+    const cacheKey = `season_${id}_${seasonNumber}`;
+    const cached = metaCache.get<SeasonDetails>(cacheKey);
+    if (cached) return cached;
+
+    const token = this.getToken();
+    if (token) {
+      try {
+        let tmdbNumericId = id;
+        if (id.startsWith('tt')) {
+          const findUrl = `https://api.themoviedb.org/3/find/${id}?external_source=imdb_id`;
+          const findRes = await axios.get<any>(findUrl, {
+            headers: this.getHeaders(),
+            timeout: 5000,
+          });
+          const results = findRes.data.tv_results || [];
+          if (results.length > 0) {
+            tmdbNumericId = String(results[0].id);
+          }
+        }
+
+        const url = `https://api.themoviedb.org/3/tv/${tmdbNumericId}/season/${seasonNumber}?language=uk-UA`;
+        const res = await axios.get<any>(url, {
+          headers: this.getHeaders(),
+          timeout: 6000,
+        });
+        const d = res.data;
+        const episodes: EpisodeInfo[] = Array.isArray(d.episodes)
+          ? d.episodes.map((ep: any) => ({
+              episodeNumber: ep.episode_number,
+              name: ep.name || `Серія ${ep.episode_number}`,
+              overview: ep.overview || '',
+              stillUrl: ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : null,
+              runtime: ep.runtime || null,
+              airDate: ep.air_date || null,
+            }))
+          : [];
+
+        const result: SeasonDetails = {
+          seasonNumber: d.season_number ?? seasonNumber,
+          name: d.name || `Сезон ${seasonNumber}`,
+          overview: d.overview || '',
+          posterUrl: d.poster_path ? `https://image.tmdb.org/t/p/w500${d.poster_path}` : null,
+          episodes,
+        };
+
+        metaCache.set(cacheKey, result, 3600);
+        return result;
+      } catch (err: unknown) {
+        logWarn('tmdb', `getSeasonDetails failed for ${id} s${seasonNumber}: ${(err as Error).message}`);
+      }
     }
 
     return null;

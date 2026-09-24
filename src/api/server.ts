@@ -73,6 +73,7 @@ if (hasWebDist) {
       p.startsWith('/subs') ||
       p === '/home' ||
       p === '/details' ||
+      p === '/season' ||
       p === '/comments'
     ) {
       return next();

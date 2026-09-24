@@ -54,6 +54,8 @@ export interface MediaMetadata {
   title: string;
   originalTitle?: string;
   originalLanguage?: string;
+  genres?: string[];
+  isAnime?: boolean;
   year?: number;
   type: MediaType;
   season?: number;
