@@ -230,8 +230,7 @@
 }
 
 /* Control buttons inside bar */
-.video-js .vjs-control-bar .vjs-button,
-.video-js .vjs-control-bar .vjs-control {
+.video-js .vjs-control-bar .vjs-button {
   width: 40px !important;
   height: 40px !important;
   border-radius: 12px !important;
@@ -246,8 +245,7 @@
   padding: 0 !important;
 }
 
-.video-js .vjs-control-bar .vjs-button:hover,
-.video-js .vjs-control-bar .vjs-control:hover {
+.video-js .vjs-control-bar .vjs-button:hover {
   background: rgba(255, 255, 255, 0.1) !important;
   color: #fff !important;
 }
@@ -443,7 +441,8 @@
 }
 
 /* Time Display */
-.video-js .vjs-time-control {
+.video-js .vjs-time-control,
+.video-js .vjs-control-bar .vjs-time-control {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -453,54 +452,79 @@
   font-weight: 500 !important;
   min-width: 0 !important;
   width: auto !important;
+  max-width: none !important;
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
   padding: 0 !important;
   margin: 0 !important;
   color: var(--vjs-on-surface-variant) !important;
   box-sizing: border-box !important;
+  cursor: default !important;
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
-.video-js .vjs-current-time {
+.video-js .vjs-control-bar .vjs-time-control:hover {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.video-js .vjs-current-time,
+.video-js .vjs-control-bar .vjs-current-time {
   display: inline-flex !important;
   align-items: center !important;
-  justify-content: flex-end !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
   flex-shrink: 0 !important;
   min-width: 0 !important;
   width: auto !important;
+  max-width: none !important;
   padding: 0 !important;
   margin: 0 !important;
   letter-spacing: 0.5px !important;
 }
 
-.video-js .vjs-duration {
+.video-js .vjs-duration,
+.video-js .vjs-control-bar .vjs-duration {
   display: inline-flex !important;
   align-items: center !important;
-  justify-content: flex-start !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
   flex-shrink: 0 !important;
   min-width: 0 !important;
   width: auto !important;
+  max-width: none !important;
   padding: 0 !important;
   margin: 0 !important;
   letter-spacing: 0.5px !important;
 }
 
 .video-js .vjs-current-time-display,
-.video-js .vjs-duration-display {
-  display: inline-block !important;
+.video-js .vjs-duration-display,
+.video-js .vjs-control-bar .vjs-current-time-display,
+.video-js .vjs-control-bar .vjs-duration-display {
+  display: inline !important;
   line-height: 1 !important;
   padding: 0 !important;
   margin: 0 !important;
+  width: auto !important;
 }
 
 .video-js .vjs-time-divider,
-.video-js .vjs-control-bar .vjs-time-divider {
+.video-js .vjs-control-bar .vjs-time-divider,
+.video-js [class*="vjs-time-divider"] {
+  all: unset !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   width: auto !important;
   min-width: 0 !important;
+  max-width: none !important;
   inline-size: auto !important;
   block-size: auto !important;
+  flex: 0 0 auto !important;
   flex-shrink: 0 !important;
+  height: 40px !important;
   padding: 0 4px !important;
   margin: 0 !important;
   border-radius: 0 !important;
@@ -513,7 +537,9 @@
 }
 
 .video-js .vjs-time-divider div,
-.video-js .vjs-time-divider span {
+.video-js .vjs-time-divider span,
+.video-js .vjs-control-bar .vjs-time-divider div,
+.video-js .vjs-control-bar .vjs-time-divider span {
   display: inline-block !important;
   font-family: Roboto, Arial, sans-serif !important;
   font-size: 13px !important;
@@ -799,8 +825,7 @@
     border-radius: 12px;
   }
 
-  .video-js .vjs-control-bar .vjs-button,
-  .video-js .vjs-control-bar .vjs-control {
+  .video-js .vjs-control-bar .vjs-button {
     width: 36px !important;
     height: 36px !important;
   }
