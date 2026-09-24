@@ -57,14 +57,9 @@ export class AshdiVodExtractor implements VodExtractor {
             u.searchParams.set('multivoice', '');
           }
           fetchUrl = u.toString().replace(/multivoice=(&|$)/, 'multivoice$1').replace(/\?$/, '');
-        } else if (/\/vod\/\d+/i.test(u.pathname) && !u.searchParams.has('multivoice')) {
-          u.searchParams.set('multivoice', '');
-          fetchUrl = u.toString().replace(/multivoice=(&|$)/, 'multivoice$1').replace(/\?$/, '');
         }
       } catch {
-        if (/\/vod\/\d+/i.test(fetchUrl) && !fetchUrl.includes('multivoice')) {
-          fetchUrl += (fetchUrl.includes('?') ? '&' : '?') + 'multivoice';
-        }
+        // ignore
       }
 
       const html = await getHtml(fetchUrl, {

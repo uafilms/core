@@ -11,6 +11,7 @@ export interface FrankoPlayerPayload {
   cover_url?: string;
   translations?: FrankoTranslation[];
   seasons?: Record<string, number>;
+  season?: number;
   episodes?: number[];
   seasons_episodes?: Record<string, number[]>;
   translate?: number;

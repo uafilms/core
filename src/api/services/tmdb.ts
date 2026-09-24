@@ -188,8 +188,8 @@ export class TmdbService {
         const d = res.data;
         let seasons: SeasonInfo[] | undefined;
         if (type === 'tv' && Array.isArray(d.seasons)) {
-          const regularSeasons = d.seasons.filter((s: any) => s.season_number > 0);
-          const seasonsToUse = regularSeasons.length > 0 ? regularSeasons : d.seasons;
+          const regularSeasons = d.seasons.filter((s: any) => s.season_number > 0 && (s.episode_count > 0 || (s.air_date && s.air_date !== '')));
+          const seasonsToUse = regularSeasons.length > 0 ? regularSeasons : d.seasons.filter((s: any) => s.season_number > 0);
           seasons = seasonsToUse.map((s: any) => ({
             seasonNumber: s.season_number,
             name: s.name || `Сезон ${s.season_number}`,
@@ -209,7 +209,7 @@ export class TmdbService {
           overview: d.overview,
           genres: (d.genres || []).map((g: any) => g.name),
           imdbRating: d.vote_average ? d.vote_average.toFixed(1) : null,
-          numberOfSeasons: d.number_of_seasons || (seasons ? seasons.length : undefined),
+          numberOfSeasons: seasons ? seasons.length : d.number_of_seasons,
           numberOfEpisodes: d.number_of_episodes,
           seasons,
         };

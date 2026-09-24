@@ -167,7 +167,9 @@ export class OrchestratorService {
 
           if (platform === 'web') {
             if (raw.lazy) {
-              if (raw.lazy.url && raw.lazy.url.startsWith('/master.m3u8')) {
+              if (raw.lazy.directUrl) {
+                playUrl = `${proxyHost}/master.m3u8?url=${encodeURIComponent(raw.lazy.directUrl)}`;
+              } else if (raw.lazy.url && raw.lazy.url.startsWith('/master.m3u8')) {
                 playUrl = `${proxyHost}${raw.lazy.url}`;
               } else {
                 const params = new URLSearchParams();
