@@ -1,8 +1,10 @@
 import type { Season, StreamSource } from '../../types/media.js';
+import { parsePlayerjsSubtitles } from '../../utils/playerjs.js';
 
 export interface BambooPlaylistItem {
   title?: string;
   file?: string;
+  subtitle?: string;
   folder?: BambooPlaylistItem[];
 }
 
@@ -77,6 +79,7 @@ export function parseBambooPlaylist(rawPlaylist: BambooPlaylistItem[]): ParseBam
           quality: '1080p',
           url: fileUrl,
           audio: audioName,
+          subtitles: item.subtitle ? parsePlayerjsSubtitles(item.subtitle) : undefined,
           headers: {
             Referer: 'https://bambooua.com/',
             Origin: 'https://bambooua.com',

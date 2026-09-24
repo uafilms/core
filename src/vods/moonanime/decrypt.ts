@@ -81,7 +81,7 @@ export function moonInnerDecode(encoded: string, key?: string | null): string | 
   return null;
 }
 
-export function decryptMoonAnimeIframe(html: string): { file: string; poster?: string } | null {
+export function decryptMoonAnimeIframe(html: string): { file: string; poster?: string; subtitle?: string } | null {
   const decodedJs = moonOuterDecode(html);
   if (!decodedJs) return null;
 
@@ -130,5 +130,16 @@ export function decryptMoonAnimeIframe(html: string): { file: string; poster?: s
     }
   }
 
-  return { file: fileValue, poster };
+  let subtitle: string | undefined;
+  const rawSubEncodedMatch = decodedJs.match(/var\s+rawSubtitle\s*=\s*_0xd\("([^"]+)"\)/) || decodedJs.match(/subtitle:\s*_0xd\("([^"]+)"\)/);
+  if (rawSubEncodedMatch) {
+    const decodedSub = moonInnerDecode(rawSubEncodedMatch[1], dynKey);
+    if (decodedSub) subtitle = decodedSub;
+  }
+  if (!subtitle) {
+    const subMatch = decodedJs.match(/(?:var\s+rawSubtitle\s*=\s*|subtitle:\s*)"([^"]+)"/);
+    if (subMatch) subtitle = subMatch[1];
+  }
+
+  return { file: fileValue, poster, subtitle };
 }

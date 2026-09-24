@@ -1,4 +1,5 @@
 import type { Subtitle } from '../../types/media.js';
+import { parsePlayerjsSubtitles } from '../../utils/playerjs.js';
 
 export function normalizeHdvbUrl(url: string): string {
   if (!url) return '';
@@ -9,30 +10,7 @@ export function normalizeHdvbUrl(url: string): string {
   return clean;
 }
 
-export function parseHdvbSubtitles(subInput?: string): Subtitle[] {
-  if (!subInput || typeof subInput !== 'string') return [];
-  const subs: Subtitle[] = [];
-  const regex = /(?:\[(.*?)\])?(https?:\/\/[^,\s]+)/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(subInput)) !== null) {
-    const label = match[1] || 'Default';
-    const labelLower = label.toLowerCase();
-    let lang = 'ua';
-    if (labelLower.includes('en') || labelLower.includes('англ') || labelLower.includes('english')) {
-      lang = 'en';
-    } else if (labelLower.includes('ua') || labelLower.includes('укр') || labelLower.includes('ukrainian')) {
-      lang = 'ua';
-    }
-    subs.push({
-      label,
-      lang,
-      url: match[2],
-    });
-  }
-
-  return subs;
-}
+export const parseHdvbSubtitles = parsePlayerjsSubtitles;
 
 /**
  * Витягує та декодує значення `file:` з HTML коду Playerjs

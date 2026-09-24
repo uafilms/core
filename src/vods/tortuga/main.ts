@@ -3,6 +3,7 @@ import type { Episode, Season, StreamSource } from '../../types/media.js';
 import { getHtml } from '../../utils/http.js';
 import { decodeTortuga } from './decrypt.js';
 import { sortSeasons, sortSources } from '../../utils/sort.js';
+import { parsePlayerjsSubtitles } from '../../utils/playerjs.js';
 
 export class TortugaVodExtractor implements VodExtractor {
   readonly name = 'tortuga';
@@ -50,6 +51,7 @@ export class TortugaVodExtractor implements VodExtractor {
           title: 'Tortuga',
           url: vod.file,
           poster: vod.poster,
+          subtitles: vod.subtitle ? parsePlayerjsSubtitles(vod.subtitle) : undefined,
           mime: 'application/x-mpegURL',
         }],
       };
@@ -68,7 +70,7 @@ export class TortugaVodExtractor implements VodExtractor {
   /**
    * Парсинг фільму (/vod/)
    */
-  async parseVod(vodUrl: string, options: VodExtractionOptions = {}): Promise<{ file: string; poster?: string | null } | null> {
+  async parseVod(vodUrl: string, options: VodExtractionOptions = {}): Promise<{ file: string; poster?: string | null; subtitle?: string | null } | null> {
     try {
       const html = await getHtml(vodUrl, {
         signal: options.signal,
@@ -88,7 +90,12 @@ export class TortugaVodExtractor implements VodExtractor {
       const posterMatch = html.match(/poster\s*:\s*["']([A-Za-z0-9+/=]+)["']/);
       const poster = posterMatch ? decodeTortuga(posterMatch[1]) : null;
 
-      return { file, poster };
+      const subMatch = html.match(/subtitle\s*:\s*["']([A-Za-z0-9+/=]+)["']/);
+      const decodedSub = subMatch ? decodeTortuga(subMatch[1]) : null;
+      const rawSubMatch = !decodedSub ? html.match(/subtitle\s*:\s*["']([^"']+)["']/) : null;
+      const subString = decodedSub || (rawSubMatch ? rawSubMatch[1] : null);
+
+      return { file, poster, subtitle: subString };
     } catch {
       return null;
     }
@@ -133,19 +140,23 @@ export class TortugaVodExtractor implements VodExtractor {
             if (Array.isArray(rawEp.folder)) {
               for (const dub of rawEp.folder) {
                 if (dub.file) {
+                  const subStr = dub.subtitle ? (decodeTortuga(dub.subtitle) || dub.subtitle) : undefined;
                   sources.push({
                     title: dub.title || 'Tortuga',
                     url: dub.file,
                     mime: 'application/x-mpegURL',
                     poster: dub.poster || null,
+                    subtitles: subStr ? parsePlayerjsSubtitles(subStr) : undefined,
                   });
                 }
               }
             } else if (rawEp.file) {
+              const subStr = rawEp.subtitle ? (decodeTortuga(rawEp.subtitle) || rawEp.subtitle) : undefined;
               sources.push({
                 title: rawEp.title || 'Tortuga',
                 url: rawEp.file,
                 mime: 'application/x-mpegURL',
+                subtitles: subStr ? parsePlayerjsSubtitles(subStr) : undefined,
               });
             }
 

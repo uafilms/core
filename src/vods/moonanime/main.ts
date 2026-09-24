@@ -2,6 +2,7 @@ import type { VodExtractor, VodExtractionOptions, VodExtractionResult } from '..
 import type { StreamSource } from '../../types/media.js';
 import { httpRequest } from '../../utils/http.js';
 import { decryptMoonAnimeIframe } from './decrypt.js';
+import { parsePlayerjsSubtitles } from '../../utils/playerjs.js';
 
 export const MOON_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0',
@@ -75,7 +76,7 @@ export class MoonAnimeVodExtractor implements VodExtractor {
       const file = decrypted.file;
 
       if (file.includes('[') && file.includes(']')) {
-        return this.parseQualities(file, decrypted.poster);
+        return this.parseQualities(file, decrypted.poster, decrypted.subtitle);
       }
 
       // Single M3U8 or stream URL
@@ -86,6 +87,7 @@ export class MoonAnimeVodExtractor implements VodExtractor {
           url: `/master.m3u8?cdn=moonanime&url=${encodeURIComponent(file)}`,
           mime: 'application/x-mpegURL',
           poster: decrypted.poster,
+          subtitles: decrypted.subtitle ? parsePlayerjsSubtitles(decrypted.subtitle) : undefined,
           headers: {
             Origin: 'https://moonanime.art',
             Referer: 'https://moonanime.art/',
@@ -103,9 +105,10 @@ export class MoonAnimeVodExtractor implements VodExtractor {
     }
   }
 
-  private parseQualities(qualitiesStr: string, poster?: string): VodExtractionResult {
+  private parseQualities(qualitiesStr: string, poster?: string, subtitle?: string): VodExtractionResult {
     const sources: StreamSource[] = [];
     const parts = qualitiesStr.split(',');
+    const subs = subtitle ? parsePlayerjsSubtitles(subtitle) : undefined;
 
     for (const part of parts) {
       const match = part.match(/\[([^\]]+)\](https?:\/\/.+)/);
@@ -121,6 +124,7 @@ export class MoonAnimeVodExtractor implements VodExtractor {
         url: `/master.m3u8?cdn=moonanime&url=${encodeURIComponent(streamUrl)}`,
         mime: streamUrl.includes('.webm') ? 'video/webm' : 'application/x-mpegURL',
         poster,
+        subtitles: subs,
         headers: {
           Origin: 'https://moonanime.art',
           Referer: 'https://moonanime.art/',
