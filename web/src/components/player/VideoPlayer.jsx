@@ -163,6 +163,39 @@ export default function VideoPlayer({
       });
     }
 
+    // Patch VHS VTTSegmentLoader time mapping: prevent negative PTS offset from causing cues to rush ahead
+    const patchVttTimeMapping = () => {
+      try {
+        const tech = player.tech({ IWillNotUseThisInPlugins: true });
+        const subLoader = tech?.vhs?.playlistController_?.subtitleSegmentLoader_;
+        if (!subLoader) return;
+        const proto = Object.getPrototypeOf(subLoader);
+        if (!proto || proto.__timeMappingPatched) return;
+        proto.__timeMappingPatched = true;
+        const origUpdate = proto.updateTimeMapping_;
+        proto.updateTimeMapping_ = function (segmentInfo, mappingObj, playlist) {
+          if (segmentInfo?.timestampmap?.MPEGTS === 0 && segmentInfo?.timestampmap?.LOCAL === 0) {
+            if (playlist && !playlist.syncInfo && segmentInfo.cues?.length) {
+              const firstStart = segmentInfo.cues[0].startTime;
+              const lastStart = segmentInfo.cues[segmentInfo.cues.length - 1].startTime;
+              playlist.syncInfo = {
+                mediaSequence: playlist.mediaSequence + segmentInfo.mediaIndex,
+                time: Math.min(firstStart, lastStart - (segmentInfo.segment?.duration || 0)),
+              };
+            }
+            return;
+          }
+          return origUpdate.call(this, segmentInfo, mappingObj, playlist);
+        };
+      } catch (e) {
+        // Silently continue if VHS internals differ
+      }
+    };
+
+    player.on('loadstart', patchVttTimeMapping);
+    player.on('loadedmetadata', patchVttTimeMapping);
+    patchVttTimeMapping();
+
     // Hook Settings button click
     const settingsBtn = player.controlBar.getChild('BeerSettingsButton');
     if (settingsBtn) {

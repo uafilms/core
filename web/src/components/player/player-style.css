@@ -55,7 +55,8 @@
 }
 
 /* Prevent global `i` tag style (index.css / BeerCSS) from overriding VideoJS icons */
-.video-js i:not(.material-symbols-rounded) {
+.video-js .vjs-control-bar i:not(.material-symbols-rounded),
+.video-js .vjs-menu i:not(.material-symbols-rounded) {
   font-family: VideoJS !important;
   font-style: normal !important;
   font-feature-settings: normal !important;
@@ -884,5 +885,56 @@
   border-radius: 6px !important;
   white-space: pre-line !important;
   text-align: center !important;
+}
+
+/* Ensure formatting tags (i, em, b, strong, u) in WebVTT cues render properly and override BeerCSS icon rules */
+.video-js .vjs-text-track-display i,
+.video-js .vjs-text-track-cue i,
+.video-js .vjs-text-track-cue em {
+  all: unset !important;
+  display: inline !important;
+  font-style: italic !important;
+  font-family: inherit !important;
+  font-size: inherit !important;
+  color: inherit !important;
+  line-height: inherit !important;
+  overflow: visible !important;
+  inline-size: auto !important;
+  block-size: auto !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+.video-js .vjs-text-track-display b,
+.video-js .vjs-text-track-cue b,
+.video-js .vjs-text-track-cue strong {
+  all: unset !important;
+  display: inline !important;
+  font-weight: bold !important;
+  font-family: inherit !important;
+  font-size: inherit !important;
+  color: inherit !important;
+  line-height: inherit !important;
+  overflow: visible !important;
+  inline-size: auto !important;
+  block-size: auto !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+.video-js .vjs-text-track-display u,
+.video-js .vjs-text-track-cue u {
+  all: unset !important;
+  display: inline !important;
+  text-decoration: underline !important;
+  font-family: inherit !important;
+  font-size: inherit !important;
+  color: inherit !important;
+  line-height: inherit !important;
+  overflow: visible !important;
+  inline-size: auto !important;
+  block-size: auto !important;
+  width: auto !important;
+  height: auto !important;
 }
 
