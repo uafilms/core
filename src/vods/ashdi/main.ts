@@ -48,8 +48,23 @@ export class AshdiVodExtractor implements VodExtractor {
 
     try {
       let fetchUrl = normalizedUrl;
-      if (/\/vod\/\d+/i.test(fetchUrl) && !fetchUrl.includes('multivoice')) {
-        fetchUrl += (fetchUrl.includes('?') ? '&' : '?') + 'multivoice';
+      try {
+        const u = new URL(fetchUrl.startsWith('http') ? fetchUrl : `https://${fetchUrl}`);
+        if (/\/serial\/\d+/i.test(u.pathname)) {
+          u.searchParams.delete('season');
+          u.searchParams.delete('episode');
+          if (!u.searchParams.has('multivoice')) {
+            u.searchParams.set('multivoice', '');
+          }
+          fetchUrl = u.toString().replace(/multivoice=(&|$)/, 'multivoice$1').replace(/\?$/, '');
+        } else if (/\/vod\/\d+/i.test(u.pathname) && !u.searchParams.has('multivoice')) {
+          u.searchParams.set('multivoice', '');
+          fetchUrl = u.toString().replace(/multivoice=(&|$)/, 'multivoice$1').replace(/\?$/, '');
+        }
+      } catch {
+        if (/\/vod\/\d+/i.test(fetchUrl) && !fetchUrl.includes('multivoice')) {
+          fetchUrl += (fetchUrl.includes('?') ? '&' : '?') + 'multivoice';
+        }
       }
 
       const html = await getHtml(fetchUrl, {
