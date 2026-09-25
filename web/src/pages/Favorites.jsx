@@ -13,6 +13,7 @@ import {
   getLocalCollections,
   saveLocalCollection,
   deleteLocalCollection,
+  toggleItemInCollection,
 } from '../utils/sync.js';
 import { useAuth } from '../context/AuthContext';
 
@@ -346,6 +347,12 @@ const Favorites = () => {
     handleCloseDeleteModal();
   };
 
+  const handleRemoveFromActiveCollection = (e, movieId) => {
+    e.stopPropagation();
+    if (!activeCollection) return;
+    toggleItemInCollection(activeCollection.id, movieId);
+  };
+
   return (
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
       {/* Header & Sync Status Banner */}
@@ -627,19 +634,36 @@ const Favorites = () => {
                   key={movie.id}
                   movie={movie}
                   action={
-                    <button
-                      className="circle transparent small"
-                      style={{
-                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                        color: '#ffffff',
-                        width: '28px',
-                        height: '28px',
-                      }}
-                      title="Керувати колекціями"
-                      onClick={() => setSelectedMovieForCollection(movie)}
-                    >
-                      <i style={{ fontSize: '16px' }}>collections_bookmark</i>
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {activeCollection && (
+                        <button
+                          className="circle transparent small"
+                          style={{
+                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                            color: 'var(--error, #ff8b8b)',
+                            width: '28px',
+                            height: '28px',
+                          }}
+                          title="Видалити з цієї колекції"
+                          onClick={(e) => handleRemoveFromActiveCollection(e, movie.id)}
+                        >
+                          <i style={{ fontSize: '16px' }}>close</i>
+                        </button>
+                      )}
+                      <button
+                        className="circle transparent small"
+                        style={{
+                          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                          color: '#ffffff',
+                          width: '28px',
+                          height: '28px',
+                        }}
+                        title="Керувати колекціями"
+                        onClick={() => setSelectedMovieForCollection(movie)}
+                      >
+                        <i style={{ fontSize: '16px' }}>collections_bookmark</i>
+                      </button>
+                    </div>
                   }
                 />
               ))}
