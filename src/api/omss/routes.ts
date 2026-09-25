@@ -7,6 +7,7 @@ import { TmdbService } from '../services/tmdb.js';
 import { OrchestratorService } from '../services/orchestrator.js';
 import { omssResponseCache } from '../services/cache.js';
 import { applyFilterToSources } from './filter.js';
+import { enforceParsingSecurity } from '../services/security.js';
 
 export const omssRouter = new Hono();
 
@@ -51,6 +52,9 @@ omssRouter.get('/v1', rootHandler);
 
 // 4.2 Movie Sources: GET /v1/movies/:id
 omssRouter.get('/v1/movies/:id', async (c) => {
+  const securityError = await enforceParsingSecurity(c);
+  if (securityError) return securityError;
+
   const id = c.req.param('id');
   const platform = (c.req.query('platform') || 'web') as PlatformType;
   const provider = c.req.query('provider');
@@ -176,6 +180,9 @@ omssRouter.get('/v1/movies/:id', async (c) => {
 
 // 4.3 TV Episode Sources: GET /v1/tv/:id/seasons/:s/episodes/:e
 omssRouter.get('/v1/tv/:id/seasons/:s/episodes/:e', async (c) => {
+  const securityError = await enforceParsingSecurity(c);
+  if (securityError) return securityError;
+
   const id = c.req.param('id');
   const sParam = c.req.param('s');
   const eParam = c.req.param('e');
@@ -327,6 +334,9 @@ omssRouter.get('/v1/tv/:id/seasons/:s/episodes/:e', async (c) => {
 
 // 4.5 Refresh Endpoint: POST /v1/refresh/:id
 omssRouter.post('/v1/refresh/:id', async (c) => {
+  const securityError = await enforceParsingSecurity(c);
+  if (securityError) return securityError;
+
   const id = c.req.param('id');
   if (!id) {
     const err = makeError('MISSING_PARAMETER', 'Missing id parameter', 400);
