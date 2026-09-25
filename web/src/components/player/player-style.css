@@ -412,6 +412,7 @@
   background: var(--vjs-primary) !important;
   border-radius: 9999px !important;
   height: 100% !important;
+  z-index: auto !important;
 }
 
 .video-js .vjs-load-progress {
@@ -426,8 +427,9 @@
 .video-js .vjs-play-progress:before {
   content: "";
   position: absolute;
-  right: -5px;
-  top: -3px;
+  right: -6px;
+  top: 50%;
+  margin-top: -6px;
   width: 12px;
   height: 12px;
   border-radius: 50%;
@@ -435,6 +437,8 @@
   transform: scale(0);
   transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  z-index: 20 !important;
+  pointer-events: none;
 }
 
 .video-js .vjs-progress-control:hover .vjs-play-progress:before {
@@ -937,4 +941,195 @@
   width: auto !important;
   height: auto !important;
 }
+
+/* === PROGRESS SEGMENTS BAR (SPONSORBLOCK STYLE) === */
+.vjs-segments-bar {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+  z-index: 2 !important;
+  border-radius: 9999px !important;
+  overflow: hidden !important;
+}
+
+.vjs-segment-marker {
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  height: 100% !important;
+  border-radius: 9999px !important;
+  opacity: 0.95 !important;
+  border: none !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
+}
+
+/* Floating Skip Segment Button */
+.vjs-skip-segment-btn {
+  position: absolute !important;
+  right: 24px !important;
+  bottom: 84px !important;
+  z-index: 12 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 10px 18px !important;
+  background: rgba(18, 18, 18, 0.88) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 9999px !important;
+  color: #ffffff !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5) !important;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1) !important;
+  animation: vjsSkipFadeIn 0.25s ease-out !important;
+  user-select: none !important;
+}
+
+.vjs-skip-segment-btn:hover {
+  background: rgba(40, 40, 40, 0.95) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  transform: translateY(-2px) scale(1.02) !important;
+}
+
+.vjs-skip-segment-btn i {
+  font-size: 20px !important;
+  line-height: 1 !important;
+  color: var(--vjs-primary, #bb86fc) !important;
+}
+
+.vjs-skip-kbd {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: rgba(255, 255, 255, 0.18) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  border-radius: 4px !important;
+  padding: 1px 6px !important;
+  font-size: 11px !important;
+  font-family: inherit !important;
+  font-weight: 600 !important;
+  margin-left: 4px !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  line-height: 1.2 !important;
+}
+
+/* Auto-skip Undo Notice */
+.vjs-skip-notice {
+  position: absolute !important;
+  right: 24px !important;
+  bottom: 84px !important;
+  z-index: 12 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 14px !important;
+  padding: 8px 16px !important;
+  background: rgba(18, 18, 18, 0.88) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 9999px !important;
+  color: #ffffff !important;
+  font-size: 13px !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5) !important;
+  animation: vjsSkipFadeIn 0.25s ease-out !important;
+  user-select: none !important;
+}
+
+.vjs-skip-notice-text {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-weight: 500 !important;
+}
+
+.vjs-skip-notice-text i {
+  font-size: 18px !important;
+  color: var(--vjs-primary, #bb86fc) !important;
+}
+
+.vjs-skip-notice-undo {
+  background: transparent !important;
+  border: none !important;
+  color: var(--vjs-primary, #bb86fc) !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  transition: background 0.15s ease !important;
+}
+
+.vjs-skip-notice-undo:hover {
+  background: rgba(187, 134, 252, 0.15) !important;
+  text-decoration: underline !important;
+}
+
+@keyframes vjsSkipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Switch Toggle inside Settings */
+.vjs-switch-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 38px;
+  height: 22px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: background-color 0.2s ease;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.vjs-switch-toggle.checked {
+  background: var(--vjs-primary, #bb86fc);
+}
+
+.vjs-switch-slider {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  margin-left: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vjs-switch-toggle.checked .vjs-switch-slider {
+  transform: translateX(16px);
+}
+
+@media (max-width: 600px) {
+  .vjs-skip-segment-btn {
+    right: 12px !important;
+    bottom: 74px !important;
+    padding: 8px 14px !important;
+    font-size: 12px !important;
+  }
+  .vjs-skip-notice {
+    right: 12px !important;
+    bottom: 74px !important;
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+  }
+}
+
 

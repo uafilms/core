@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
 import 'videojs-hotkeys';
@@ -10,11 +11,17 @@ export default function VideoPlayer({
   src,
   type = 'application/x-mpegURL',
   poster,
+  title = '',
   subtitles = [],
   sources = [],
   selectedSource = null,
   onSourceChange = null,
   mediaId = null,
+  tmdbId = null,
+  imdbId = null,
+  mediaType = 'movie',
+  season = null,
+  episode = null,
 }) {
   const videoNode = useRef(null);
   const playerRef = useRef(null);
@@ -35,6 +42,104 @@ export default function VideoPlayer({
   const sourcesRef = useRef(sources);
   const selectedSourceRef = useRef(selectedSource);
   const onSourceChangeRef = useRef(onSourceChange);
+
+  // SponsorBlock / TheIntroDB Media Segments
+  const [segments, setSegments] = useState([]);
+  const segmentsRef = useRef([]);
+  const [activeSegment, setActiveSegment] = useState(null);
+  const activeSegmentRef = useRef(null);
+  const activeSegmentKeyRef = useRef(null);
+  const [showSkipButton, setShowSkipButton] = useState(false);
+  const skipBtnTimeoutRef = useRef(null);
+
+  const [autoSkip, setAutoSkip] = useState(() => {
+    try {
+      return localStorage.getItem('uafilms_autoskip_segments') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const autoSkipRef = useRef(autoSkip);
+  const [skipNotice, setSkipNotice] = useState(null);
+  const skipNoticeTimeoutRef = useRef(null);
+  const skippedSegmentsRef = useRef(new Set());
+  const lastCurTimeRef = useRef(0);
+  const [duration, setDuration] = useState(0);
+  const [progressHolderEl, setProgressHolderEl] = useState(null);
+
+  useEffect(() => {
+    segmentsRef.current = segments;
+  }, [segments]);
+
+  useEffect(() => {
+    activeSegmentRef.current = activeSegment;
+  }, [activeSegment]);
+
+  useEffect(() => {
+    autoSkipRef.current = autoSkip;
+  }, [autoSkip]);
+
+  useEffect(() => {
+    if (!tmdbId && !imdbId) {
+      setSegments([]);
+      return;
+    }
+    const params = new URLSearchParams();
+    if (tmdbId) params.set('id', tmdbId);
+    if (imdbId) params.set('imdb_id', imdbId);
+    if (mediaType) params.set('type', mediaType);
+    if (season != null) params.set('season', season);
+    if (episode != null) params.set('episode', episode);
+    if (title) params.set('title', title);
+    if (duration > 0) params.set('duration', Math.round(duration));
+
+    fetch(`/segments?${params.toString()}`)
+      .then((res) => (res.ok ? res.json() : { segments: [] }))
+      .then((data) => {
+        const list = Array.isArray(data.segments) ? data.segments : [];
+        setSegments(list);
+      })
+      .catch(() => {
+        setSegments([]);
+      });
+  }, [tmdbId, imdbId, mediaType, season, episode, title, duration]);
+
+  const toggleAutoSkip = () => {
+    setAutoSkip((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('uafilms_autoskip_segments', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Keyboard shortcut: Enter to skip active segment
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Enter') {
+        const tag = document.activeElement?.tagName?.toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return;
+
+        if (activeSegmentRef.current && playerRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          const dur = playerRef.current.duration() || 0;
+          const targetTime = activeSegmentRef.current.endSec !== null
+            ? activeSegmentRef.current.endSec
+            : Math.max(0, dur - 1);
+          playerRef.current.currentTime(targetTime);
+          setActiveSegment(null);
+          setShowSkipButton(false);
+          activeSegmentKeyRef.current = null;
+          if (skipBtnTimeoutRef.current) clearTimeout(skipBtnTimeoutRef.current);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useEffect(() => {
     sourcesRef.current = sources;
@@ -137,6 +242,11 @@ export default function VideoPlayer({
     });
 
     playerRef.current = player;
+
+    player.ready(() => {
+      const holder = player.el()?.querySelector('.vjs-progress-holder');
+      if (holder) setProgressHolderEl(holder);
+    });
 
     const mimeType = (type === 'hls' || src?.includes('.m3u8') || src?.includes('/master.m3u8'))
       ? 'application/x-mpegURL'
@@ -318,6 +428,62 @@ export default function VideoPlayer({
         lastSave = now;
         saveProgress();
       }
+
+      const dur = player.duration() || 0;
+      if (dur > 0 && dur !== duration) {
+        setDuration(dur);
+      }
+
+      const cur = player.currentTime();
+      if (cur < lastCurTimeRef.current - 3) {
+        skippedSegmentsRef.current.clear();
+      }
+      lastCurTimeRef.current = cur;
+
+      if (segmentsRef.current.length > 0) {
+        const match = segmentsRef.current.find((s) => {
+          const start = s.startSec;
+          const end = s.endSec !== null ? s.endSec : dur;
+          return cur >= start && cur < end;
+        });
+
+        if (match) {
+          const segKey = `${match.type}_${match.startSec}_${match.endSec}`;
+          if (autoSkipRef.current) {
+            if (!skippedSegmentsRef.current.has(segKey)) {
+              skippedSegmentsRef.current.add(segKey);
+              const targetTime = match.endSec !== null ? match.endSec : Math.max(0, dur - 1);
+              player.currentTime(targetTime);
+
+              setSkipNotice({ label: match.label, from: cur, to: targetTime, key: segKey });
+              if (skipNoticeTimeoutRef.current) clearTimeout(skipNoticeTimeoutRef.current);
+              skipNoticeTimeoutRef.current = setTimeout(() => {
+                setSkipNotice(null);
+              }, 4500);
+            }
+            setActiveSegment(null);
+            setShowSkipButton(false);
+            activeSegmentKeyRef.current = null;
+          } else {
+            setActiveSegment(match);
+            if (activeSegmentKeyRef.current !== segKey) {
+              activeSegmentKeyRef.current = segKey;
+              setShowSkipButton(true);
+              if (skipBtnTimeoutRef.current) clearTimeout(skipBtnTimeoutRef.current);
+              skipBtnTimeoutRef.current = setTimeout(() => {
+                setShowSkipButton(false);
+              }, 10000);
+            }
+          }
+        } else {
+          setActiveSegment(null);
+          setShowSkipButton(false);
+          activeSegmentKeyRef.current = null;
+          if (skipBtnTimeoutRef.current) clearTimeout(skipBtnTimeoutRef.current);
+        }
+      } else {
+        setActiveSegment(null);
+      }
     };
 
     player.on('timeupdate', onTimeUpdate);
@@ -333,6 +499,11 @@ export default function VideoPlayer({
 
     // Restore saved playback position or audio-switch position
     const onLoadedMetadata = () => {
+      const dur = player.duration() || 0;
+      if (dur > 0) setDuration(dur);
+      const holder = player.el()?.querySelector('.vjs-progress-holder');
+      if (holder) setProgressHolderEl(holder);
+
       let targetTime = null;
       if (typeof restoreTimeRef.current === 'number' && restoreTimeRef.current > 0) {
         targetTime = restoreTimeRef.current;
@@ -372,28 +543,66 @@ export default function VideoPlayer({
       const curId = selectedSourceRef.current?.id || selectedSourceRef.current?.url;
       if (curId) failedSources.add(curId);
 
-      const currentSources = (sourcesRef.current || []).filter(
-        (s) => !selectedSourceRef.current?.provider?.id || s.provider?.id === selectedSourceRef.current?.provider?.id
+      const sameProviderSources = (sourcesRef.current || []).filter(
+        (s) => s.provider?.id && s.provider.id === selectedSourceRef.current?.provider?.id
       );
+      let untried = sameProviderSources.filter((s) => !failedSources.has(s.id || s.url));
 
-      const untried = currentSources.filter((s) => !failedSources.has(s.id || s.url));
+      // If all tracks for this provider failed, try other available providers
+      if (untried.length === 0) {
+        untried = (sourcesRef.current || []).filter((s) => !failedSources.has(s.id || s.url));
+      }
+
       if (untried.length > 0 && onSourceChangeRef.current) {
         lastSwitchTime = now;
         const nextSource = untried[0];
-        console.warn('[VideoPlayer] Auto-switching to alternative source:', nextSource.title || nextSource.studio?.name);
+        console.warn('[VideoPlayer] Auto-switching to alternative source:', nextSource.title || nextSource.studio?.name || nextSource.provider?.name);
         try {
           player.error(null);
         } catch {}
         onSourceChangeRef.current(nextSource);
       } else {
-        console.warn('[VideoPlayer] All available sources for provider failed.');
+        console.warn('[VideoPlayer] All available sources for all providers failed.');
       }
     };
+
+    let lastDecodeRecoveryTime = 0;
+    let decodeRecoveryCount = 0;
 
     const onError = () => {
       const err = player.error();
       if (!err) return;
       console.warn('[VideoPlayer] Playback error encountered:', err);
+
+      const cur = player.currentTime() || 0;
+      const now = Date.now();
+
+      // CODE 3: MEDIA_ERR_DECODE - corrupt frame or timestamp discontinuity in stream
+      // Recover by skipping 3 seconds past the bad packet/frame instead of aborting playback
+      if (err.code === 3 && (now - lastDecodeRecoveryTime > 8000 || decodeRecoveryCount < 2)) {
+        lastDecodeRecoveryTime = now;
+        decodeRecoveryCount++;
+        const skipPastTime = Math.min((player.duration() || cur + 10) - 1, cur + 3);
+        console.warn(`[VideoPlayer] MEDIA_ERR_DECODE at ${cur.toFixed(2)}s: recovering by skipping bad frame to ${skipPastTime.toFixed(2)}s`);
+
+        try {
+          player.error(null);
+        } catch {}
+
+        const currentSrc = player.currentSource();
+        if (currentSrc) {
+          restoreTimeRef.current = skipPastTime;
+          shouldResumePlayRef.current = true;
+          player.src(currentSrc);
+        } else {
+          player.currentTime(skipPastTime);
+          player.play().catch(() => {});
+        }
+        return;
+      }
+
+      decodeRecoveryCount = 0;
+      restoreTimeRef.current = cur > 0 ? cur + 3 : null;
       switchToNextSource();
     };
 
@@ -523,6 +732,78 @@ export default function VideoPlayer({
         <video ref={videoNode} className="video-js vjs-default-skin" playsInline />
       </div>
 
+      {/* SponsorBlock / TheIntroDB Segment Markers on Progress Bar */}
+      {progressHolderEl && duration > 0 && segments.length > 0 && createPortal(
+        <div className="vjs-segments-bar">
+          {segments.map((seg, idx) => {
+            const startPct = Math.max(0, Math.min(100, (seg.startSec / duration) * 100));
+            const endSec = seg.endSec !== null ? seg.endSec : duration;
+            const endPct = Math.max(0, Math.min(100, (endSec / duration) * 100));
+            const widthPct = Math.max(0.4, endPct - startPct);
+            return (
+              <div
+                key={idx}
+                className={`vjs-segment-marker vjs-segment-${seg.type}`}
+                style={{
+                  left: `${startPct}%`,
+                  width: `${widthPct}%`,
+                  backgroundColor: seg.color,
+                }}
+              />
+            );
+          })}
+        </div>,
+        progressHolderEl
+      )}
+
+      {/* Floating Skip Segment Button (hides after 10s, can also skip via Enter key) */}
+      {showSkipButton && activeSegment && (
+        <button
+          type="button"
+          className="vjs-skip-segment-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!playerRef.current) return;
+            const dur = playerRef.current.duration() || 0;
+            const targetTime = activeSegment.endSec !== null ? activeSegment.endSec : Math.max(0, dur - 1);
+            playerRef.current.currentTime(targetTime);
+            setActiveSegment(null);
+            setShowSkipButton(false);
+            activeSegmentKeyRef.current = null;
+            if (skipBtnTimeoutRef.current) clearTimeout(skipBtnTimeoutRef.current);
+          }}
+        >
+          <i className="material-symbols-rounded">fast_forward</i>
+          <span>Пропустити {activeSegment.label}</span>
+          <kbd className="vjs-skip-kbd">Enter</kbd>
+        </button>
+      )}
+
+      {/* Auto-skip Undo Toast */}
+      {skipNotice && (
+        <div className="vjs-skip-notice" onClick={(e) => e.stopPropagation()}>
+          <div className="vjs-skip-notice-text">
+            <i className="material-symbols-rounded">fast_forward</i>
+            <span>Пропущено: {skipNotice.label}</span>
+          </div>
+          <button
+            type="button"
+            className="vjs-skip-notice-undo"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!playerRef.current || !skipNotice) return;
+              playerRef.current.currentTime(skipNotice.from);
+              if (skipNotice.key) {
+                skippedSegmentsRef.current.add(skipNotice.key);
+              }
+              setSkipNotice(null);
+            }}
+          >
+            Скасувати
+          </button>
+        </div>
+      )}
+
       {/* BeerCSS M3 Settings Menu */}
       {renderedMenu && (
         <div
@@ -586,6 +867,24 @@ export default function VideoPlayer({
                   <span>Швидкість</span>
                 </div>
                 <div className="vjs-settings-val">{playbackRate}x</div>
+              </div>
+
+              <div
+                className="vjs-settings-item"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleAutoSkip();
+                }}
+              >
+                <div className="vjs-settings-label">
+                  <i className="material-symbols-rounded">skip_next</i>
+                  <span>Автопропуск заставок</span>
+                </div>
+                <div className="vjs-settings-val">
+                  <span className={`vjs-switch-toggle ${autoSkip ? 'checked' : ''}`}>
+                    <span className="vjs-switch-slider"></span>
+                  </span>
+                </div>
               </div>
             </div>
           )}

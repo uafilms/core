@@ -461,6 +461,11 @@ const Details = () => {
               selectedSource={selectedSource}
               onSourceChange={setSelectedSource}
               mediaId={`${type}_${data?.id || id}${type === 'tv' ? `_s${season}_e${episode}` : ''}`}
+              tmdbId={data?.id || id}
+              imdbId={data?.imdbId}
+              mediaType={type}
+              season={type === 'tv' ? season : undefined}
+              episode={type === 'tv' ? episode : undefined}
             />
           ) : (
             <div className="row center-align middle-align fill" style={{ opacity: 0.6, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
