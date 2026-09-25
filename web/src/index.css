@@ -66,7 +66,7 @@ i, .material-symbols-rounded {
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
   }
 }
 
@@ -91,4 +91,162 @@ footer,
 .surface-container-low,
 .surface-container-high {
   transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* ========================================================
+   Material Design 3 Fluid Animations
+   ======================================================== */
+
+/* Modal Backdrop & Dialog Animations */
+.modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background-color: rgba(0, 0, 0, 0.65) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  z-index: 99999 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  animation: m3BackdropFadeIn 0.24s cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+@keyframes m3BackdropFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-dialog {
+  animation: m3DialogEnter 0.28s cubic-bezier(0.05, 0.7, 0.1, 1.0) forwards;
+  transform-origin: center center;
+}
+
+@keyframes m3DialogEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.93) translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-overlay.closing {
+  animation: m3BackdropFadeOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  pointer-events: none;
+}
+
+@keyframes m3BackdropFadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.modal-dialog.closing {
+  animation: m3DialogExit 0.2s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+
+@keyframes m3DialogExit {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.92) translateY(14px);
+  }
+}
+
+/* Tab & Content Cross-Fade Transition */
+.tab-content-enter {
+  animation: m3TabFade 0.22s cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+
+@keyframes m3TabFade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Error message bounce/shake */
+.error-shake {
+  animation: m3ErrorShake 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes m3ErrorShake {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+  25% {
+    opacity: 1;
+    transform: translateX(-5px) scale(1);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+  75% {
+    transform: translateX(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Interactive Card & Elevation Motion */
+.m3-interactive-card {
+  transition: transform 0.22s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.22s cubic-bezier(0.2, 0, 0, 1), border-color 0.22s ease !important;
+}
+
+.m3-interactive-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+/* Staggered Entrance Animations */
+.stagger-1 {
+  animation: m3Stagger 0.3s cubic-bezier(0.1, 0.9, 0.2, 1) 0.03s backwards;
+}
+.stagger-2 {
+  animation: m3Stagger 0.3s cubic-bezier(0.1, 0.9, 0.2, 1) 0.07s backwards;
+}
+.stagger-3 {
+  animation: m3Stagger 0.3s cubic-bezier(0.1, 0.9, 0.2, 1) 0.11s backwards;
+}
+.stagger-4 {
+  animation: m3Stagger 0.3s cubic-bezier(0.1, 0.9, 0.2, 1) 0.15s backwards;
+}
+
+@keyframes m3Stagger {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

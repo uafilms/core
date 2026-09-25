@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import api from '../api/axios';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import api, { waitForToken } from '../api/axios';
 import VideoPlayer from '../components/player/VideoPlayer';
 import Comments from '../components/Comments';
 import Dropdown from '../components/Dropdown';
+import { toggleFavoriteItem, getLocalFavorites } from '../utils/sync.js';
 
 const formatSourceName = (source) => {
   const provider = source.provider?.name || source.provider?.id || 'Джерело';
@@ -19,8 +20,11 @@ const Details = () => {
   const { type, id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   const initialMovie = location.state?.movie;
+  const initialSeason = parseInt(searchParams.get('s') || searchParams.get('season') || '1', 10);
+  const initialEpisode = parseInt(searchParams.get('e') || searchParams.get('episode') || '1', 10);
   const [data, setData] = useState(() => {
     if (!initialMovie) return null;
     return {
@@ -42,8 +46,8 @@ const Details = () => {
   const [loadingSources, setLoadingSources] = useState(true);
 
   // TV Series Navigation & TMDB Season/Episode Stills
-  const [season, setSeason] = useState(1);
-  const [episode, setEpisode] = useState(1);
+  const [season, setSeason] = useState(initialSeason > 0 ? initialSeason : 1);
+  const [episode, setEpisode] = useState(initialEpisode > 0 ? initialEpisode : 1);
   const [episodesMap, setEpisodesMap] = useState({});
   const [loadingSeason, setLoadingSeason] = useState(false);
   const playerRef = useRef(null);
@@ -109,8 +113,8 @@ const Details = () => {
             setEpisodesMap({ 1: res.data.episodes });
           }
           setLoadingMeta(false);
-          const favorites = JSON.parse(localStorage.getItem('uafilms_favorites') || '[]');
-          setIsFav(favorites.some((f) => f.id == res.data.id));
+          const favorites = getLocalFavorites();
+          setIsFav(favorites.some((f) => String(f.id) === String(res.data.id || id)));
         }
       })
       .catch((err) => {
@@ -171,63 +175,85 @@ const Details = () => {
       : `/v1/tv/${targetId}/seasons/${season}/episodes/${episode}`;
 
     const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
-    const sseUrl = `${baseUrl}${subpath}?sse=1`;
-
     let eventSource = null;
 
-    try {
-      eventSource = new EventSource(sseUrl);
-
-      eventSource.addEventListener('provider', (event) => {
-        if (cancelled) return;
-        try {
-          const chunk = JSON.parse(event.data);
-          if (chunk.sources && Array.isArray(chunk.sources) && chunk.sources.length > 0) {
-            setSources((prev) => {
-              const existingIds = new Set(prev.map((s) => s.id || s.url));
-              const newSources = chunk.sources.filter((s) => !existingIds.has(s.id || s.url));
-              const updated = [...prev, ...newSources];
-
-              // Auto-select first source if nothing selected yet
-              setSelectedSource((cur) => cur || updated[0]);
-              return updated;
-            });
-          }
-        } catch (e) {
-          console.error('Error parsing SSE provider chunk:', e);
-        }
+    const isAshdi = (s) => s?.provider?.id === 'ashdi' || s?.url?.includes('cdn=ashdi') || s?.url?.includes('ashdi.vip');
+    const sortWithAshdiFirst = (list) => {
+      return [...list].sort((a, b) => {
+        const aAsh = isAshdi(a);
+        const bAsh = isAshdi(b);
+        if (aAsh && !bAsh) return -1;
+        if (!aAsh && bAsh) return 1;
+        return 0;
       });
+    };
 
-      eventSource.addEventListener('complete', () => {
-        if (cancelled) return;
-        setLoadingSources(false);
-        if (eventSource) {
-          eventSource.close();
-        }
-      });
+    (async () => {
+      let turnstileToken = window.cfToken;
+      if (!turnstileToken) {
+        turnstileToken = await waitForToken();
+      }
+      if (cancelled) return;
 
-      eventSource.onerror = () => {
-        if (cancelled) return;
-        setLoadingSources(false);
-        if (eventSource) {
-          eventSource.close();
-        }
-      };
-    } catch (err) {
-      console.warn('SSE not supported or failed, falling back to standard GET:', err);
-      api.get(subpath)
-        .then((res) => {
+      const authToken = localStorage.getItem('uafilms_auth_token');
+      const tokenParam = turnstileToken && turnstileToken !== 'disabled' ? `&turnstile_token=${encodeURIComponent(turnstileToken)}` : '';
+      const authParam = authToken ? `&auth_token=${encodeURIComponent(authToken)}` : '';
+      const sseUrl = `${baseUrl}${subpath}?sse=1${tokenParam}${authParam}`;
+
+      try {
+        eventSource = new EventSource(sseUrl);
+
+        eventSource.addEventListener('provider', (event) => {
           if (cancelled) return;
-          const list = res.data?.sources || [];
-          setSources(list);
-          if (list.length > 0) {
-            setSelectedSource(list[0]);
+          try {
+            const chunk = JSON.parse(event.data);
+            if (chunk.sources && Array.isArray(chunk.sources) && chunk.sources.length > 0) {
+              setSources((prev) => {
+                const existingIds = new Set(prev.map((s) => s.id || s.url));
+                const newSources = chunk.sources.filter((s) => !existingIds.has(s.id || s.url));
+                const updated = sortWithAshdiFirst([...prev, ...newSources]);
+
+                // Auto-select first source if nothing selected yet
+                setSelectedSource((cur) => cur || updated[0]);
+                return updated;
+              });
+            }
+          } catch (e) {
+            console.error('Error parsing SSE provider chunk:', e);
           }
-        })
-        .finally(() => {
-          if (!cancelled) setLoadingSources(false);
         });
-    }
+
+        eventSource.addEventListener('complete', () => {
+          if (cancelled) return;
+          setLoadingSources(false);
+          if (eventSource) {
+            eventSource.close();
+          }
+        });
+
+        eventSource.onerror = () => {
+          if (cancelled) return;
+          setLoadingSources(false);
+          if (eventSource) {
+            eventSource.close();
+          }
+        };
+      } catch (err) {
+        console.warn('SSE not supported or failed, falling back to standard GET:', err);
+        api.get(subpath)
+          .then((res) => {
+            if (cancelled) return;
+            const list = sortWithAshdiFirst(res.data?.sources || []);
+            setSources(list);
+            if (list.length > 0) {
+              setSelectedSource((cur) => cur || list[0]);
+            }
+          })
+          .finally(() => {
+            if (!cancelled) setLoadingSources(false);
+          });
+      }
+    })();
 
     return () => {
       cancelled = true;
@@ -237,24 +263,30 @@ const Details = () => {
     };
   }, [data, type, id, season, episode]);
 
+  useEffect(() => {
+    const handleFavUpdate = () => {
+      if (!data) return;
+      const favorites = getLocalFavorites();
+      setIsFav(favorites.some((f) => String(f.id) === String(data.id || id)));
+    };
+    window.addEventListener('uafilms_favorites_updated', handleFavUpdate);
+    return () => window.removeEventListener('uafilms_favorites_updated', handleFavUpdate);
+  }, [data, id]);
+
   const toggleFavorite = () => {
     if (!data) return;
-    const favorites = JSON.parse(localStorage.getItem('uafilms_favorites') || '[]');
-    let newFavs;
-    if (isFav) {
-      newFavs = favorites.filter((f) => f.id != id);
-    } else {
-      const minData = {
-        id: data.id,
+    const nextFav = !isFav;
+    setIsFav(nextFav);
+    toggleFavoriteItem(
+      {
+        id: data.id || id,
         title: data.title || data.originalTitle,
         poster_path: data.posterUrl,
         release_date: data.year ? `${data.year}-` : '',
         media_type: type,
-      };
-      newFavs = [...favorites, minData];
-    }
-    localStorage.setItem('uafilms_favorites', JSON.stringify(newFavs));
-    setIsFav(!isFav);
+      },
+      nextFav
+    );
   };
 
   if (loadingMeta) {
@@ -455,8 +487,8 @@ const Details = () => {
               key={type === 'tv' ? `${data?.id || id}_s${season}_e${episode}` : `${data?.id || id}`}
               src={selectedSource.url}
               type={selectedSource.type || 'application/x-mpegURL'}
-              poster={playerPoster}
-              title={data.title}
+              poster={playerPoster || data?.posterUrl || data?.backdropUrl || ''}
+              title={data?.title || initialMovie?.title || initialMovie?.name || ''}
               sources={sources}
               selectedSource={selectedSource}
               onSourceChange={setSelectedSource}

@@ -56,7 +56,7 @@ const Dropdown = ({ value, options, onChange, label, className = '' }) => {
           borderRadius: '12px',
           fontSize: '14px',
           fontWeight: 500,
-          transition: 'background-color 0.2s, border-color 0.2s',
+          transition: 'background-color 0.2s, border-color 0.2s, border-radius var(--speed2, 0.2s), transform var(--speed3, 0.3s), padding var(--speed3, 0.3s)',
         }}
         onClick={() => setIsOpen((prev) => !prev)}
         aria-haspopup="listbox"

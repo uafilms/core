@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import LoadingBar from 'react-top-loading-bar';
 import { loaderEvent } from './api/axios';
 
 import Sidebar from './components/Sidebar';
+import AuthModal from './components/AuthModal';
+import { AuthProvider } from './context/AuthContext';
 import { initPalette } from './utils/palette';
 import TurnstileWidget from './components/TurnstileWidget';
 
@@ -12,6 +15,7 @@ const Details = React.lazy(() => import('./pages/Details'));
 const Search = React.lazy(() => import('./pages/Search'));
 const Favorites = React.lazy(() => import('./pages/Favorites'));
 const Settings = React.lazy(() => import('./pages/Settings'));
+const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 
 const PageLoader = () => (
   <div className="page-loader">
@@ -23,6 +27,7 @@ function App() {
   const ref = useRef(null);
   const location = useLocation();
   const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [isClosingDisclaimer, setIsClosingDisclaimer] = useState(false);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('uafilms_theme') || 'dark';
@@ -49,55 +54,49 @@ function App() {
 
   const closeDisclaimer = () => {
     localStorage.setItem('uafilms_beta_seen', 'true');
-    setShowDisclaimer(false);
+    setIsClosingDisclaimer(true);
+    setTimeout(() => {
+      setShowDisclaimer(false);
+      setIsClosingDisclaimer(false);
+    }, 200);
   };
 
   return (
-    <div className="layout">
-      <LoadingBar color="var(--primary)" ref={ref} height={3} shadow={true} />
+    <AuthProvider>
+      <div className="layout">
+        <LoadingBar color="var(--primary)" ref={ref} height={3} shadow={true} />
 
-      <Sidebar />
+        <Sidebar />
 
-      <div className="turnstile-container">
-        <TurnstileWidget />
-      </div>
+        <div className="turnstile-container">
+          <TurnstileWidget />
+        </div>
 
-      <main className="responsive main-content">
-        <Suspense fallback={<PageLoader />}>
-          <div key={location.pathname} className="page-transition">
-            <Routes location={location}>
-              <Route path="/" element={<Home />} />
-              <Route path="/search" element={<Search />} />
-              <Route path="/favorites" element={<Favorites />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/details/:type/:id" element={<Details />} />
-            </Routes>
-          </div>
-        </Suspense>
-      </main>
+        <main className="responsive main-content">
+          <Suspense fallback={<PageLoader />}>
+            <div key={location.pathname} className="page-transition">
+              <Routes location={location}>
+                <Route path="/" element={<Home />} />
+                <Route path="/search" element={<Search />} />
+                <Route path="/favorites" element={<Favorites />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/details/:type/:id" element={<Details />} />
+              </Routes>
+            </div>
+          </Suspense>
+        </main>
+
+        <AuthModal />
 
       {/* Beta disclaimer dialog */}
-      {showDisclaimer && (
+      {(showDisclaimer || isClosingDisclaimer) && typeof document !== 'undefined' && createPortal(
         <div
-          className="modal-overlay"
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(0, 0, 0, 0.65)',
-            backdropFilter: 'blur(4px)',
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-            boxSizing: 'border-box',
-          }}
+          className={`modal-overlay ${isClosingDisclaimer ? 'closing' : ''}`}
           onClick={closeDisclaimer}
         >
           <div
+            className={`modal-dialog ${isClosingDisclaimer ? 'closing' : ''}`}
             onClick={(e) => e.stopPropagation()}
             style={{
               backgroundColor: 'var(--surface-container-high)',
@@ -131,7 +130,8 @@ function App() {
               Зрозуміло
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <style>{`
@@ -143,12 +143,6 @@ function App() {
           z-index: 9999;
         }
 
-        @media (min-width: 600px) {
-          .modal-overlay {
-            padding-left: 80px !important;
-          }
-        }
-
         @media (max-width: 600px) {
           .turnstile-container {
             bottom: 90px;
@@ -158,7 +152,8 @@ function App() {
           }
         }
       `}</style>
-    </div>
+      </div>
+    </AuthProvider>
   );
 }
 

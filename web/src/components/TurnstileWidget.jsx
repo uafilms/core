@@ -11,6 +11,7 @@ const TurnstileWidget = () => {
   const checkInterval = useRef(null);
   const tokenReadyFired = useRef(false);
 
+  // Створюємо overlay в body для Turnstile (поза .turnstile-container)
   useEffect(() => {
     const el = document.createElement('div');
     el.className = 'ts-api-overlay';
@@ -25,12 +26,13 @@ const TurnstileWidget = () => {
     };
   }, []);
 
+  // Завантаження конфігурації
   useEffect(() => {
     let cancelled = false;
     const loadConfig = async () => {
       try {
         const apiUrl = import.meta.env.VITE_API_BASE_URL || '/api';
-        const res = await fetch(`${apiUrl}/`);
+        const res = await fetch(`${apiUrl}/config`);
         if (!res.ok) throw new Error('API unavailable');
         const data = await res.json();
         if (cancelled) return;
@@ -46,6 +48,7 @@ const TurnstileWidget = () => {
     };
   }, []);
 
+  // Рендер Turnstile в overlay
   useEffect(() => {
     if (!config || !overlayRef.current) return;
 
@@ -112,6 +115,7 @@ const TurnstileWidget = () => {
           },
         });
 
+        // Авто-запуск перевірки одразу після render
         if (widgetId.current && window.turnstile) {
           window.turnstile.execute(widgetId.current);
         }
@@ -123,17 +127,13 @@ const TurnstileWidget = () => {
     if (window.turnstile) {
       initTurnstile();
     } else {
-      checkInterval.current = setInterval(() => {
-        if (window.turnstile) {
-          initTurnstile();
-        }
-      }, 100);
+      checkInterval.current = setInterval(initTurnstile, 100);
     }
 
     return () => {
       if (checkInterval.current) clearInterval(checkInterval.current);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      if (widgetId.current !== null && window.turnstile) {
+      if (window.turnstile && widgetId.current !== null) {
         try {
           window.turnstile.remove(widgetId.current);
         } catch {
@@ -144,37 +144,42 @@ const TurnstileWidget = () => {
     };
   }, [config]);
 
+  // Синхронізація cardVisible → animPhase
   useEffect(() => {
     if (cardVisible) {
-      setAnimPhase('entering');
+      setAnimPhase((prev) => (prev === 'hidden' || prev === 'exiting' ? 'entering' : prev));
     } else {
-      setAnimPhase('exiting');
+      setAnimPhase((prev) => (prev === 'visible' || prev === 'entering' ? 'exiting' : prev));
     }
   }, [cardVisible]);
 
   const handleAnimEnd = () => {
-    if (animPhase === 'exiting') {
-      setAnimPhase('hidden');
-    }
+    if (animPhase === 'entering') setAnimPhase('visible');
+    else if (animPhase === 'exiting') setAnimPhase('hidden');
   };
 
   const handleClick = () => {
-    if (state === 'interactive' && overlayRef.current) {
-      overlayRef.current.style.display = '';
-    } else if (state === 'error' && widgetId.current !== null && window.turnstile) {
+    if (state === 'interactive') {
+      if (overlayRef.current) overlayRef.current.style.display = '';
       setState('checking');
-      window.turnstile.reset(widgetId.current);
-      window.turnstile.execute(widgetId.current);
+    } else if (state === 'error') {
+      setState('checking');
+      window.cfToken = null;
+      tokenReadyFired.current = false;
+      if (window.turnstile && widgetId.current !== null) {
+        window.turnstile.reset(widgetId.current);
+        setTimeout(() => window.turnstile.execute(widgetId.current), 100);
+      }
     }
   };
 
   if (!config || !config.enabled) return null;
 
   const statusLabels = {
-    checking: 'Перевірка безпеки...',
-    interactive: 'Підтвердіть дію',
-    success: 'Перевірку пройдено',
-    error: 'Помилка перевірки',
+    interactive: 'Я не робот',
+    checking: 'Перевірка...',
+    success: 'Пройдено',
+    error: 'Помилка',
   };
 
   return (
@@ -193,7 +198,7 @@ const TurnstileWidget = () => {
                 </div>
                 <div className={`icon-layer${state === 'checking' ? ' visible' : ' hidden'}`}>
                   <div className="spinner-wrap">
-                    <progress className="circle small indeterminate" />
+                    <progress className="circle small indeterminate" style={{ width: '18px', height: '18px' }} />
                   </div>
                 </div>
                 <div className={`icon-layer${state === 'success' ? ' visible' : ' hidden'}`}>
@@ -252,6 +257,8 @@ const TurnstileWidget = () => {
           border-radius: 9999px;
           border: 1.5px solid var(--outline);
           background: var(--surface-container-low);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+          user-select: none;
         }
 
         .turnstile-card.state-interactive { cursor: pointer; }
