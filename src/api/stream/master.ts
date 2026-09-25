@@ -4,6 +4,7 @@ import { extractVod } from '../../vods/index.js';
 import { parseMasterPlaylist, stripCorsProxy } from '../../utils/m3u8.js';
 import { logWarn, logError } from '../../utils/logger.js';
 import { m3u8PlaylistCache } from '../services/cache.js';
+import { proxyManager } from '../../utils/proxyManager.js';
 import type { Subtitle } from '../../types/media.js';
 
 export const streamRouter = new Hono();
@@ -94,10 +95,12 @@ streamRouter.get('/subs.vtt', async (c) => {
       subHeaders['Referer'] = 'https://eneyida.tv/';
     }
 
+    const proxyOpts = proxyManager.getConfig(cdn || undefined, subUrl);
     const res = await axios.get<string>(subUrl, {
       headers: subHeaders,
       responseType: 'text',
       timeout: 10000,
+      ...proxyOpts,
     });
 
     let content = res.data;
@@ -308,11 +311,13 @@ streamRouter.get('/master.m3u8', async (c) => {
   // 4. Fetch manifest and rewrite
   try {
     let manifestData: string;
+    const proxyOpts = proxyManager.getConfig(cdn || undefined, streamUrl);
     try {
       const res = await axios.get<string>(streamUrl, {
         headers,
         responseType: 'text',
         timeout: 10000,
+        ...proxyOpts,
       });
       manifestData = res.data;
     } catch (fetchErr: unknown) {
@@ -327,6 +332,7 @@ streamRouter.get('/master.m3u8', async (c) => {
           headers,
           responseType: 'text',
           timeout: 10000,
+          ...proxyOpts,
         });
         manifestData = fallbackRes.data;
       } else {

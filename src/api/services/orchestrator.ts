@@ -7,6 +7,7 @@ import { detectCdn } from '../../utils/cdn.js';
 import { isSearchResultMatch } from '../../utils/sort.js';
 import { cleanStudioName, detectAudioLang, resolveStudioInfo } from '../../utils/studio.js';
 import { omssSourceResolutionCache } from '../services/cache.js';
+import { runWithProvider } from '../../utils/proxyManager.js';
 
 interface OrchestratorOptions {
   meta: MediaMetadata;
@@ -129,48 +130,49 @@ export class OrchestratorService {
 
     // Run providers in parallel with individual error catching
     const tasks = targetProviders.map(async (provider) => {
-      try {
-        const query = meta.imdbId || meta.title;
-        let searchResults = await provider.search(query, { meta });
+      return runWithProvider(provider.name, async () => {
+        try {
+          const query = meta.imdbId || meta.title;
+          let searchResults = await provider.search(query, { meta });
 
-        // If no results by IMDb ID, fallback to title
-        if ((!searchResults || searchResults.length === 0) && meta.title && meta.imdbId) {
-          searchResults = await provider.search(meta.title, { meta });
-        }
+          // If no results by IMDb ID, fallback to title
+          if ((!searchResults || searchResults.length === 0) && meta.title && meta.imdbId) {
+            searchResults = await provider.search(meta.title, { meta });
+          }
 
-        // If still no results, fallback to original title if available
-        if ((!searchResults || searchResults.length === 0) && meta.originalTitle && meta.originalTitle !== meta.title) {
-          searchResults = await provider.search(meta.originalTitle, { meta });
-        }
+          // If still no results, fallback to original title if available
+          if ((!searchResults || searchResults.length === 0) && meta.originalTitle && meta.originalTitle !== meta.title) {
+            searchResults = await provider.search(meta.originalTitle, { meta });
+          }
 
-        if (!searchResults || searchResults.length === 0) {
-          return;
-        }
+          if (!searchResults || searchResults.length === 0) {
+            return;
+          }
 
-        // Find candidate that actually matches meta
-        const target = searchResults.find(r =>
-          (meta.title && isSearchResultMatch(r, meta.title, meta.year, meta.type)) ||
-          (meta.originalTitle && isSearchResultMatch(r, meta.originalTitle, meta.year, meta.type))
-        ) || (meta.title && isSearchResultMatch(searchResults[0], meta.title, meta.year, meta.type) ? searchResults[0] : null);
+          // Find candidate that actually matches meta
+          const target = searchResults.find(r =>
+            (meta.title && isSearchResultMatch(r, meta.title, meta.year, meta.type)) ||
+            (meta.originalTitle && isSearchResultMatch(r, meta.originalTitle, meta.year, meta.type))
+          ) || (meta.title && isSearchResultMatch(searchResults[0], meta.title, meta.year, meta.type) ? searchResults[0] : null);
 
-        if (!target) {
-          return;
-        }
-        const res = await provider.get(target, { meta });
-        if (!res) return;
+          if (!target) {
+            return;
+          }
+          const res = await provider.get(target, { meta });
+          if (!res) return;
 
-        let rawSources: StreamSource[] = [];
+          let rawSources: StreamSource[] = [];
 
-        if (type === 'movie') {
-          rawSources = res.sources || [];
-        } else {
-          const s = res.seasons?.find(sn => sn.season === season);
-          const ep = s?.episodes?.find(e => e.episode === episode);
-          rawSources = ep?.sources || [];
-        }
+          if (type === 'movie') {
+            rawSources = res.sources || [];
+          } else {
+            const s = res.seasons?.find(sn => sn.season === season);
+            const ep = s?.episodes?.find(e => e.episode === episode);
+            rawSources = ep?.sources || [];
+          }
 
-        const providerSources: OmssSource[] = [];
-        const providerSubtitles: OmssSubtitle[] = [];
+          const providerSources: OmssSource[] = [];
+          const providerSubtitles: OmssSubtitle[] = [];
 
         for (const raw of rawSources) {
           let playUrl = raw.url;
@@ -329,6 +331,7 @@ export class OrchestratorService {
           severity: 'warning',
         });
       }
+      });
     });
 
     await Promise.allSettled(tasks);

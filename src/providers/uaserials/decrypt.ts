@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import axios from 'axios';
+import { httpRequest } from '../../utils/http.js';
 import { webcrack } from 'webcrack';
 import { log, logWarn, logError } from '../../utils/logger.js';
 
@@ -10,7 +10,7 @@ let cachedKey: string = '297796CCB81D255125'; // Fallback default
  */
 export async function extractKeyFromJs(jsUrl: string): Promise<string | null> {
   try {
-    const { data: jsCode } = await axios.get(jsUrl, {
+    const { data: jsCode } = await httpRequest<string>(jsUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       },

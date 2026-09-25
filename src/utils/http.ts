@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios';
+import { proxyManager, getActiveProvider } from './proxyManager.js';
 
 export const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -12,13 +13,15 @@ export const DEFAULT_HEADERS: Record<string, string> = {
 export interface HttpRequestOptions extends AxiosRequestConfig {
   timeout?: number;
   retries?: number;
+  provider?: string;
 }
 
 export async function request<T = any>(
   url: string,
   options: HttpRequestOptions = {}
 ): Promise<AxiosResponse<T>> {
-  const { retries = 1, timeout = 12000, headers, ...rest } = options;
+  const { retries = 1, timeout = 12000, headers, provider, ...rest } = options;
+  const proxyConfig = proxyManager.getConfig(provider, url);
 
   let attempt = 0;
   while (attempt <= retries) {
@@ -30,6 +33,7 @@ export async function request<T = any>(
           ...DEFAULT_HEADERS,
           ...headers,
         },
+        ...proxyConfig,
         ...rest,
       });
     } catch (err: any) {

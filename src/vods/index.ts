@@ -1,5 +1,6 @@
 import type { VodExtractionOptions, VodExtractionResult, VodExtractor } from '../types/vod.js';
 import { httpRequest } from '../utils/http.js';
+import { runWithProvider } from '../utils/proxyManager.js';
 import { tortugaVod } from './tortuga/main.js';
 import { ashdiVod } from './ashdi/main.js';
 import { hdvbVod } from './hdvb/main.js';
@@ -66,7 +67,7 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
         const targetExtractor = vodExtractors.find(e => e.name.toLowerCase() === lowerCdn);
         if (targetExtractor) {
           try {
-            return await targetExtractor.extract(url, options);
+            return await runWithProvider(targetExtractor.name, () => targetExtractor.extract(url, options));
           } catch {
             return null;
           }
@@ -145,12 +146,12 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
 
   // Точний збіг по cdn query param
   if (url.includes('cdn=aniworld') || url.includes('/catalog/episode/')) {
-    const res = await aniWorldVod.extract(url, options);
+    const res = await runWithProvider(aniWorldVod.name, () => aniWorldVod.extract(url, options));
     if (res) return res;
   }
 
   if (url.includes('cdn=bunny') || url.includes('mediadelivery.net') || url.includes('b-cdn.net')) {
-    const res = await bunnyVod.extract(url, options);
+    const res = await runWithProvider(bunnyVod.name, () => bunnyVod.extract(url, options));
     if (res) return res;
   }
 
@@ -160,7 +161,7 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
     url.includes('factorios.live') ||
     url.includes('uacdn.online')
   ) {
-    const res = await frankoVod.extract(url, options);
+    const res = await runWithProvider(frankoVod.name, () => frankoVod.extract(url, options));
     if (res) return res;
   }
 
@@ -168,39 +169,39 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
     url.includes('cdn=moonanime') ||
     (!url.includes('/master.m3u8') && (url.includes('moonanime') || url.includes('mooncdn') || url.includes('s.moonanime')))
   ) {
-    const res = await moonAnimeVod.extract(url, options);
+    const res = await runWithProvider(moonAnimeVod.name, () => moonAnimeVod.extract(url, options));
     if (res) return res;
   }
 
   if (url.includes('cdn=bamboo') || url.includes('bambooua') || url.includes('friends.bambooua') || (url.includes('bambooua.com') && url.includes('hls'))) {
-    const res = await bambooVod.extract(url, options);
+    const res = await runWithProvider(bambooVod.name, () => bambooVod.extract(url, options));
     if (res) return res;
   }
 
   if (url.includes('cdn=hdvb') || url.includes('hdvbua') || url.includes('vidcache')) {
-    const res = await hdvbVod.extract(url, options);
+    const res = await runWithProvider(hdvbVod.name, () => hdvbVod.extract(url, options));
     if (res) return res;
   }
 
   if (url.includes('cdn=ashdi') || url.includes('ashdi.vip') || url.includes('0yql3tj') || url.includes('oyql3tj')) {
-    const res = await ashdiVod.extract(url, options);
+    const res = await runWithProvider(ashdiVod.name, () => ashdiVod.extract(url, options));
     if (res) return res;
   }
 
   if (url.includes('cdn=zetvideo') || url.includes('zetvideo.net')) {
-    const res = await zetvideoVod.extract(url, options);
+    const res = await runWithProvider(zetvideoVod.name, () => zetvideoVod.extract(url, options));
     if (res) return res;
   }
 
   if (url.includes('cdn=tortuga') || url.includes('tortuga.tw')) {
-    const res = await tortugaVod.extract(url, options);
+    const res = await runWithProvider(tortugaVod.name, () => tortugaVod.extract(url, options));
     if (res) return res;
   }
 
   // Спробувати всі інші по черзі
   for (const extractor of vodExtractors) {
     try {
-      const res = await extractor.extract(url, options);
+      const res = await runWithProvider(extractor.name, () => extractor.extract(url, options));
       if (res) return res;
     } catch {
       continue;
