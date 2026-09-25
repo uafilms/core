@@ -106,8 +106,8 @@ export async function enforceParsingSecurity(c: Context): Promise<Response | nul
     }
   }
 
-  // Turnstile verification
-  if (isTurnstileEnabled()) {
+  // Turnstile verification (only required for unauthenticated / guest requests)
+  if (!isAuthenticated && isTurnstileEnabled()) {
     const turnstileToken = extractTurnstileToken(c);
     const result = await verifyTurnstileToken(turnstileToken, ip);
     if (!result.success) {
@@ -115,7 +115,7 @@ export async function enforceParsingSecurity(c: Context): Promise<Response | nul
         {
           error: {
             code: 'TURNSTILE_VERIFICATION_FAILED',
-            message: 'Помилка перевірки Cloudflare Turnstile. Оновіть сторінку або повторіть спробу.',
+            message: 'Помилка перевірки Cloudflare Turnstile. Оновіть сторінку або вкажіть API-ключ.',
             details: { errorCodes: result.errorCodes },
           },
           traceId: crypto.randomUUID(),
