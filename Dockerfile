@@ -33,6 +33,8 @@ RUN apk add --no-cache python3 make g++ \
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/web/dist ./web/dist
+COPY certs/ ./certs/
+COPY public/ ./public/
 
 RUN mkdir -p cache && chmod 777 cache
 
