@@ -989,15 +989,23 @@
   font-weight: 600 !important;
   cursor: pointer !important;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5) !important;
-  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1) !important;
-  animation: vjsSkipFadeIn 0.25s ease-out !important;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease !important;
+  animation: vjsSkipFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) ease-out !important;
   user-select: none !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
 }
 
 .vjs-skip-segment-btn:hover {
   background: rgba(40, 40, 40, 0.95) !important;
   border-color: rgba(255, 255, 255, 0.45) !important;
   transform: translateY(-2px) scale(1.02) !important;
+}
+
+.vjs-skip-segment-btn.closing {
+  animation: vjsSkipFadeOut 0.35s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  pointer-events: none !important;
 }
 
 .vjs-skip-segment-btn i {
@@ -1020,6 +1028,38 @@
   margin-left: 4px !important;
   color: rgba(255, 255, 255, 0.9) !important;
   line-height: 1.2 !important;
+}
+
+/* Skip Button Countdown Progress Indicator */
+.vjs-skip-progress-track {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: 3px !important;
+  background: rgba(255, 255, 255, 0.15) !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  border-bottom-left-radius: 9999px !important;
+  border-bottom-right-radius: 9999px !important;
+}
+
+.vjs-skip-progress-bar {
+  position: absolute !important;
+  inset: 0 !important;
+  background: linear-gradient(90deg, var(--vjs-primary, #bb86fc), #d0bcff) !important;
+  transform-origin: left center !important;
+  animation: vjsSkipCountdown 10s linear forwards !important;
+  border-radius: 9999px !important;
+}
+
+@keyframes vjsSkipCountdown {
+  0% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0);
+  }
 }
 
 /* Auto-skip Undo Notice */
@@ -1076,11 +1116,22 @@
 @keyframes vjsSkipFadeIn {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(12px) scale(0.94);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes vjsSkipFadeOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
   }
 }
 

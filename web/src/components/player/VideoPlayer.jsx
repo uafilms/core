@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
@@ -6,6 +6,7 @@ import 'videojs-hotkeys';
 import 'videojs-mobile-ui';
 import 'videojs-mobile-ui/dist/videojs-mobile-ui.css';
 import './player-style.css';
+import { saveWatchProgress, removeWatchProgress, getLocalWatchProgress, flushWatchProgress } from '../../utils/sync.js';
 
 export default function VideoPlayer({
   src,
@@ -42,6 +43,11 @@ export default function VideoPlayer({
   const sourcesRef = useRef(sources);
   const selectedSourceRef = useRef(selectedSource);
   const onSourceChangeRef = useRef(onSourceChange);
+  const metaRef = useRef({ title, poster, mediaType, tmdbId, season, episode });
+
+  useEffect(() => {
+    metaRef.current = { title, poster, mediaType, tmdbId, season, episode };
+  }, [title, poster, mediaType, tmdbId, season, episode]);
 
   // SponsorBlock / TheIntroDB Media Segments
   const [segments, setSegments] = useState([]);
@@ -50,19 +56,99 @@ export default function VideoPlayer({
   const activeSegmentRef = useRef(null);
   const activeSegmentKeyRef = useRef(null);
   const [showSkipButton, setShowSkipButton] = useState(false);
+  const [isClosingSkipButton, setIsClosingSkipButton] = useState(false);
+  const isClosingSkipButtonRef = useRef(false);
+  const [displaySegment, setDisplaySegment] = useState(null);
+  const [skipButtonKey, setSkipButtonKey] = useState(0);
   const skipBtnTimeoutRef = useRef(null);
+  const closeSkipTimeoutRef = useRef(null);
 
-  const [autoSkip, setAutoSkip] = useState(() => {
+  const dismissSkipButton = useCallback((immediate = false) => {
+    if (skipBtnTimeoutRef.current) {
+      clearTimeout(skipBtnTimeoutRef.current);
+      skipBtnTimeoutRef.current = null;
+    }
+    if (closeSkipTimeoutRef.current) {
+      clearTimeout(closeSkipTimeoutRef.current);
+      closeSkipTimeoutRef.current = null;
+    }
+
+    if (immediate) {
+      setShowSkipButton(false);
+      setIsClosingSkipButton(false);
+      isClosingSkipButtonRef.current = false;
+      setDisplaySegment(null);
+      return;
+    }
+
+    isClosingSkipButtonRef.current = true;
+    setIsClosingSkipButton(true);
+    closeSkipTimeoutRef.current = setTimeout(() => {
+      setShowSkipButton(false);
+      setIsClosingSkipButton(false);
+      isClosingSkipButtonRef.current = false;
+      setDisplaySegment(null);
+    }, 350);
+  }, []);
+
+  const dismissSkipButtonRef = useRef(dismissSkipButton);
+  useEffect(() => {
+    dismissSkipButtonRef.current = dismissSkipButton;
+  }, [dismissSkipButton]);
+
+  const [segmentSettings, setSegmentSettings] = useState(() => {
     try {
-      return localStorage.getItem('uafilms_autoskip_segments') === 'true';
+      const settings = JSON.parse(localStorage.getItem('uafilms_settings') || '{}');
+      return {
+        intro: 'manual',
+        credits: 'manual',
+        recap: 'manual',
+        preview: 'manual',
+        ...(settings.segments || {}),
+      };
     } catch {
-      return false;
+      return {
+        intro: 'manual',
+        credits: 'manual',
+        recap: 'manual',
+        preview: 'manual',
+      };
     }
   });
-  const autoSkipRef = useRef(autoSkip);
+  const segmentSettingsRef = useRef(segmentSettings);
+
+  useEffect(() => {
+    segmentSettingsRef.current = segmentSettings;
+  }, [segmentSettings]);
+
+  useEffect(() => {
+    const handleSettingsUpdated = () => {
+      try {
+        const settings = JSON.parse(localStorage.getItem('uafilms_settings') || '{}');
+        const next = {
+          intro: 'manual',
+          credits: 'manual',
+          recap: 'manual',
+          preview: 'manual',
+          ...(settings.segments || {}),
+        };
+        segmentSettingsRef.current = next;
+        setSegmentSettings(next);
+      } catch {}
+    };
+
+    window.addEventListener('uafilms_settings_updated', handleSettingsUpdated);
+    window.addEventListener('storage', handleSettingsUpdated);
+    return () => {
+      window.removeEventListener('uafilms_settings_updated', handleSettingsUpdated);
+      window.removeEventListener('storage', handleSettingsUpdated);
+    };
+  }, []);
+
   const [skipNotice, setSkipNotice] = useState(null);
   const skipNoticeTimeoutRef = useRef(null);
   const skippedSegmentsRef = useRef(new Set());
+  const dismissedSegmentsRef = useRef(new Set());
   const lastCurTimeRef = useRef(0);
   const [duration, setDuration] = useState(0);
   const [progressHolderEl, setProgressHolderEl] = useState(null);
@@ -74,10 +160,6 @@ export default function VideoPlayer({
   useEffect(() => {
     activeSegmentRef.current = activeSegment;
   }, [activeSegment]);
-
-  useEffect(() => {
-    autoSkipRef.current = autoSkip;
-  }, [autoSkip]);
 
   useEffect(() => {
     if (!tmdbId && !imdbId) {
@@ -104,16 +186,6 @@ export default function VideoPlayer({
       });
   }, [tmdbId, imdbId, mediaType, season, episode, title, duration]);
 
-  const toggleAutoSkip = () => {
-    setAutoSkip((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('uafilms_autoskip_segments', String(next));
-      } catch {}
-      return next;
-    });
-  };
-
   // Keyboard shortcut: Enter to skip active segment
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -122,17 +194,18 @@ export default function VideoPlayer({
         if (tag === 'input' || tag === 'textarea') return;
 
         if (activeSegmentRef.current && playerRef.current) {
-          e.preventDefault();
-          e.stopPropagation();
-          const dur = playerRef.current.duration() || 0;
-          const targetTime = activeSegmentRef.current.endSec !== null
-            ? activeSegmentRef.current.endSec
-            : Math.max(0, dur - 1);
-          playerRef.current.currentTime(targetTime);
-          setActiveSegment(null);
-          setShowSkipButton(false);
-          activeSegmentKeyRef.current = null;
-          if (skipBtnTimeoutRef.current) clearTimeout(skipBtnTimeoutRef.current);
+          const action = segmentSettingsRef.current[activeSegmentRef.current.type] || 'manual';
+          if (action === 'manual') {
+            e.preventDefault();
+            e.stopPropagation();
+            const dur = playerRef.current.duration() || 0;
+            const targetTime = activeSegmentRef.current.endSec !== null
+              ? activeSegmentRef.current.endSec
+              : Math.max(0, dur - 1);
+            playerRef.current.currentTime(targetTime);
+            setActiveSegment(null);
+            dismissSkipButtonRef.current(false);
+          }
         }
       }
     };
@@ -400,25 +473,28 @@ export default function VideoPlayer({
     });
 
     // Handle watch progress saving
-    const saveProgress = () => {
+    const saveProgress = (immediate = false) => {
       if (!mediaId) return;
       const cur = player.currentTime();
       const dur = player.duration();
       if (!cur || isNaN(cur) || cur < 5) return;
       // Do not save if near the very end (last 30s)
       if (dur && !isNaN(dur) && cur > dur - 30) {
-        try {
-          const store = JSON.parse(localStorage.getItem('uafilms_watch_progress') || '{}');
-          delete store[mediaId];
-          localStorage.setItem('uafilms_watch_progress', JSON.stringify(store));
-        } catch {}
+        removeWatchProgress(mediaId);
         return;
       }
-      try {
-        const store = JSON.parse(localStorage.getItem('uafilms_watch_progress') || '{}');
-        store[mediaId] = { time: Math.floor(cur), duration: Math.floor(dur || 0), updated: Date.now() };
-        localStorage.setItem('uafilms_watch_progress', JSON.stringify(store));
-      } catch {}
+      const meta = metaRef.current;
+      saveWatchProgress(mediaId, {
+        time: Math.floor(cur),
+        duration: Math.floor(dur || 0),
+        updated: Date.now(),
+        title: meta.title,
+        poster: meta.poster,
+        mediaType: meta.mediaType,
+        tmdbId: meta.tmdbId,
+        season: meta.season,
+        episode: meta.episode,
+      }, { immediate });
     };
 
     let lastSave = 0;
@@ -426,7 +502,7 @@ export default function VideoPlayer({
       const now = Date.now();
       if (now - lastSave > 2500) {
         lastSave = now;
-        saveProgress();
+        saveProgress(false);
       }
 
       const dur = player.duration() || 0;
@@ -437,6 +513,7 @@ export default function VideoPlayer({
       const cur = player.currentTime();
       if (cur < lastCurTimeRef.current - 3) {
         skippedSegmentsRef.current.clear();
+        dismissedSegmentsRef.current.clear();
       }
       lastCurTimeRef.current = cur;
 
@@ -449,7 +526,15 @@ export default function VideoPlayer({
 
         if (match) {
           const segKey = `${match.type}_${match.startSec}_${match.endSec}`;
-          if (autoSkipRef.current) {
+          const action = segmentSettingsRef.current[match.type] || 'manual';
+
+          if (action === 'off' || action === 'timeline') {
+            setActiveSegment(null);
+            activeSegmentKeyRef.current = null;
+            if (showSkipButton && !isClosingSkipButtonRef.current) {
+              dismissSkipButtonRef.current(false);
+            }
+          } else if (action === 'auto') {
             if (!skippedSegmentsRef.current.has(segKey)) {
               skippedSegmentsRef.current.add(segKey);
               const targetTime = match.endSec !== null ? match.endSec : Math.max(0, dur - 1);
@@ -462,40 +547,65 @@ export default function VideoPlayer({
               }, 4500);
             }
             setActiveSegment(null);
-            setShowSkipButton(false);
             activeSegmentKeyRef.current = null;
+            dismissSkipButtonRef.current(true);
           } else {
+            // action === 'manual' (default)
             setActiveSegment(match);
-            if (activeSegmentKeyRef.current !== segKey) {
+            if (!dismissedSegmentsRef.current.has(segKey)) {
+              dismissedSegmentsRef.current.add(segKey);
               activeSegmentKeyRef.current = segKey;
+              setDisplaySegment(match);
+              if (closeSkipTimeoutRef.current) {
+                clearTimeout(closeSkipTimeoutRef.current);
+                closeSkipTimeoutRef.current = null;
+              }
+              isClosingSkipButtonRef.current = false;
+              setIsClosingSkipButton(false);
               setShowSkipButton(true);
+              setSkipButtonKey(Date.now());
+
               if (skipBtnTimeoutRef.current) clearTimeout(skipBtnTimeoutRef.current);
               skipBtnTimeoutRef.current = setTimeout(() => {
-                setShowSkipButton(false);
+                dismissSkipButtonRef.current(false);
               }, 10000);
             }
           }
         } else {
           setActiveSegment(null);
-          setShowSkipButton(false);
           activeSegmentKeyRef.current = null;
-          if (skipBtnTimeoutRef.current) clearTimeout(skipBtnTimeoutRef.current);
+          if (showSkipButton && !isClosingSkipButtonRef.current) {
+            dismissSkipButtonRef.current(false);
+          }
         }
       } else {
         setActiveSegment(null);
+        activeSegmentKeyRef.current = null;
       }
     };
 
     player.on('timeupdate', onTimeUpdate);
-    player.on('pause', saveProgress);
+    player.on('pause', () => saveProgress(true));
+    player.on('seeked', () => saveProgress(true));
     player.on('ended', () => {
       if (!mediaId) return;
-      try {
-        const store = JSON.parse(localStorage.getItem('uafilms_watch_progress') || '{}');
-        delete store[mediaId];
-        localStorage.setItem('uafilms_watch_progress', JSON.stringify(store));
-      } catch {}
+      removeWatchProgress(mediaId);
     });
+
+    const onPageLeave = () => {
+      saveProgress(true);
+      flushWatchProgress();
+    };
+    window.addEventListener('beforeunload', onPageLeave);
+    window.addEventListener('pagehide', onPageLeave);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveProgress(true);
+        flushWatchProgress();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     // Restore saved playback position or audio-switch position
     const onLoadedMetadata = () => {
@@ -510,9 +620,9 @@ export default function VideoPlayer({
         restoreTimeRef.current = null;
       } else if (mediaId) {
         try {
-          const store = JSON.parse(localStorage.getItem('uafilms_watch_progress') || '{}');
+          const store = getLocalWatchProgress();
           const saved = store[mediaId];
-          if (saved && typeof saved.time === 'number' && saved.time > 10) {
+          if (saved && typeof saved.time === 'number' && saved.time > 5) {
             targetTime = saved.time;
           }
         } catch {}
@@ -609,7 +719,14 @@ export default function VideoPlayer({
     player.on('error', onError);
 
     return () => {
-      saveProgress();
+      window.removeEventListener('beforeunload', onPageLeave);
+      window.removeEventListener('pagehide', onPageLeave);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (skipBtnTimeoutRef.current) clearTimeout(skipBtnTimeoutRef.current);
+      if (closeSkipTimeoutRef.current) clearTimeout(closeSkipTimeoutRef.current);
+      if (skipNoticeTimeoutRef.current) clearTimeout(skipNoticeTimeoutRef.current);
+      saveProgress(true);
+      flushWatchProgress();
       if (playerRef.current) {
         playerRef.current.dispose();
         playerRef.current = null;
@@ -735,47 +852,53 @@ export default function VideoPlayer({
       {/* SponsorBlock / TheIntroDB Segment Markers on Progress Bar */}
       {progressHolderEl && duration > 0 && segments.length > 0 && createPortal(
         <div className="vjs-segments-bar">
-          {segments.map((seg, idx) => {
-            const startPct = Math.max(0, Math.min(100, (seg.startSec / duration) * 100));
-            const endSec = seg.endSec !== null ? seg.endSec : duration;
-            const endPct = Math.max(0, Math.min(100, (endSec / duration) * 100));
-            const widthPct = Math.max(0.4, endPct - startPct);
-            return (
-              <div
-                key={idx}
-                className={`vjs-segment-marker vjs-segment-${seg.type}`}
-                style={{
-                  left: `${startPct}%`,
-                  width: `${widthPct}%`,
-                  backgroundColor: seg.color,
-                }}
-              />
-            );
-          })}
+          {segments
+            .filter((seg) => (segmentSettings[seg.type] || 'manual') !== 'off')
+            .map((seg, idx) => {
+              const startPct = Math.max(0, Math.min(100, (seg.startSec / duration) * 100));
+              const endSec = seg.endSec !== null ? seg.endSec : duration;
+              const endPct = Math.max(0, Math.min(100, (endSec / duration) * 100));
+              const widthPct = Math.max(0.4, endPct - startPct);
+              return (
+                <div
+                  key={idx}
+                  className={`vjs-segment-marker vjs-segment-${seg.type}`}
+                  style={{
+                    left: `${startPct}%`,
+                    width: `${widthPct}%`,
+                    backgroundColor: seg.color,
+                  }}
+                />
+              );
+            })}
         </div>,
         progressHolderEl
       )}
 
       {/* Floating Skip Segment Button (hides after 10s, can also skip via Enter key) */}
-      {showSkipButton && activeSegment && (
+      {showSkipButton && displaySegment && (
         <button
+          key={skipButtonKey}
           type="button"
-          className="vjs-skip-segment-btn"
+          className={`vjs-skip-segment-btn ${isClosingSkipButton ? 'closing' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
-            if (!playerRef.current) return;
+            if (!playerRef.current || !displaySegment) return;
             const dur = playerRef.current.duration() || 0;
-            const targetTime = activeSegment.endSec !== null ? activeSegment.endSec : Math.max(0, dur - 1);
+            const targetTime = displaySegment.endSec !== null ? displaySegment.endSec : Math.max(0, dur - 1);
             playerRef.current.currentTime(targetTime);
             setActiveSegment(null);
-            setShowSkipButton(false);
-            activeSegmentKeyRef.current = null;
-            if (skipBtnTimeoutRef.current) clearTimeout(skipBtnTimeoutRef.current);
+            dismissSkipButton(false);
           }}
         >
           <i className="material-symbols-rounded">fast_forward</i>
-          <span>Пропустити {activeSegment.label}</span>
+          <span>Пропустити {displaySegment.label}</span>
           <kbd className="vjs-skip-kbd">Enter</kbd>
+
+          {/* Countdown progress indicator at bottom of button */}
+          <div className="vjs-skip-progress-track">
+            <div className="vjs-skip-progress-bar" />
+          </div>
         </button>
       )}
 
@@ -867,24 +990,6 @@ export default function VideoPlayer({
                   <span>Швидкість</span>
                 </div>
                 <div className="vjs-settings-val">{playbackRate}x</div>
-              </div>
-
-              <div
-                className="vjs-settings-item"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleAutoSkip();
-                }}
-              >
-                <div className="vjs-settings-label">
-                  <i className="material-symbols-rounded">skip_next</i>
-                  <span>Автопропуск заставок</span>
-                </div>
-                <div className="vjs-settings-val">
-                  <span className={`vjs-switch-toggle ${autoSkip ? 'checked' : ''}`}>
-                    <span className="vjs-switch-slider"></span>
-                  </span>
-                </div>
               </div>
             </div>
           )}
