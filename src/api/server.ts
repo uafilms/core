@@ -8,6 +8,9 @@ import path from 'path';
 import { omssRouter } from './omss/routes.js';
 import { streamRouter } from './stream/master.js';
 import { catalogRouter } from './catalog/routes.js';
+import { authRouter } from './auth/routes.js';
+import { apiKeyMiddleware } from './auth/middleware.js';
+import { isTurnstileEnabled, getTurnstileSiteKey } from './services/turnstile.js';
 import { formatHttpLog, log } from '../utils/logger.js';
 
 export const app = new Hono();
@@ -23,10 +26,13 @@ app.use('*', async (c, next) => {
 // Global CORS middleware
 app.use('*', cors({
   origin: '*',
-  allowMethods: ['GET', 'POST', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Accept', 'Authorization', 'Range', 'x-api-key'],
+  allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Accept', 'Authorization', 'Range', 'x-api-key', 'cf-turnstile-response'],
   exposeHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges'],
 }));
+
+// API Key usage tracking
+app.use('*', apiKeyMiddleware);
 
 // Serve static logos
 app.use('/logos/*', serveStatic({ root: './public' }));
@@ -57,12 +63,30 @@ if (hasWebDist) {
 // Mount routers
 app.get('/api', (c) => c.json({ status: 'ok', message: 'UAFilms API', version: '1.0.0' }));
 app.get('/api/', (c) => c.json({ status: 'ok', message: 'UAFilms API', version: '1.0.0' }));
+app.get('/api/config', (c) => {
+  return c.json({
+    turnstile: {
+      enabled: isTurnstileEnabled(),
+      siteKey: getTurnstileSiteKey(),
+    },
+  });
+});
+app.get('/config', (c) => {
+  return c.json({
+    turnstile: {
+      enabled: isTurnstileEnabled(),
+      siteKey: getTurnstileSiteKey(),
+    },
+  });
+});
 app.route('/api', catalogRouter);
 app.route('/', catalogRouter);
 app.route('/', omssRouter);
 app.route('/api', omssRouter);
 app.route('/', streamRouter);
 app.route('/api', streamRouter);
+app.route('/api/auth', authRouter);
+app.route('/auth', authRouter);
 
 // SPA fallback for frontend client routing
 if (hasWebDist) {
@@ -70,14 +94,17 @@ if (hasWebDist) {
     const p = c.req.path;
     if (
       p.startsWith('/api') ||
+      p.startsWith('/auth') ||
       p.startsWith('/v1') ||
       p.startsWith('/master.m3u8') ||
       p.startsWith('/subs') ||
+      p === '/config' ||
       p === '/home' ||
       p === '/details' ||
       p === '/season' ||
       p === '/comments' ||
-      p === '/segments'
+      p === '/segments' ||
+      p === '/batch-meta'
     ) {
       return next();
     }

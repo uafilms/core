@@ -9,6 +9,7 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
+      # - JWT_SECRET=change_to_a_random_secret_string
       # - TMDB_TOKEN=your_tmdb_token_here
     volumes:
       - ./cache:/app/cache
