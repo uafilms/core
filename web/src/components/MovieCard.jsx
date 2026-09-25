@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-const MovieCard = ({ movie, isHero = false }) => {
+const MovieCard = ({ movie, isHero = false, action = null }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [imgError, setImgError] = useState(false);
@@ -101,6 +101,20 @@ const MovieCard = ({ movie, isHero = false }) => {
             <h5 className="white-text" style={{ margin: 0 }}>
               {movie.title || movie.name}
             </h5>
+          </div>
+        )}
+
+        {action && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '6px',
+              right: '6px',
+              zIndex: 3,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {action}
           </div>
         )}
       </article>

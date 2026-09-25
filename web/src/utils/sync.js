@@ -51,6 +51,172 @@ export async function flushWatchProgress() {
 }
 
 /**
+ * Returns array of collections from localStorage
+ * Each: { id, name, created_at, updated_at, item_ids: string[] }
+ */
+export function getLocalCollections() {
+  try {
+    return JSON.parse(localStorage.getItem('uafilms_collections') || '[]');
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Create or update collection locally and push to cloud
+ */
+export async function saveLocalCollection(collection) {
+  if (!collection || !collection.name) return null;
+
+  const collections = getLocalCollections();
+  const now = Date.now();
+  const id = collection.id || 'col_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+  
+  const existingIdx = collections.findIndex((c) => c.id === id);
+  let updatedCol;
+
+  if (existingIdx >= 0) {
+    updatedCol = {
+      ...collections[existingIdx],
+      name: collection.name.trim(),
+      updated_at: now,
+      item_ids: Array.isArray(collection.item_ids) ? collection.item_ids : collections[existingIdx].item_ids || [],
+    };
+    collections[existingIdx] = updatedCol;
+  } else {
+    updatedCol = {
+      id,
+      name: collection.name.trim(),
+      created_at: collection.created_at || now,
+      updated_at: now,
+      item_ids: Array.isArray(collection.item_ids) ? collection.item_ids : [],
+    };
+    collections.push(updatedCol);
+  }
+
+  localStorage.setItem('uafilms_collections', JSON.stringify(collections));
+  window.dispatchEvent(new CustomEvent('uafilms_collections_updated', { detail: collections }));
+
+  const token = localStorage.getItem('uafilms_auth_token');
+  if (token) {
+    try {
+      await axios.post('/auth/collections', updatedCol);
+    } catch (err) {
+      console.warn('Collection cloud save failed:', err);
+    }
+  }
+
+  return updatedCol;
+}
+
+/**
+ * Delete collection locally and on cloud
+ */
+export async function deleteLocalCollection(collectionId) {
+  if (!collectionId) return;
+
+  const collections = getLocalCollections().filter((c) => c.id !== collectionId);
+  localStorage.setItem('uafilms_collections', JSON.stringify(collections));
+  window.dispatchEvent(new CustomEvent('uafilms_collections_updated', { detail: collections }));
+
+  const token = localStorage.getItem('uafilms_auth_token');
+  if (token) {
+    try {
+      await axios.delete(`/auth/collections/${collectionId}`);
+    } catch (err) {
+      console.warn('Collection cloud delete failed:', err);
+    }
+  }
+}
+
+/**
+ * Toggle single item in collection
+ */
+export async function toggleItemInCollection(collectionId, itemId) {
+  if (!collectionId || !itemId) return;
+  const sItemId = String(itemId);
+  const collections = getLocalCollections();
+  const col = collections.find((c) => c.id === collectionId);
+  if (!col) return;
+
+  const items = Array.isArray(col.item_ids) ? [...col.item_ids] : [];
+  const idx = items.indexOf(sItemId);
+  if (idx >= 0) {
+    items.splice(idx, 1);
+  } else {
+    items.push(sItemId);
+  }
+
+  col.item_ids = items;
+  col.updated_at = Date.now();
+
+  localStorage.setItem('uafilms_collections', JSON.stringify(collections));
+  window.dispatchEvent(new CustomEvent('uafilms_collections_updated', { detail: collections }));
+
+  const token = localStorage.getItem('uafilms_auth_token');
+  if (token) {
+    try {
+      await axios.post(`/auth/collections/${collectionId}/toggle`, { itemId: sItemId });
+    } catch (err) {
+      console.warn('Collection toggle cloud sync failed:', err);
+    }
+  }
+}
+
+/**
+ * Set which collections an item belongs to
+ */
+export async function setItemCollections(itemId, collectionIds) {
+  if (!itemId || !Array.isArray(collectionIds)) return;
+  const sItemId = String(itemId);
+  const collections = getLocalCollections();
+  const now = Date.now();
+
+  for (const col of collections) {
+    const shouldHave = collectionIds.includes(col.id);
+    let items = Array.isArray(col.item_ids) ? [...col.item_ids] : [];
+    const has = items.includes(sItemId);
+
+    if (shouldHave && !has) {
+      items.push(sItemId);
+      col.item_ids = items;
+      col.updated_at = now;
+    } else if (!shouldHave && has) {
+      items = items.filter((id) => id !== sItemId);
+      col.item_ids = items;
+      col.updated_at = now;
+    }
+  }
+
+  localStorage.setItem('uafilms_collections', JSON.stringify(collections));
+  window.dispatchEvent(new CustomEvent('uafilms_collections_updated', { detail: collections }));
+
+  const token = localStorage.getItem('uafilms_auth_token');
+  if (token) {
+    try {
+      await axios.post('/auth/collections/item-collections', {
+        itemId: sItemId,
+        collectionIds,
+      });
+    } catch (err) {
+      console.warn('Item collections cloud sync failed:', err);
+    }
+  }
+}
+
+/**
+ * Returns collection IDs that contain the given itemId
+ */
+export function getItemCollectionIds(itemId) {
+  if (!itemId) return [];
+  const sItemId = String(itemId);
+  const collections = getLocalCollections();
+  return collections
+    .filter((col) => Array.isArray(col.item_ids) && col.item_ids.includes(sItemId))
+    .map((col) => col.id);
+}
+
+/**
  * Returns array of favorites from localStorage
  */
 export function getLocalFavorites() {
@@ -127,6 +293,7 @@ export async function syncWithCloud() {
   try {
     const localFavs = getLocalFavorites();
     const localProgress = getLocalWatchProgress();
+    const localCollections = getLocalCollections();
     let localSettings = {};
     try {
       localSettings = JSON.parse(localStorage.getItem('uafilms_settings') || '{}');
@@ -135,6 +302,7 @@ export async function syncWithCloud() {
     const res = await axios.post('/auth/sync', {
       favorites: localFavs,
       watchProgress: localProgress,
+      collections: localCollections,
       settings: localSettings,
     });
 
@@ -144,6 +312,10 @@ export async function syncWithCloud() {
       }
       if (res.data.watchProgress && typeof res.data.watchProgress === 'object') {
         localStorage.setItem('uafilms_watch_progress', JSON.stringify(res.data.watchProgress));
+      }
+      if (Array.isArray(res.data.collections)) {
+        localStorage.setItem('uafilms_collections', JSON.stringify(res.data.collections));
+        window.dispatchEvent(new CustomEvent('uafilms_collections_updated'));
       }
       if (res.data.settings && typeof res.data.settings === 'object') {
         const cur = JSON.parse(localStorage.getItem('uafilms_settings') || '{}');

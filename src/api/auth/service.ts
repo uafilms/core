@@ -443,9 +443,18 @@ export interface UserWatchProgressItem {
   episode?: number;
 }
 
+export interface UserCollectionItem {
+  id: string;
+  name: string;
+  created_at: number;
+  updated_at: number;
+  item_ids: string[];
+}
+
 export interface UserSyncPayload {
   favorites?: UserFavoriteItem[];
   watchProgress?: Record<string, UserWatchProgressItem>;
+  collections?: UserCollectionItem[];
   settings?: any;
 }
 
@@ -585,12 +594,155 @@ export function saveUserSyncSettings(userId: string, settings: any) {
   `).run(userId, jsonStr, now);
 }
 
+export function getUserCollections(userId: string): UserCollectionItem[] {
+  const db = getAuthDb();
+  const collections = db.prepare(`
+    SELECT id, name, created_at, updated_at
+    FROM user_collections
+    WHERE user_id = ?
+    ORDER BY created_at ASC
+  `).all(userId) as any[];
+
+  if (collections.length === 0) return [];
+
+  const items = db.prepare(`
+    SELECT collection_id, item_id
+    FROM user_collection_items
+    WHERE user_id = ?
+    ORDER BY added_at ASC
+  `).all(userId) as any[];
+
+  const itemMap = new Map<string, string[]>();
+  for (const it of items) {
+    if (!itemMap.has(it.collection_id)) itemMap.set(it.collection_id, []);
+    itemMap.get(it.collection_id)!.push(String(it.item_id));
+  }
+
+  return collections.map((c) => ({
+    id: c.id,
+    name: c.name,
+    created_at: c.created_at,
+    updated_at: c.updated_at,
+    item_ids: itemMap.get(c.id) || [],
+  }));
+}
+
+export function saveUserCollection(
+  userId: string,
+  col: { id?: string; name: string; item_ids?: string[]; created_at?: number; updated_at?: number }
+): UserCollectionItem {
+  const db = getAuthDb();
+  const id = col.id || 'col_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+  const now = Date.now();
+  const createdAt = col.created_at || now;
+  const updatedAt = col.updated_at || now;
+  const name = (col.name || 'Нова колекція').trim();
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO user_collections (user_id, id, name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, id) DO UPDATE SET
+        name = excluded.name,
+        updated_at = excluded.updated_at
+    `).run(userId, id, name, createdAt, updatedAt);
+
+    if (Array.isArray(col.item_ids)) {
+      db.prepare('DELETE FROM user_collection_items WHERE user_id = ? AND collection_id = ?').run(userId, id);
+      const insertItem = db.prepare(`
+        INSERT OR IGNORE INTO user_collection_items (user_id, collection_id, item_id, added_at)
+        VALUES (?, ?, ?, ?)
+      `);
+      col.item_ids.forEach((itemId, idx) => {
+        if (itemId) insertItem.run(userId, id, String(itemId), now + idx);
+      });
+    }
+  });
+
+  tx();
+
+  const itemRows = db.prepare(`
+    SELECT item_id FROM user_collection_items WHERE user_id = ? AND collection_id = ? ORDER BY added_at ASC
+  `).all(userId, id) as any[];
+
+  return {
+    id,
+    name,
+    created_at: createdAt,
+    updated_at: updatedAt,
+    item_ids: itemRows.map((r) => String(r.item_id)),
+  };
+}
+
+export function deleteUserCollection(userId: string, collectionId: string) {
+  const db = getAuthDb();
+  db.prepare('DELETE FROM user_collections WHERE user_id = ? AND id = ?').run(userId, collectionId);
+}
+
+export function toggleCollectionItem(
+  userId: string,
+  collectionId: string,
+  itemId: string | number
+): { inCollection: boolean } {
+  const db = getAuthDb();
+  const sItemId = String(itemId);
+  const existing = db.prepare(`
+    SELECT 1 FROM user_collection_items WHERE user_id = ? AND collection_id = ? AND item_id = ?
+  `).get(userId, collectionId, sItemId);
+
+  const now = Date.now();
+  if (existing) {
+    db.prepare(`
+      DELETE FROM user_collection_items WHERE user_id = ? AND collection_id = ? AND item_id = ?
+    `).run(userId, collectionId, sItemId);
+    db.prepare('UPDATE user_collections SET updated_at = ? WHERE user_id = ? AND id = ?').run(now, userId, collectionId);
+    return { inCollection: false };
+  } else {
+    db.prepare(`
+      INSERT OR IGNORE INTO user_collection_items (user_id, collection_id, item_id, added_at)
+      VALUES (?, ?, ?, ?)
+    `).run(userId, collectionId, sItemId, now);
+    db.prepare('UPDATE user_collections SET updated_at = ? WHERE user_id = ? AND id = ?').run(now, userId, collectionId);
+    return { inCollection: true };
+  }
+}
+
+export function setItemCollections(
+  userId: string,
+  itemId: string | number,
+  collectionIds: string[]
+) {
+  const db = getAuthDb();
+  const sItemId = String(itemId);
+  const now = Date.now();
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      DELETE FROM user_collection_items
+      WHERE user_id = ? AND item_id = ?
+    `).run(userId, sItemId);
+
+    const insertStmt = db.prepare(`
+      INSERT OR IGNORE INTO user_collection_items (user_id, collection_id, item_id, added_at)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    for (const cId of collectionIds) {
+      insertStmt.run(userId, cId, sItemId, now);
+      db.prepare('UPDATE user_collections SET updated_at = ? WHERE user_id = ? AND id = ?').run(now, userId, cId);
+    }
+  });
+
+  tx();
+}
+
 export function syncUserData(
   userId: string,
   payload: UserSyncPayload
 ): {
   favorites: UserFavoriteItem[];
   watchProgress: Record<string, UserWatchProgressItem>;
+  collections: UserCollectionItem[];
   settings: any;
 } {
   const db = getAuthDb();
@@ -686,7 +838,35 @@ export function syncUserData(
     syncProgTransaction(payload.watchProgress);
   }
 
-  // 3. Settings
+  // 3. Sync Collections
+  const serverCollections = getUserCollections(userId);
+  const colMap = new Map<string, UserCollectionItem>();
+  for (const c of serverCollections) {
+    colMap.set(c.id, c);
+  }
+
+  if (Array.isArray(payload.collections)) {
+    for (const clientCol of payload.collections) {
+      if (!clientCol || !clientCol.id) continue;
+      const serverCol = colMap.get(clientCol.id);
+      if (!serverCol) {
+        saveUserCollection(userId, clientCol);
+      } else {
+        const mergedItemIds = Array.from(new Set([...(serverCol.item_ids || []), ...(clientCol.item_ids || [])]));
+        const updatedAt = Math.max(serverCol.updated_at || 0, clientCol.updated_at || 0);
+        const name = (clientCol.updated_at || 0) > (serverCol.updated_at || 0) ? clientCol.name : serverCol.name;
+        saveUserCollection(userId, {
+          id: serverCol.id,
+          name,
+          created_at: serverCol.created_at,
+          updated_at: updatedAt,
+          item_ids: mergedItemIds,
+        });
+      }
+    }
+  }
+
+  // 4. Settings
   let currentSettings = getUserSyncSettings(userId);
   if (payload.settings && typeof payload.settings === 'object') {
     currentSettings = { ...(currentSettings || {}), ...payload.settings };
@@ -696,6 +876,7 @@ export function syncUserData(
   return {
     favorites: Array.from(favMap.values()).sort((a, b) => (b.created_at || 0) - (a.created_at || 0)),
     watchProgress: currentProgress,
+    collections: getUserCollections(userId),
     settings: currentSettings,
   };
 }

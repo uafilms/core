@@ -4,6 +4,7 @@ import api, { waitForToken } from '../api/axios';
 import VideoPlayer from '../components/player/VideoPlayer';
 import Comments from '../components/Comments';
 import Dropdown from '../components/Dropdown';
+import CollectionModal from '../components/CollectionModal';
 import { toggleFavoriteItem, getLocalFavorites } from '../utils/sync.js';
 
 const formatSourceName = (source) => {
@@ -39,6 +40,7 @@ const Details = () => {
   const [loadingMeta, setLoadingMeta] = useState(!initialMovie);
   const [error, setError] = useState(null);
   const [isFav, setIsFav] = useState(false);
+  const [isCollectionModalOpen, setIsCollectionModalOpen] = useState(false);
 
   // OMSS Streams State (live SSE streaming)
   const [sources, setSources] = useState([]);
@@ -347,14 +349,24 @@ const Details = () => {
       <div style={{ padding: '0 24px 40px 24px', maxWidth: '1000px', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', margin: '20px 0 16px 0' }}>
           <h4 style={{ margin: 0, fontWeight: 500, fontSize: '1.75rem', lineHeight: 1.25 }}>{data.title}</h4>
-          <button
-            className={`circle ${isFav ? 'secondary' : 'surface-container'}`}
-            onClick={toggleFavorite}
-            style={{ cursor: 'pointer', flexShrink: 0 }}
-            title={isFav ? 'Видалити з обраного' : 'Додати в обране'}
-          >
-            <i>{isFav ? 'favorite' : 'favorite_border'}</i>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            <button
+              className="circle surface-container"
+              onClick={() => setIsCollectionModalOpen(true)}
+              style={{ cursor: 'pointer' }}
+              title="Додати в колекцію"
+            >
+              <i>playlist_add</i>
+            </button>
+            <button
+              className={`circle ${isFav ? 'secondary' : 'surface-container'}`}
+              onClick={toggleFavorite}
+              style={{ cursor: 'pointer' }}
+              title={isFav ? 'Видалити з обраного' : 'Додати в обране'}
+            >
+              <i>{isFav ? 'favorite' : 'favorite_border'}</i>
+            </button>
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
@@ -510,6 +522,18 @@ const Details = () => {
           <Comments title={data.title} imdbId={data.imdbId} />
         </div>
       </div>
+
+      <CollectionModal
+        isOpen={isCollectionModalOpen}
+        onClose={() => setIsCollectionModalOpen(false)}
+        item={{
+          id: data?.id || id,
+          title: data?.title || data?.originalTitle || 'Тайтл',
+          poster_path: data?.posterUrl,
+          release_date: data?.year ? `${data.year}-` : '',
+          media_type: type,
+        }}
+      />
     </div>
   );
 };

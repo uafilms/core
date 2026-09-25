@@ -110,6 +110,29 @@ export function getAuthDb(): Database.Database {
       updated_at INTEGER NOT NULL,
       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS user_collections (
+      user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (user_id, id),
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_collections_user_id ON user_collections(user_id);
+
+    CREATE TABLE IF NOT EXISTS user_collection_items (
+      user_id TEXT NOT NULL,
+      collection_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      added_at INTEGER NOT NULL,
+      PRIMARY KEY (user_id, collection_id, item_id),
+      FOREIGN KEY(user_id, collection_id) REFERENCES user_collections(user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_coll_items ON user_collection_items(user_id, collection_id);
   `);
 
   dbInstance = db;

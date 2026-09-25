@@ -18,6 +18,11 @@ import {
   deleteUserWatchProgress,
   getUserSyncSettings,
   syncUserData,
+  getUserCollections,
+  saveUserCollection,
+  deleteUserCollection,
+  toggleCollectionItem,
+  setItemCollections,
 } from './service.js';
 import { isTurnstileEnabled, verifyTurnstileToken } from '../services/turnstile.js';
 import { extractTurnstileToken, getClientIp } from '../services/security.js';
@@ -184,8 +189,9 @@ authRouter.get('/sync', async (c) => {
   const userId = c.get('userId' as any) as string;
   const favorites = getUserFavorites(userId);
   const watchProgress = getUserWatchProgress(userId);
+  const collections = getUserCollections(userId);
   const settings = getUserSyncSettings(userId);
-  return c.json({ favorites, watchProgress, settings });
+  return c.json({ favorites, watchProgress, collections, settings });
 });
 
 // Full Cloud Sync (Merge)
@@ -247,5 +253,69 @@ authRouter.post('/sync/progress', async (c) => {
     return c.json({ success: true });
   } catch (err: any) {
     return c.json({ error: { code: 'PROGRESS_SYNC_FAILED', message: err.message } }, 400);
+  }
+});
+
+// Collections: List
+authRouter.get('/collections', async (c) => {
+  const userId = c.get('userId' as any) as string;
+  const collections = getUserCollections(userId);
+  return c.json({ collections });
+});
+
+// Collections: Create or Update
+authRouter.post('/collections', async (c) => {
+  const userId = c.get('userId' as any) as string;
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const col = saveUserCollection(userId, body);
+    return c.json({ success: true, collection: col });
+  } catch (err: any) {
+    return c.json({ error: { code: 'COLLECTION_SAVE_FAILED', message: err.message } }, 400);
+  }
+});
+
+// Collections: Delete
+authRouter.delete('/collections/:id', async (c) => {
+  const userId = c.get('userId' as any) as string;
+  const id = c.req.param('id');
+  try {
+    deleteUserCollection(userId, id);
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ error: { code: 'COLLECTION_DELETE_FAILED', message: err.message } }, 400);
+  }
+});
+
+// Collections: Toggle item
+authRouter.post('/collections/:id/toggle', async (c) => {
+  const userId = c.get('userId' as any) as string;
+  const id = c.req.param('id');
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const { itemId } = body;
+    if (!itemId) {
+      return c.json({ error: { code: 'INVALID_ITEM_ID', message: 'Відсутній itemId' } }, 400);
+    }
+    const result = toggleCollectionItem(userId, id, itemId);
+    return c.json({ success: true, ...result });
+  } catch (err: any) {
+    return c.json({ error: { code: 'COLLECTION_TOGGLE_FAILED', message: err.message } }, 400);
+  }
+});
+
+// Collections: Set collections for item
+authRouter.post('/collections/item-collections', async (c) => {
+  const userId = c.get('userId' as any) as string;
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const { itemId, collectionIds } = body;
+    if (!itemId || !Array.isArray(collectionIds)) {
+      return c.json({ error: { code: 'INVALID_PAYLOAD', message: 'Невірні параметри' } }, 400);
+    }
+    setItemCollections(userId, itemId, collectionIds);
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ error: { code: 'ITEM_COLLECTIONS_FAILED', message: err.message } }, 400);
   }
 });
