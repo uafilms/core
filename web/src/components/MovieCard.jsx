@@ -7,15 +7,15 @@ const MovieCard = ({ movie, isHero = false, action = null }) => {
   const [imgError, setImgError] = useState(false);
 
   const type = movie.media_type || 'movie';
-  const hasPoster = !!movie.poster_path;
-  const hasBackdrop = !!movie.backdrop_path;
+  const rawPoster = movie.poster_path || movie.posterUrl || movie.poster;
+  const rawBackdrop = movie.backdrop_path || movie.backdropUrl || movie.backdrop;
 
-  const posterUrl = hasPoster
-    ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+  const posterUrl = rawPoster
+    ? (rawPoster.startsWith('http') ? rawPoster : `https://image.tmdb.org/t/p/w500${rawPoster}`)
     : null;
 
-  const backdropUrl = hasBackdrop
-    ? `https://image.tmdb.org/t/p/w780${movie.backdrop_path}`
+  const backdropUrl = rawBackdrop
+    ? (rawBackdrop.startsWith('http') ? rawBackdrop : `https://image.tmdb.org/t/p/w780${rawBackdrop}`)
     : null;
 
   const imageUrl = isHero ? backdropUrl : posterUrl;

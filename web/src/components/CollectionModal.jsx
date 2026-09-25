@@ -95,6 +95,7 @@ export default function CollectionModal({ isOpen, onClose, item }) {
     });
 
     if (created) {
+      setSelectedColIds((prev) => new Set([...prev, created.id]));
       setNewColName('');
       setIsCreating(false);
     }

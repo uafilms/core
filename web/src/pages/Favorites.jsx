@@ -14,6 +14,7 @@ import {
   saveLocalCollection,
   deleteLocalCollection,
   toggleItemInCollection,
+  toggleFavoriteItem,
 } from '../utils/sync.js';
 import { useAuth } from '../context/AuthContext';
 
@@ -353,6 +354,11 @@ const Favorites = () => {
     toggleItemInCollection(activeCollection.id, movieId);
   };
 
+  const handleRemoveFavorite = (e, movie) => {
+    e.stopPropagation();
+    toggleFavoriteItem(movie, false);
+  };
+
   return (
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
       {/* Header & Sync Status Banner */}
@@ -635,7 +641,7 @@ const Favorites = () => {
                   movie={movie}
                   action={
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      {activeCollection && (
+                      {activeCollection ? (
                         <button
                           className="circle transparent small"
                           style={{
@@ -648,6 +654,20 @@ const Favorites = () => {
                           onClick={(e) => handleRemoveFromActiveCollection(e, movie.id)}
                         >
                           <i style={{ fontSize: '16px' }}>close</i>
+                        </button>
+                      ) : (
+                        <button
+                          className="circle transparent small"
+                          style={{
+                            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                            color: '#ff5252',
+                            width: '28px',
+                            height: '28px',
+                          }}
+                          title="Видалити з обраного"
+                          onClick={(e) => handleRemoveFavorite(e, movie)}
+                        >
+                          <i style={{ fontSize: '16px' }}>favorite</i>
                         </button>
                       )}
                       <button
