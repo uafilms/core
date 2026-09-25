@@ -333,7 +333,7 @@ export class OrchestratorService {
 
     await Promise.allSettled(tasks);
 
-    // Sort sources: 4K > FHD > HD > SD > Auto
+    // Sort sources: Ashdi always first, then quality 4K > FHD > HD > SD > Auto
     const qualityWeights: Record<OmssQuality, number> = {
       '8K': 6,
       '4K': 5,
@@ -344,7 +344,14 @@ export class OrchestratorService {
       'Auto': 0,
     };
 
-    sources.sort((a, b) => qualityWeights[b.quality] - qualityWeights[a.quality]);
+    sources.sort((a, b) => {
+      const aIsAshdi = a.provider.id === 'ashdi' || a.url.includes('cdn=ashdi') || a.url.includes('ashdi.vip');
+      const bIsAshdi = b.provider.id === 'ashdi' || b.url.includes('cdn=ashdi') || b.url.includes('ashdi.vip');
+      if (aIsAshdi && !bIsAshdi) return -1;
+      if (!aIsAshdi && bIsAshdi) return 1;
+
+      return qualityWeights[b.quality] - qualityWeights[a.quality];
+    });
 
     const finalResult = { sources, subtitles, diagnostics };
     if (sources.length > 0) {

@@ -237,3 +237,41 @@ catalogRouter.get('/comments', async (c) => {
     return c.json([]);
   }
 });
+
+catalogRouter.post('/batch-meta', async (c) => {
+  try {
+    const body = await c.req.json();
+    const items = Array.isArray(body?.items) ? body.items : [];
+    if (items.length === 0) {
+      return c.json({ items: [] });
+    }
+
+    const capped = items.slice(0, 50);
+    const results = await Promise.all(
+      capped.map(async (item: { id: string | number; type?: 'movie' | 'tv' }) => {
+        if (!item?.id) return null;
+        const id = String(item.id);
+        const type = (item.type || 'movie') as 'movie' | 'tv';
+        try {
+          const details = await TmdbService.getDetails(id, type);
+          if (details) {
+            return {
+              id: details.id,
+              type,
+              title: details.title || details.originalTitle || '',
+              posterUrl: details.posterUrl || details.backdropUrl || null,
+              backdropUrl: details.backdropUrl || null,
+            };
+          }
+        } catch {
+          // ignore individual lookup failure
+        }
+        return null;
+      })
+    );
+
+    return c.json({ items: results.filter(Boolean) });
+  } catch (err: unknown) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
