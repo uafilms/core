@@ -6,7 +6,7 @@ import { extractVod } from '../../vods/index.js';
 import { detectCdn } from '../../utils/cdn.js';
 import { isSearchResultMatch } from '../../utils/sort.js';
 import { cleanStudioName, detectAudioLang, resolveStudioInfo } from '../../utils/studio.js';
-import { omssSourceResolutionCache } from '../services/cache.js';
+import { omssSourceResolutionCache, mediaParsedTimestampCache } from '../services/cache.js';
 import { runWithProvider } from '../../utils/proxyManager.js';
 
 interface OrchestratorOptions {
@@ -359,6 +359,10 @@ export class OrchestratorService {
     const finalResult = { sources, subtitles, diagnostics };
     if (sources.length > 0) {
       omssSourceResolutionCache.set(cacheKey, finalResult, 24 * 60 * 60 * 1000);
+      const now = Date.now();
+      if (mediaKey) mediaParsedTimestampCache.set(String(mediaKey), now);
+      if (meta.id) mediaParsedTimestampCache.set(String(meta.id), now);
+      if (meta.imdbId) mediaParsedTimestampCache.set(meta.imdbId, now);
     }
 
     return finalResult;

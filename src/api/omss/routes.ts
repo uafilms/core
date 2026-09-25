@@ -5,13 +5,19 @@ import type { PlatformType, OmssRootResponse, OmssSourceResponse, OmssErrorRespo
 import { providers } from '../../providers/index.js';
 import { TmdbService } from '../services/tmdb.js';
 import { OrchestratorService } from '../services/orchestrator.js';
-import { omssResponseCache } from '../services/cache.js';
+import {
+  omssResponseCache,
+  omssSourceResolutionCache,
+  mediaParsedTimestampCache,
+  omssResponseIdToMediaMap,
+  type MediaParseInfo,
+} from '../services/cache.js';
 import { applyFilterToSources } from './filter.js';
 import { enforceParsingSecurity } from '../services/security.js';
 
 export const omssRouter = new Hono();
 
-function makeError(code: string, message: string, status: 400 | 404 | 500, details?: Record<string, unknown>) {
+function makeError(code: string, message: string, status: 400 | 404 | 429 | 500, details?: Record<string, unknown>) {
   const payload: OmssErrorResponse = {
     error: {
       code,
@@ -166,6 +172,12 @@ omssRouter.get('/v1/movies/:id', async (c) => {
     };
 
     omssResponseCache.set(responseId, response);
+    omssResponseIdToMediaMap.set(responseId, {
+      mediaKey: String(meta.imdbId || meta.id || id),
+      tmdbId: String(meta.id || id),
+      imdbId: meta.imdbId,
+      parsedAt: mediaParsedTimestampCache.get(String(meta.id || id)) || Date.now(),
+    });
 
     return c.json(response);
   } catch (err: unknown) {
@@ -320,6 +332,12 @@ omssRouter.get('/v1/tv/:id/seasons/:s/episodes/:e', async (c) => {
     };
 
     omssResponseCache.set(responseId, response);
+    omssResponseIdToMediaMap.set(responseId, {
+      mediaKey: String(meta.imdbId || meta.id || id),
+      tmdbId: String(meta.id || id),
+      imdbId: meta.imdbId,
+      parsedAt: mediaParsedTimestampCache.get(String(meta.id || id)) || Date.now(),
+    });
 
     return c.json(response);
   } catch (err: unknown) {
@@ -343,12 +361,81 @@ omssRouter.post('/v1/refresh/:id', async (c) => {
     return c.json(err.payload, err.status);
   }
 
-  const exists = omssResponseCache.has(id);
-  if (!exists) {
-    const err = makeError('RESPONSE_ID_NOT_FOUND', 'No cached response found for the provided ID', 404);
+  // 1. Resolve mediaKey and parsedAt
+  let mediaKey: string | undefined;
+  let tmdbId: string | undefined;
+  let parsedAt: number | undefined;
+
+  const mapped = omssResponseIdToMediaMap.get<MediaParseInfo>(id);
+  if (mapped) {
+    mediaKey = mapped.mediaKey;
+    tmdbId = mapped.tmdbId;
+    parsedAt = mapped.parsedAt;
+  } else if (mediaParsedTimestampCache.has(id)) {
+    mediaKey = id;
+    tmdbId = id;
+    parsedAt = mediaParsedTimestampCache.get<number>(id);
+  } else {
+    // Check if any entries exist in omssSourceResolutionCache for this id
+    for (const key of omssSourceResolutionCache.keys()) {
+      if (key.includes(`:${id}:`)) {
+        mediaKey = id;
+        tmdbId = id;
+        const entry = omssSourceResolutionCache.getEntry(key);
+        parsedAt = entry?.createdAt || Date.now();
+        break;
+      }
+    }
+  }
+
+  if (!parsedAt || !mediaKey) {
+    const err = makeError('RESPONSE_ID_NOT_FOUND', 'No cached response or sources found for the provided ID', 404);
     return c.json(err.payload, err.status);
   }
 
+  // 2. Check Cooldown (default: 2 hours)
+  const cooldownHours = parseInt(process.env.REFRESH_COOLDOWN_HOURS || '2', 10) || 2;
+  const cooldownMs = cooldownHours * 60 * 60 * 1000;
+  const elapsedMs = Date.now() - parsedAt;
+
+  if (elapsedMs < cooldownMs) {
+    const remainingSeconds = Math.ceil((cooldownMs - elapsedMs) / 1000);
+    const remainingMinutes = Math.ceil(remainingSeconds / 60);
+    const remainingHours = (remainingMinutes / 60).toFixed(1);
+
+    const timeText = remainingMinutes > 60 
+      ? `~${remainingHours} год.` 
+      : `${remainingMinutes} хв.`;
+
+    c.header('Retry-After', String(remainingSeconds));
+    const err = makeError(
+      'REFRESH_COOLDOWN_ACTIVE',
+      `Оновлення джерел для цього медіа тимчасово недоступне. Зачекайте ще ${timeText}`,
+      429,
+      {
+        cooldownHours,
+        remainingSeconds,
+        remainingMinutes,
+        retryAfter: remainingSeconds,
+      }
+    );
+    return c.json(err.payload, err.status);
+  }
+
+  // 3. Cooldown passed: clear caches
   omssResponseCache.delete(id);
-  return c.json({ status: 'OK' });
+  omssResponseIdToMediaMap.delete(id);
+
+  omssSourceResolutionCache.deleteMatching((key) => key.includes(`:${mediaKey}:`));
+  if (tmdbId && tmdbId !== mediaKey) {
+    omssSourceResolutionCache.deleteMatching((key) => key.includes(`:${tmdbId}:`));
+  }
+
+  mediaParsedTimestampCache.delete(mediaKey);
+  if (tmdbId) mediaParsedTimestampCache.delete(tmdbId);
+
+  return c.json({
+    status: 'OK',
+    message: 'Кеш джерел успішно очищено',
+  });
 });

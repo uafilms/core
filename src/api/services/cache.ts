@@ -1,5 +1,6 @@
 interface CacheEntry<T> {
   value: T;
+  createdAt: number;
   expiresAt: number;
 }
 
@@ -13,9 +14,11 @@ export class MemoryCache {
 
   set<T>(key: string, value: T, ttlMs?: number): void {
     const ttl = ttlMs !== undefined ? ttlMs : this.defaultTtlMs;
+    const now = Date.now();
     this.store.set(key, {
       value,
-      expiresAt: Date.now() + ttl,
+      createdAt: now,
+      expiresAt: now + ttl,
     });
   }
 
@@ -29,12 +32,37 @@ export class MemoryCache {
     return entry.value as T;
   }
 
+  getEntry<T>(key: string): { value: T; createdAt: number; expiresAt: number } | undefined {
+    const entry = this.store.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.store.delete(key);
+      return undefined;
+    }
+    return entry as { value: T; createdAt: number; expiresAt: number };
+  }
+
   delete(key: string): boolean {
     return this.store.delete(key);
   }
 
+  deleteMatching(predicate: (key: string) => boolean): number {
+    let deleted = 0;
+    for (const key of Array.from(this.store.keys())) {
+      if (predicate(key)) {
+        this.store.delete(key);
+        deleted++;
+      }
+    }
+    return deleted;
+  }
+
   has(key: string): boolean {
     return this.get(key) !== undefined;
+  }
+
+  keys(): IterableIterator<string> {
+    return this.store.keys();
   }
 
   private cleanup(): void {
@@ -51,3 +79,13 @@ export const omssResponseCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hou
 export const metaCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
 export const m3u8PlaylistCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
 export const omssSourceResolutionCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
+
+export interface MediaParseInfo {
+  mediaKey: string;
+  tmdbId?: string;
+  imdbId?: string;
+  parsedAt: number;
+}
+
+export const mediaParsedTimestampCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
+export const omssResponseIdToMediaMap = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
