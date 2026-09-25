@@ -239,7 +239,7 @@ const Dashboard = () => {
           onClick={() => setActiveTab('docs')}
         >
           <i style={{ fontSize: '18px', marginRight: '6px' }}>menu_book</i>
-          <span>Швидкий старт</span>
+          <span>Документація</span>
         </button>
       </div>
 
@@ -424,9 +424,47 @@ const Dashboard = () => {
         </article>
       )}
 
-      {/* Tab 4: Quickstart & Documentation */}
+      {/* Tab 4: Documentation */}
       {activeTab === 'docs' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <article className="surface-container round no-margin" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '12px',
+                  background: 'var(--primary-container)',
+                  color: 'var(--on-primary-container)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <i style={{ fontSize: '28px' }}>menu_book</i>
+              </div>
+              <div style={{ flex: 1, minWidth: '260px' }}>
+                <h6 style={{ margin: '0 0 8px 0', fontWeight: 500 }}>Офіційна документація API</h6>
+                <p className="surface-variant-text" style={{ margin: '0 0 16px 0', fontSize: '14px', lineHeight: 1.6 }}>
+                  Повна інтерактивна документація, OpenAPI специфікація, інтерактивний Playground та приклади коду для всіх ендпоінтів доступні за посиланням:
+                </p>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <a
+                    href="https://uafilms.mintlify.app"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="button round primary"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <i>open_in_new</i>
+                    <span>uafilms.mintlify.app</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </article>
+
           <article className="surface-container round no-margin" style={{ padding: '20px' }}>
             <h6 style={{ margin: '0 0 8px 0', fontWeight: 500 }}>Як використовувати API-ключ</h6>
             <p className="small-text surface-variant-text" style={{ margin: '0 0 16px 0' }}>
@@ -436,7 +474,7 @@ const Dashboard = () => {
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontWeight: 500, fontSize: '14px', marginBottom: '6px' }}>1. Приклад cURL (Запит потоку фільму за TMDB ID)</div>
               <pre style={{ background: 'var(--surface-container-high)', padding: '12px', borderRadius: '8px', overflowX: 'auto', fontSize: '13px' }}>
-{`curl -X GET "http://localhost:3000/v1/movies/550" \\
+{`curl -X GET "https://films.aartzz.pp.ua/v1/movies/550" \\
   -H "x-api-key: YOUR_API_KEY"`}
               </pre>
             </div>
@@ -444,7 +482,7 @@ const Dashboard = () => {
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontWeight: 500, fontSize: '14px', marginBottom: '6px' }}>2. Приклад JavaScript (Fetch)</div>
               <pre style={{ background: 'var(--surface-container-high)', padding: '12px', borderRadius: '8px', overflowX: 'auto', fontSize: '13px' }}>
-{`const response = await fetch('http://localhost:3000/v1/movies/550', {
+{`const response = await fetch('https://films.aartzz.pp.ua/v1/movies/550', {
   headers: {
     'x-api-key': 'YOUR_API_KEY',
     'Accept': 'application/json'
@@ -458,7 +496,7 @@ console.log(data);`}
             <div>
               <div style={{ fontWeight: 500, fontSize: '14px', marginBottom: '6px' }}>3. Підключення HLS потоку через Master Playlist</div>
               <pre style={{ background: 'var(--surface-container-high)', padding: '12px', borderRadius: '8px', overflowX: 'auto', fontSize: '13px' }}>
-{`http://localhost:3000/master.m3u8?url=ENCODED_STREAM_URL&api_key=YOUR_API_KEY`}
+{`https://films.aartzz.pp.ua/master.m3u8?url=ENCODED_STREAM_URL&api_key=YOUR_API_KEY`}
               </pre>
             </div>
           </article>
