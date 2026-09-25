@@ -55,6 +55,8 @@ if (hasWebDist) {
 }
 
 // Mount routers
+app.get('/api', (c) => c.json({ status: 'ok', message: 'UAFilms API', version: '1.0.0' }));
+app.get('/api/', (c) => c.json({ status: 'ok', message: 'UAFilms API', version: '1.0.0' }));
 app.route('/api', catalogRouter);
 app.route('/', catalogRouter);
 app.route('/', omssRouter);
@@ -74,7 +76,8 @@ if (hasWebDist) {
       p === '/home' ||
       p === '/details' ||
       p === '/season' ||
-      p === '/comments'
+      p === '/comments' ||
+      p === '/segments'
     ) {
       return next();
     }

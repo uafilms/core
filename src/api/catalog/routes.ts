@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { TmdbService } from '../services/tmdb.js';
+import { TheIntroDbService } from '../services/theintrodb.js';
+import { AniSkipService } from '../services/aniskip.js';
 import { metaCache } from '../services/cache.js';
 
 export const catalogRouter = new Hono();
@@ -96,6 +98,77 @@ catalogRouter.get('/season', async (c) => {
     return c.json(seasonDetails);
   } catch (err: unknown) {
     return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
+catalogRouter.get('/segments', async (c) => {
+  const rawId = c.req.query('id') || c.req.query('tmdb_id');
+  const imdbId = c.req.query('imdb_id');
+  const type = (c.req.query('type') || 'movie') as 'movie' | 'tv';
+  const seasonStr = c.req.query('season');
+  const episodeStr = c.req.query('episode');
+  const durationStr = c.req.query('duration_ms');
+
+  if (!rawId && !imdbId) {
+    return c.json({ segments: [] });
+  }
+
+  const isNumeric = rawId && /^\d+$/.test(rawId);
+  const tmdbId = isNumeric ? parseInt(rawId, 10) : undefined;
+  const effectiveImdbId = imdbId || (!isNumeric && rawId?.startsWith('tt') ? rawId : undefined);
+
+  const season = seasonStr ? parseInt(seasonStr, 10) : undefined;
+  const episode = episodeStr ? parseInt(episodeStr, 10) : undefined;
+
+  const durationRaw = c.req.query('duration_ms') || c.req.query('duration') || c.req.query('episodeLength');
+  let durationMs: number | undefined;
+  let durationSec: number | undefined;
+
+  if (durationRaw) {
+    const val = parseFloat(durationRaw);
+    if (!isNaN(val) && val > 0) {
+      if (val > 10000) {
+        durationMs = Math.round(val);
+        durationSec = Math.round(val / 1000);
+      } else {
+        durationSec = Math.round(val);
+        durationMs = Math.round(val * 1000);
+      }
+    }
+  }
+
+  try {
+    let segments = await TheIntroDbService.getSegments({
+      tmdbId,
+      imdbId: effectiveImdbId,
+      type,
+      season,
+      episode,
+      durationMs,
+    });
+
+    if (segments.length === 0) {
+      let title = c.req.query('title');
+      if (!title && !effectiveImdbId && tmdbId) {
+        try {
+          const d = await TmdbService.getDetails(String(tmdbId), type);
+          if (d) {
+            title = d.originalTitle || d.title;
+          }
+        } catch {}
+      }
+
+      segments = await AniSkipService.getSegments({
+        imdbId: effectiveImdbId,
+        title,
+        episode: episode || 1,
+        episodeLength: durationSec,
+      });
+    }
+
+    return c.json({ segments });
+  } catch (err: unknown) {
+    return c.json({ segments: [] });
   }
 });
 
