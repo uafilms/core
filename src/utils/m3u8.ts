@@ -125,13 +125,16 @@ export function parseMasterPlaylist(
         nextIsStreamUrl = true;
         nextIsSegmentUrl = false;
 
-        // Витягуємо висоту роздільної здатності для обходу заниження якості (тільки якщо вказано стандартні 1080/720/480/2160)
-        const resMatch = trimmed.match(/RESOLUTION=\d+x(\d+)/i);
+        // Витягуємо роздільну здатність (враховуючи кінематографічний аспект 21:9 / 2.39:1, де висота 1080p становить ~800px)
+        const resMatch = trimmed.match(/RESOLUTION=(\d+)x(\d+)/i);
         if (resMatch) {
-          const h = parseInt(resMatch[1], 10);
-          if (h >= 1000) currentStreamHeight = '1080';
-          else if (h >= 700) currentStreamHeight = '720';
-          else if (h >= 450) currentStreamHeight = '480';
+          const w = parseInt(resMatch[1], 10);
+          const h = parseInt(resMatch[2], 10);
+          const maxDim = Math.max(w, h);
+          if (maxDim >= 3000 || h >= 2000) currentStreamHeight = '2160';
+          else if (maxDim >= 1800 || h >= 800) currentStreamHeight = '1080';
+          else if (maxDim >= 1200 || h >= 500) currentStreamHeight = '720';
+          else if (maxDim >= 700 || h >= 350) currentStreamHeight = '480';
           else currentStreamHeight = undefined;
         } else {
           currentStreamHeight = undefined;
@@ -151,8 +154,8 @@ export function parseMasterPlaylist(
 
       if (nextIsStreamUrl) {
         let streamTargetUrl = absoluteUrl;
-        if (currentStreamHeight && streamTargetUrl.includes('ashdi.vip') && /\/hls\/480\//.test(streamTargetUrl)) {
-          streamTargetUrl = streamTargetUrl.replace(/\/hls\/480\//, `/hls/${currentStreamHeight}/`);
+        if (currentStreamHeight && streamTargetUrl.includes('ashdi.vip') && /\/hls\/\d+\//.test(streamTargetUrl)) {
+          streamTargetUrl = streamTargetUrl.replace(/\/hls\/\d+\//, `/hls/${currentStreamHeight}/`);
         }
         newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(streamTargetUrl)}`);
         nextIsStreamUrl = false;
