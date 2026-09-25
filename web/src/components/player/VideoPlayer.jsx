@@ -56,9 +56,11 @@ export default function VideoPlayer({
   const activeSegmentRef = useRef(null);
   const activeSegmentKeyRef = useRef(null);
   const [showSkipButton, setShowSkipButton] = useState(false);
+  const showSkipButtonRef = useRef(false);
   const [isClosingSkipButton, setIsClosingSkipButton] = useState(false);
   const isClosingSkipButtonRef = useRef(false);
   const [displaySegment, setDisplaySegment] = useState(null);
+  const displaySegmentRef = useRef(null);
   const [skipButtonKey, setSkipButtonKey] = useState(0);
   const skipBtnTimeoutRef = useRef(null);
   const closeSkipTimeoutRef = useRef(null);
@@ -74,20 +76,27 @@ export default function VideoPlayer({
     }
 
     if (immediate) {
+      showSkipButtonRef.current = false;
+      isClosingSkipButtonRef.current = false;
+      displaySegmentRef.current = null;
       setShowSkipButton(false);
       setIsClosingSkipButton(false);
-      isClosingSkipButtonRef.current = false;
       setDisplaySegment(null);
       return;
     }
 
+    if (isClosingSkipButtonRef.current) return;
+
     isClosingSkipButtonRef.current = true;
     setIsClosingSkipButton(true);
     closeSkipTimeoutRef.current = setTimeout(() => {
+      showSkipButtonRef.current = false;
+      isClosingSkipButtonRef.current = false;
+      displaySegmentRef.current = null;
       setShowSkipButton(false);
       setIsClosingSkipButton(false);
-      isClosingSkipButtonRef.current = false;
       setDisplaySegment(null);
+      closeSkipTimeoutRef.current = null;
     }, 350);
   }, []);
 
@@ -204,7 +213,7 @@ export default function VideoPlayer({
               : Math.max(0, dur - 1);
             playerRef.current.currentTime(targetTime);
             setActiveSegment(null);
-            dismissSkipButtonRef.current(false);
+            dismissSkipButtonRef.current(true);
           }
         }
       }
@@ -517,6 +526,15 @@ export default function VideoPlayer({
       }
       lastCurTimeRef.current = cur;
 
+      // Force hide skip button if the segment it was displayed for has ended or playback moved outside it
+      if (showSkipButtonRef.current && !isClosingSkipButtonRef.current && displaySegmentRef.current) {
+        const segEnd = displaySegmentRef.current.endSec !== null ? displaySegmentRef.current.endSec : dur;
+        const segStart = displaySegmentRef.current.startSec || 0;
+        if (cur >= segEnd || cur < segStart - 1) {
+          dismissSkipButtonRef.current(false);
+        }
+      }
+
       if (segmentsRef.current.length > 0) {
         const match = segmentsRef.current.find((s) => {
           const start = s.startSec;
@@ -531,7 +549,7 @@ export default function VideoPlayer({
           if (action === 'off' || action === 'timeline') {
             setActiveSegment(null);
             activeSegmentKeyRef.current = null;
-            if (showSkipButton && !isClosingSkipButtonRef.current) {
+            if (showSkipButtonRef.current && !isClosingSkipButtonRef.current) {
               dismissSkipButtonRef.current(false);
             }
           } else if (action === 'auto') {
@@ -555,6 +573,7 @@ export default function VideoPlayer({
             if (!dismissedSegmentsRef.current.has(segKey)) {
               dismissedSegmentsRef.current.add(segKey);
               activeSegmentKeyRef.current = segKey;
+              displaySegmentRef.current = match;
               setDisplaySegment(match);
               if (closeSkipTimeoutRef.current) {
                 clearTimeout(closeSkipTimeoutRef.current);
@@ -562,6 +581,7 @@ export default function VideoPlayer({
               }
               isClosingSkipButtonRef.current = false;
               setIsClosingSkipButton(false);
+              showSkipButtonRef.current = true;
               setShowSkipButton(true);
               setSkipButtonKey(Date.now());
 
@@ -574,13 +594,16 @@ export default function VideoPlayer({
         } else {
           setActiveSegment(null);
           activeSegmentKeyRef.current = null;
-          if (showSkipButton && !isClosingSkipButtonRef.current) {
+          if (showSkipButtonRef.current && !isClosingSkipButtonRef.current) {
             dismissSkipButtonRef.current(false);
           }
         }
       } else {
         setActiveSegment(null);
         activeSegmentKeyRef.current = null;
+        if (showSkipButtonRef.current && !isClosingSkipButtonRef.current) {
+          dismissSkipButtonRef.current(false);
+        }
       }
     };
 
