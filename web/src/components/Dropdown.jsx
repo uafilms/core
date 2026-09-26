@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 
 /**
  * Material 3 animated Dropdown Component
- * Designed for BeerCSS environments without style collisions
+ * Designed for BeerCSS environments without style collisions.
+ * Supports touch, mouse, keyboard and gamepad / spatial navigation (PlayStation/TV).
  */
 const Dropdown = ({
   value,
@@ -14,11 +15,16 @@ const Dropdown = ({
   align = 'auto',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const [isKeyboardNav, setIsKeyboardNav] = useState(false);
   const dropdownRef = useRef(null);
+  const triggerRef = useRef(null);
   const selectedItemRef = useRef(null);
+  const itemRefs = useRef([]);
   const [computedAlign, setComputedAlign] = useState(align === 'auto' ? 'left' : align);
 
   const selectedOption = options.find((opt) => opt.value === value) || options[0];
+  const selectedIndex = options.findIndex((opt) => opt.value === value);
 
   useEffect(() => {
     if (align !== 'auto') {
@@ -36,8 +42,13 @@ const Dropdown = ({
   }, [isOpen, align]);
 
   useEffect(() => {
-    if (isOpen && selectedItemRef.current) {
-      selectedItemRef.current.scrollIntoView({ block: 'nearest' });
+    if (isOpen) {
+      if (selectedItemRef.current) {
+        selectedItemRef.current.scrollIntoView({ block: 'nearest' });
+      }
+    } else {
+      setFocusedIndex(-1);
+      setIsKeyboardNav(false);
     }
   }, [isOpen]);
 
@@ -48,23 +59,92 @@ const Dropdown = ({
       }
     };
 
-    const handleKeyDown = (e) => {
+    const handleGlobalKeyDown = (e) => {
       if (e.key === 'Escape') {
         setIsOpen(false);
+        triggerRef.current?.focus();
       }
     };
 
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('touchstart', handleClickOutside, { passive: true });
-      document.addEventListener('keydown', handleKeyDown);
+      document.addEventListener('keydown', handleGlobalKeyDown);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keydown', handleGlobalKeyDown);
     };
   }, [isOpen]);
+
+  const handleTriggerKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        setIsKeyboardNav(true);
+        const nextIdx = selectedIndex >= 0 ? selectedIndex : 0;
+        setFocusedIndex(nextIdx);
+        setTimeout(() => {
+          itemRefs.current[nextIdx]?.focus({ preventScroll: true });
+          itemRefs.current[nextIdx]?.scrollIntoView({ block: 'nearest' });
+        }, 10);
+      } else {
+        const nextIdx = (focusedIndex + 1) % options.length;
+        setIsKeyboardNav(true);
+        setFocusedIndex(nextIdx);
+        itemRefs.current[nextIdx]?.focus({ preventScroll: true });
+        itemRefs.current[nextIdx]?.scrollIntoView({ block: 'nearest' });
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        setIsKeyboardNav(true);
+        const prevIdx = selectedIndex >= 0 ? selectedIndex : options.length - 1;
+        setFocusedIndex(prevIdx);
+        setTimeout(() => {
+          itemRefs.current[prevIdx]?.focus({ preventScroll: true });
+          itemRefs.current[prevIdx]?.scrollIntoView({ block: 'nearest' });
+        }, 10);
+      } else {
+        const prevIdx = (focusedIndex - 1 + options.length) % options.length;
+        setIsKeyboardNav(true);
+        setFocusedIndex(prevIdx);
+        itemRefs.current[prevIdx]?.focus({ preventScroll: true });
+        itemRefs.current[prevIdx]?.scrollIntoView({ block: 'nearest' });
+      }
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setIsOpen((prev) => !prev);
+    }
+  };
+
+  const handleOptionKeyDown = (e, index, optValue) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onChange(optValue);
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setIsKeyboardNav(true);
+      const nextIndex = (index + 1) % options.length;
+      setFocusedIndex(nextIndex);
+      itemRefs.current[nextIndex]?.focus({ preventScroll: true });
+      itemRefs.current[nextIndex]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setIsKeyboardNav(true);
+      const prevIndex = (index - 1 + options.length) % options.length;
+      setFocusedIndex(prevIndex);
+      itemRefs.current[prevIndex]?.focus({ preventScroll: true });
+      itemRefs.current[prevIndex]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Tab') {
+      setIsOpen(false);
+    }
+  };
 
   const isAlignRight = computedAlign === 'right';
 
@@ -75,6 +155,7 @@ const Dropdown = ({
       style={{ position: 'relative', display: 'inline-block' }}
     >
       <button
+        ref={triggerRef}
         type="button"
         className="button border round fill no-margin"
         style={{
@@ -93,8 +174,10 @@ const Dropdown = ({
           fontWeight: 500,
           transition: 'background-color 0.2s, border-color 0.2s, border-radius var(--speed2, 0.2s), transform var(--speed3, 0.3s), padding var(--speed3, 0.3s)',
           touchAction: 'manipulation',
+          outline: 'none',
         }}
         onClick={() => setIsOpen((prev) => !prev)}
+        onKeyDown={handleTriggerKeyDown}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
@@ -125,7 +208,7 @@ const Dropdown = ({
           overflowY: 'auto',
           overflowX: 'hidden',
           scrollbarWidth: 'thin',
-          scrollbarColor: 'var(--outline-variant, rgba(255, 255, 255, 0.2)) transparent',
+          scrollbarColor: 'var(--outline-variant, rgba(255, 255, 255, 0.3)) transparent',
           WebkitOverflowScrolling: 'touch',
           zIndex: 9999,
           backgroundColor: 'var(--surface-container-high, #2b2831)',
@@ -145,17 +228,29 @@ const Dropdown = ({
           gap: '2px',
         }}
       >
-        {options.map((opt) => {
+        {options.map((opt, index) => {
           const isSelected = opt.value === value;
+          const isFocused = isKeyboardNav && focusedIndex === index;
           return (
             <div
               key={opt.value}
-              ref={isSelected ? selectedItemRef : null}
+              ref={(el) => {
+                itemRefs.current[index] = el;
+                if (isSelected) selectedItemRef.current = el;
+              }}
               role="option"
+              tabIndex={isOpen ? 0 : -1}
               aria-selected={isSelected}
               onClick={() => {
                 onChange(opt.value);
                 setIsOpen(false);
+                triggerRef.current?.focus();
+              }}
+              onKeyDown={(e) => handleOptionKeyDown(e, index, opt.value)}
+              onFocus={() => {
+                if (isKeyboardNav) {
+                  setFocusedIndex(index);
+                }
               }}
               style={{
                 display: 'flex',
@@ -165,16 +260,24 @@ const Dropdown = ({
                 borderRadius: '10px',
                 cursor: 'pointer',
                 fontSize: '14px',
-                fontWeight: isSelected ? 600 : 400,
+                fontWeight: isSelected ? 600 : (isFocused ? 500 : 400),
                 backgroundColor: isSelected
                   ? 'var(--secondary-container, rgba(255, 255, 255, 0.12))'
+                  : isFocused
+                  ? 'var(--surface-container-highest, rgba(255, 255, 255, 0.08))'
                   : 'transparent',
                 color: isSelected
                   ? 'var(--on-secondary-container, var(--primary))'
                   : 'var(--on-surface, #e6e1e5)',
-                transition: 'background-color 0.15s ease',
+                outline: isFocused
+                  ? '2px solid var(--primary, #5B8DEF)'
+                  : 'none',
+                outlineOffset: '-2px',
+                transition: 'background-color 0.15s ease, outline 0.15s ease',
+                userSelect: 'none',
               }}
               onMouseEnter={(e) => {
+                setIsKeyboardNav(false);
                 if (!isSelected) {
                   e.currentTarget.style.backgroundColor = 'var(--surface-container-highest, rgba(255, 255, 255, 0.08))';
                 }
