@@ -1016,55 +1016,64 @@
   z-index: 12 !important;
   display: inline-flex !important;
   align-items: center !important;
-  gap: 8px !important;
-  padding: 10px 18px !important;
-  background: rgba(18, 18, 18, 0.88) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
+  gap: 10px !important;
+  padding: 10px 22px 12px 20px !important;
+  background: #14151a !important;
+  background-color: #14151a !important;
   border: 1px solid rgba(255, 255, 255, 0.2) !important;
   border-radius: 9999px !important;
   color: #ffffff !important;
+  font-family: inherit !important;
   font-size: 14px !important;
-  font-weight: 600 !important;
+  font-weight: 500 !important;
   cursor: pointer !important;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.8) !important;
   transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease !important;
-  animation: vjsSkipFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) ease-out !important;
+  animation: vjsSkipFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) ease-out !important;
   user-select: none !important;
   overflow: hidden !important;
-  isolation: isolate !important;
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  white-space: nowrap !important;
+  min-width: max-content !important;
+}
+
+.vjs-skip-segment-btn::before,
+.vjs-skip-segment-btn::after {
+  display: none !important;
 }
 
 .vjs-skip-segment-btn:hover {
-  background: rgba(40, 40, 40, 0.95) !important;
-  border-color: rgba(255, 255, 255, 0.45) !important;
-  transform: translateY(-2px) scale(1.02) !important;
+  background: #1e2027 !important;
+  background-color: #1e2027 !important;
+  border-color: rgba(255, 255, 255, 0.4) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.9) !important;
 }
 
 .vjs-skip-segment-btn.closing {
-  animation: vjsSkipFadeOut 0.35s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  animation: vjsSkipFadeOut 0.3s cubic-bezier(0.4, 0, 1, 1) forwards !important;
   pointer-events: none !important;
 }
 
 .vjs-skip-segment-btn i {
+  font-family: "Material Symbols Rounded" !important;
   font-size: 20px !important;
   line-height: 1 !important;
   color: var(--vjs-primary, #bb86fc) !important;
+  display: inline-block !important;
 }
 
 .vjs-skip-kbd {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background: rgba(255, 255, 255, 0.18) !important;
-  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
   border-radius: 4px !important;
   padding: 1px 6px !important;
   font-size: 11px !important;
   font-family: inherit !important;
   font-weight: 600 !important;
-  margin-left: 4px !important;
+  margin-left: 2px !important;
   color: rgba(255, 255, 255, 0.9) !important;
   line-height: 1.2 !important;
 }
@@ -1076,7 +1085,7 @@
   right: 0 !important;
   bottom: 0 !important;
   height: 3px !important;
-  background: rgba(255, 255, 255, 0.15) !important;
+  background: rgba(255, 255, 255, 0.18) !important;
   overflow: hidden !important;
   pointer-events: none !important;
   border-bottom-left-radius: 9999px !important;
@@ -1086,10 +1095,11 @@
 .vjs-skip-progress-bar {
   position: absolute !important;
   inset: 0 !important;
-  background: linear-gradient(90deg, var(--vjs-primary, #bb86fc), #d0bcff) !important;
+  background: var(--vjs-primary, #bb86fc) !important;
   transform-origin: left center !important;
   animation: vjsSkipCountdown 10s linear forwards !important;
-  border-radius: 9999px !important;
+  border-bottom-left-radius: 9999px !important;
+  border-bottom-right-radius: 9999px !important;
 }
 
 @keyframes vjsSkipCountdown {
@@ -1207,6 +1217,161 @@
   transform: translateX(16px);
 }
 
+/* Auto-Next Episode Countdown Card (Material 3) */
+.vjs-next-countdown-card {
+  position: absolute !important;
+  right: 24px !important;
+  bottom: 84px !important;
+  z-index: 15 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-width: 260px !important;
+  max-width: 340px !important;
+  padding: 16px 20px 20px 20px !important;
+  background: rgba(22, 24, 30, 0.94) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 24px !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65) !important;
+  animation: vjsSkipFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  user-select: none !important;
+}
+
+.vjs-next-countdown-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  margin-bottom: 8px !important;
+}
+
+.vjs-next-countdown-tag {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.2px !important;
+  color: var(--vjs-primary, #bb86fc) !important;
+  text-transform: uppercase !important;
+}
+
+.vjs-next-countdown-tag i {
+  font-family: "Material Symbols Rounded" !important;
+  font-size: 18px !important;
+  line-height: 1 !important;
+}
+
+.vjs-next-badge {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  padding: 3px 10px !important;
+  border-radius: 9999px !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+}
+
+.vjs-next-countdown-content {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  margin-bottom: 16px !important;
+}
+
+.vjs-next-countdown-title {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  line-height: 1.25 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.vjs-next-countdown-label {
+  font-size: 13px !important;
+  color: rgba(255, 255, 255, 0.7) !important;
+  line-height: 1.3 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.vjs-next-countdown-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 12px !important;
+}
+
+.vjs-next-btn-cancel {
+  background: transparent !important;
+  border: none !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  padding: 8px 14px !important;
+  border-radius: 9999px !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+
+.vjs-next-btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+.vjs-next-btn-play {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  background: var(--vjs-primary, #bb86fc) !important;
+  border: none !important;
+  color: var(--vjs-on-primary, #000000) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  padding: 8px 18px !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 4px 12px rgba(187, 134, 252, 0.3) !important;
+  transition: transform 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+.vjs-next-btn-play:hover {
+  opacity: 0.95 !important;
+  transform: translateY(-1px) scale(1.02) !important;
+  box-shadow: 0 6px 16px rgba(187, 134, 252, 0.45) !important;
+}
+
+.vjs-next-btn-play i {
+  font-family: "Material Symbols Rounded" !important;
+  font-size: 18px !important;
+  line-height: 1 !important;
+}
+
+.vjs-next-progress-track {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: 3px !important;
+  background: rgba(255, 255, 255, 0.15) !important;
+  overflow: hidden !important;
+}
+
+.vjs-next-progress-bar {
+  width: 100% !important;
+  height: 100% !important;
+  background: var(--vjs-primary, #bb86fc) !important;
+  transform-origin: left center !important;
+  animation: vjsSkipCountdown 5s linear forwards !important;
+}
+
 @media (max-width: 600px) {
   .vjs-skip-segment-btn {
     right: 12px !important;
@@ -1219,6 +1384,13 @@
     bottom: 74px !important;
     padding: 6px 12px !important;
     font-size: 12px !important;
+  }
+  .vjs-next-countdown-card {
+    right: 12px !important;
+    bottom: 74px !important;
+    min-width: 220px !important;
+    max-width: calc(100% - 24px) !important;
+    padding: 12px 14px 16px 14px !important;
   }
 }
 

@@ -17,6 +17,10 @@ export default function VideoPlayer({
   sources = [],
   selectedSource = null,
   onSourceChange = null,
+  autoPlay = false,
+  hasNextEpisode = false,
+  nextEpisodeLabel = '',
+  onNextEpisode = null,
   mediaId = null,
   tmdbId = null,
   imdbId = null,
@@ -27,7 +31,15 @@ export default function VideoPlayer({
   const videoNode = useRef(null);
   const playerRef = useRef(null);
   const restoreTimeRef = useRef(null);
-  const shouldResumePlayRef = useRef(false);
+  const shouldResumePlayRef = useRef(autoPlay);
+
+  // Auto-next episode countdown state
+  const [nextCountdown, setNextCountdown] = useState(null); // seconds remaining, e.g. 5
+  const nextCountdownTimerRef = useRef(null);
+  const hasNextEpisodeRef = useRef(hasNextEpisode);
+  const onNextEpisodeRef = useRef(onNextEpisode);
+  hasNextEpisodeRef.current = hasNextEpisode;
+  onNextEpisodeRef.current = onNextEpisode;
 
   const [activeMenu, setActiveMenu] = useState(null); // null | 'main' | 'quality' | 'audio' | 'speed' | 'subs'
   const activeMenuRef = useRef(null);
@@ -271,8 +283,39 @@ export default function VideoPlayer({
   useEffect(() => {
     if (!videoNode.current) return;
 
-    // Register custom Settings button once
     const Button = videojs.getComponent('Button');
+
+    // Register custom Next Episode button once
+    if (Button && !videojs.getComponent('BeerNextButton')) {
+      class BeerNextButton extends Button {
+        constructor(player, options) {
+          super(player, options);
+          this.addClass('vjs-next-btn');
+          this.controlText('Наступна серія');
+        }
+        handleClick(event) {
+          super.handleClick(event);
+          this.player_.trigger('nextEpisodeTrigger');
+        }
+        createEl() {
+          const el = super.createEl();
+          const placeholder = el.querySelector('.vjs-icon-placeholder');
+          if (placeholder) placeholder.remove();
+          const icon = videojs.dom.createEl('span', {
+            className: 'material-symbols-rounded',
+            innerHTML: 'skip_next',
+          }, {
+            'aria-hidden': 'true',
+            style: 'pointer-events:none;font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;',
+          });
+          el.appendChild(icon);
+          return el;
+        }
+      }
+      videojs.registerComponent('BeerNextButton', BeerNextButton);
+    }
+
+    // Register custom Settings button once
     if (Button && !videojs.getComponent('BeerSettingsButton')) {
       class BeerSettingsButton extends Button {
         constructor(player, options) {
@@ -303,7 +346,7 @@ export default function VideoPlayer({
     }
 
     const player = videojs(videoNode.current, {
-      autoplay: false,
+      autoplay: autoPlay ? 'any' : false,
       controls: true,
       fill: true,
       fluid: false,
@@ -317,6 +360,7 @@ export default function VideoPlayer({
           'timeDivider',
           'durationDisplay',
           'progressControl',
+          'BeerNextButton',
           'BeerSettingsButton',
           'fullscreenToggle',
         ],
@@ -398,6 +442,22 @@ export default function VideoPlayer({
     player.on('loadstart', patchVttTimeMapping);
     player.on('loadedmetadata', patchVttTimeMapping);
     patchVttTimeMapping();
+
+    // Hook Next Episode button click and mobile tap
+    const nextBtn = player.controlBar?.getChild('BeerNextButton');
+    const handleNextClick = (e) => {
+      if (e && e.stopPropagation) e.stopPropagation();
+      if (hasNextEpisodeRef.current && onNextEpisodeRef.current) {
+        onNextEpisodeRef.current();
+      }
+    };
+    if (nextBtn) {
+      nextBtn.on(['click', 'tap', 'touchend'], handleNextClick);
+      if (!hasNextEpisodeRef.current) {
+        nextBtn.hide();
+      }
+    }
+    player.on('nextEpisodeTrigger', handleNextClick);
 
     // Hook Settings button click and mobile tap
     const settingsBtn = player.controlBar.getChild('BeerSettingsButton');
@@ -629,8 +689,13 @@ export default function VideoPlayer({
     player.on('pause', () => saveProgress(true));
     player.on('seeked', () => saveProgress(true));
     player.on('ended', () => {
-      if (!mediaId) return;
-      removeWatchProgress(mediaId);
+      if (mediaId) {
+        removeWatchProgress(mediaId);
+      }
+      // If next episode is available, trigger auto-next countdown
+      if (hasNextEpisodeRef.current && onNextEpisodeRef.current) {
+        setNextCountdown(5);
+      }
     });
 
     const onPageLeave = () => {
@@ -766,6 +831,7 @@ export default function VideoPlayer({
       if (skipBtnTimeoutRef.current) clearTimeout(skipBtnTimeoutRef.current);
       if (closeSkipTimeoutRef.current) clearTimeout(closeSkipTimeoutRef.current);
       if (skipNoticeTimeoutRef.current) clearTimeout(skipNoticeTimeoutRef.current);
+      if (nextCountdownTimerRef.current) clearInterval(nextCountdownTimerRef.current);
       saveProgress(true);
       flushWatchProgress();
       setPlayerContainerEl(null);
@@ -775,6 +841,43 @@ export default function VideoPlayer({
       }
     };
   }, []);
+
+  // Update Next Episode button visibility dynamically
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    const nextBtn = player.controlBar?.getChild('BeerNextButton');
+    if (nextBtn) {
+      if (hasNextEpisode) {
+        nextBtn.show();
+      } else {
+        nextBtn.hide();
+      }
+    }
+  }, [hasNextEpisode]);
+
+  // Handle auto-next episode countdown timer
+  useEffect(() => {
+    if (nextCountdown === null) return;
+
+    if (nextCountdown <= 0) {
+      setNextCountdown(null);
+      if (onNextEpisodeRef.current) {
+        onNextEpisodeRef.current();
+      }
+      return;
+    }
+
+    nextCountdownTimerRef.current = setTimeout(() => {
+      setNextCountdown((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+
+    return () => {
+      if (nextCountdownTimerRef.current) {
+        clearTimeout(nextCountdownTimerRef.current);
+      }
+    };
+  }, [nextCountdown]);
 
   // Close settings menu when clicking outside
   useEffect(() => {
@@ -935,12 +1038,85 @@ export default function VideoPlayer({
       {(() => {
         const floatingOverlays = (
           <>
+            {/* Auto-next episode countdown card */}
+            {nextCountdown !== null && (
+              <div
+                className="vjs-next-countdown-card"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="vjs-next-countdown-header">
+                  <div className="vjs-next-countdown-tag">
+                    <i className="material-symbols-rounded">skip_next</i>
+                    <span>Наступна серія</span>
+                  </div>
+                  <span className="vjs-next-badge">{nextCountdown} с</span>
+                </div>
+                <div className="vjs-next-countdown-content">
+                  <div className="vjs-next-countdown-title">
+                    {nextEpisodeLabel || 'Наступний епізод'}
+                  </div>
+                  {title && (
+                    <div className="vjs-next-countdown-label">
+                      {title}
+                    </div>
+                  )}
+                </div>
+                <div className="vjs-next-countdown-actions">
+                  <button
+                    type="button"
+                    className="vjs-next-btn-cancel"
+                    onClick={() => {
+                      if (nextCountdownTimerRef.current) {
+                        clearTimeout(nextCountdownTimerRef.current);
+                      }
+                      setNextCountdown(null);
+                    }}
+                  >
+                    Скасувати
+                  </button>
+                  <button
+                    type="button"
+                    className="vjs-next-btn-play"
+                    onClick={() => {
+                      if (nextCountdownTimerRef.current) {
+                        clearTimeout(nextCountdownTimerRef.current);
+                      }
+                      setNextCountdown(null);
+                      if (onNextEpisodeRef.current) {
+                        onNextEpisodeRef.current();
+                      }
+                    }}
+                  >
+                    <i className="material-symbols-rounded">play_arrow</i>
+                    <span>Зараз</span>
+                  </button>
+                </div>
+                <div className="vjs-next-progress-track">
+                  <div
+                    className="vjs-next-progress-bar"
+                    style={{ animationDuration: '5s' }}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Floating Skip Segment Button (hides after 10s, can also skip via Enter key) */}
       {showSkipButton && displaySegment && (
         <button
           key={skipButtonKey}
           type="button"
           className={`vjs-skip-segment-btn ${isClosingSkipButton ? 'closing' : ''}`}
+          style={{
+            backgroundColor: '#14151a',
+            borderRadius: '9999px',
+            padding: '10px 22px 12px 20px',
+            gap: '10px',
+            border: '1px solid rgba(255, 255, 255, 0.22)',
+            boxShadow: '0 6px 24px rgba(0, 0, 0, 0.8)',
+            overflow: 'hidden',
+            whiteSpace: 'nowrap',
+            minWidth: 'max-content',
+          }}
           onClick={(e) => {
             e.stopPropagation();
             if (!playerRef.current || !displaySegment) return;
@@ -956,8 +1132,21 @@ export default function VideoPlayer({
           <kbd className="vjs-skip-kbd">Enter</kbd>
 
           {/* Countdown progress indicator at bottom of button */}
-          <div className="vjs-skip-progress-track">
-            <div className="vjs-skip-progress-bar" />
+          <div
+            className="vjs-skip-progress-track"
+            style={{
+              borderBottomLeftRadius: '9999px',
+              borderBottomRightRadius: '9999px',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              className="vjs-skip-progress-bar"
+              style={{
+                borderBottomLeftRadius: '9999px',
+                borderBottomRightRadius: '9999px',
+              }}
+            />
           </div>
         </button>
       )}
