@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import api, { waitForToken } from '../api/axios';
 import VideoPlayer from '../components/player/VideoPlayer';
@@ -50,9 +50,66 @@ const Details = () => {
   // TV Series Navigation & TMDB Season/Episode Stills
   const [season, setSeason] = useState(initialSeason > 0 ? initialSeason : 1);
   const [episode, setEpisode] = useState(initialEpisode > 0 ? initialEpisode : 1);
+  const [autoPlayNext, setAutoPlayNext] = useState(false);
   const [episodesMap, setEpisodesMap] = useState({});
   const [loadingSeason, setLoadingSeason] = useState(false);
   const playerRef = useRef(null);
+
+  // Preferred provider & voice preferences for seamless episode switching
+  const selectedCdnRef = useRef(localStorage.getItem('uafilms_pref_provider') || null);
+  const selectedVoiceRef = useRef(localStorage.getItem('uafilms_pref_voice') || null);
+
+  const savePreferences = (providerId, voiceName) => {
+    if (providerId) {
+      selectedCdnRef.current = providerId;
+      localStorage.setItem('uafilms_pref_provider', providerId);
+    }
+    if (voiceName) {
+      selectedVoiceRef.current = voiceName;
+      localStorage.setItem('uafilms_pref_voice', voiceName);
+    }
+  };
+
+  const getSourceVoice = (src) => {
+    return (
+      src?.studio?.name ||
+      src?.audioTracks?.[0] ||
+      src?.title ||
+      ''
+    ).trim();
+  };
+
+  const findBestSource = useCallback((candidateSources) => {
+    if (!candidateSources || candidateSources.length === 0) return null;
+
+    const prefProvider = selectedCdnRef.current;
+    const prefVoice = selectedVoiceRef.current?.toLowerCase();
+
+    // Level 1: exact provider + exact voice
+    if (prefProvider && prefVoice) {
+      const match = candidateSources.find(
+        (s) => s?.provider?.id === prefProvider && getSourceVoice(s).toLowerCase() === prefVoice
+      );
+      if (match) return match;
+    }
+
+    // Level 2: exact voice in any provider
+    if (prefVoice) {
+      const match = candidateSources.find(
+        (s) => getSourceVoice(s).toLowerCase() === prefVoice
+      );
+      if (match) return match;
+    }
+
+    // Level 3: exact provider (first available track)
+    if (prefProvider) {
+      const match = candidateSources.find((s) => s?.provider?.id === prefProvider);
+      if (match) return match;
+    }
+
+    // Level 4: fallback to first source
+    return candidateSources[0];
+  }, []);
 
   // Calculate available seasons and episodes dynamically
   const availableSeasons = useMemo(() => {
@@ -75,6 +132,41 @@ const Details = () => {
     const count = currentSeasonObj?.episodeCount || 1;
     return Array.from({ length: count }, (_, i) => i + 1);
   }, [currentSeasonObj]);
+
+  const nextEpisodeInfo = useMemo(() => {
+    if (type !== 'tv') return null;
+
+    // Check if next episode exists in current season
+    const currentEpIndex = availableEpisodes.indexOf(episode);
+    if (currentEpIndex !== -1 && currentEpIndex < availableEpisodes.length - 1) {
+      const nextEp = availableEpisodes[currentEpIndex + 1];
+      return {
+        season,
+        episode: nextEp,
+        label: `Сезон ${season}, Серія ${nextEp}`,
+      };
+    }
+
+    // Check next season
+    const currentSeasonIndex = availableSeasons.findIndex((s) => s.seasonNumber === season);
+    if (currentSeasonIndex !== -1 && currentSeasonIndex < availableSeasons.length - 1) {
+      const nextSeasonObj = availableSeasons[currentSeasonIndex + 1];
+      return {
+        season: nextSeasonObj.seasonNumber,
+        episode: 1,
+        label: `${nextSeasonObj.name || `Сезон ${nextSeasonObj.seasonNumber}`}, Серія 1`,
+      };
+    }
+
+    return null;
+  }, [type, availableEpisodes, episode, availableSeasons, season]);
+
+  const handleNextEpisode = useCallback(() => {
+    if (!nextEpisodeInfo) return;
+    setAutoPlayNext(true);
+    setSeason(nextEpisodeInfo.season);
+    setEpisode(nextEpisodeInfo.episode);
+  }, [nextEpisodeInfo]);
 
   const currentEpisodeObj = useMemo(() => {
     const list = episodesMap[season] || data?.episodes || [];
@@ -215,8 +307,11 @@ const Details = () => {
                 const newSources = chunk.sources.filter((s) => !existingIds.has(s.id || s.url));
                 const updated = sortWithAshdiFirst([...prev, ...newSources]);
 
-                // Auto-select first source if nothing selected yet
-                setSelectedSource((cur) => cur || updated[0]);
+                // Auto-select preferred source/voice if nothing selected yet or upgrade
+                setSelectedSource((cur) => {
+                  if (cur) return cur;
+                  return findBestSource(updated) || updated[0];
+                });
                 return updated;
               });
             }
@@ -248,7 +343,7 @@ const Details = () => {
             const list = sortWithAshdiFirst(res.data?.sources || []);
             setSources(list);
             if (list.length > 0) {
-              setSelectedSource((cur) => cur || list[0]);
+              setSelectedSource((cur) => cur || findBestSource(list) || list[0]);
             }
           })
           .finally(() => {
@@ -455,9 +550,12 @@ const Details = () => {
                       key={src.provider?.id || index}
                       className={`chip ${isSelected ? 'primary' : 'border surface-container-low'}`}
                       onClick={() => {
-                        // Switch to first source of this CDN or keep current if same
+                        // Switch to preferred source of this CDN or keep current if same
                         if (selectedSource?.provider?.id !== src.provider?.id) {
-                          setSelectedSource(src);
+                          const cdnSources = sources.filter((s) => s.provider?.id === src.provider?.id);
+                          const best = findBestSource(cdnSources) || src;
+                          setSelectedSource(best);
+                          savePreferences(best.provider?.id, getSourceVoice(best));
                         }
                       }}
                       style={{ cursor: 'pointer' }}
@@ -503,7 +601,14 @@ const Details = () => {
               title={data?.title || initialMovie?.title || initialMovie?.name || ''}
               sources={sources}
               selectedSource={selectedSource}
-              onSourceChange={setSelectedSource}
+              onSourceChange={(src) => {
+                setSelectedSource(src);
+                savePreferences(src?.provider?.id, getSourceVoice(src));
+              }}
+              autoPlay={autoPlayNext}
+              hasNextEpisode={Boolean(nextEpisodeInfo)}
+              nextEpisodeLabel={nextEpisodeInfo?.label || ''}
+              onNextEpisode={handleNextEpisode}
               mediaId={`${type}_${data?.id || id}${type === 'tv' ? `_s${season}_e${episode}` : ''}`}
               tmdbId={data?.id || id}
               imdbId={data?.imdbId}
