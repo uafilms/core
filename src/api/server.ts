@@ -54,6 +54,7 @@ if (hasWebDist) {
     }
     const indexPath = path.join(distDir, 'index.html');
     if (fs.existsSync(indexPath)) {
+      c.header('Cache-Control', 'no-cache, no-store, must-revalidate');
       return c.html(fs.readFileSync(indexPath, 'utf-8'));
     }
     return next();
@@ -110,6 +111,7 @@ if (hasWebDist) {
     }
     const indexPath = path.join(distDir, 'index.html');
     if (fs.existsSync(indexPath)) {
+      c.header('Cache-Control', 'no-cache, no-store, must-revalidate');
       return c.html(fs.readFileSync(indexPath, 'utf-8'));
     }
     return next();
