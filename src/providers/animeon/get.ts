@@ -8,7 +8,7 @@ import type {
 } from '../../types/media.js';
 import type { ProviderGetOptions } from '../../types/provider.js';
 import { httpRequest } from '../../utils/http.js';
-import { sortSeasons, sortSources } from '../../utils/sort.js';
+import { extractSeasonFromTitle, sortSeasons, sortSources } from '../../utils/sort.js';
 import { searchAnimeOn } from './search.js';
 import type { AnimeOnEpisodeItem, AnimeOnTranslation } from './types.js';
 
@@ -182,7 +182,10 @@ export async function getAnimeOnStreams(
 
     episodeList.sort((a, b) => a.episode - b.episode);
 
-    const seasonNum = 1; // Each AnimeON entry corresponds to its own season
+    const detectedSeason =
+      extractSeasonFromTitle(title) ||
+      (options?.season !== undefined ? options.season : 1);
+    const seasonNum = detectedSeason > 0 ? detectedSeason : 1;
     const seasons: Season[] = [
       {
         season: seasonNum,

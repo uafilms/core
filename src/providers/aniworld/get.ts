@@ -1,12 +1,13 @@
 import type { ProviderGetOptions } from '../../types/provider.js';
 import type { Episode, ProviderResult, SearchResult, Season, StreamSource } from '../../types/media.js';
 import { httpRequest } from '../../utils/http.js';
+import { extractSeasonFromTitle } from '../../utils/sort.js';
 import { aniWorldVod } from '../../vods/aniworld/main.js';
 import type { AniWorldDetail } from './types.js';
 
 export async function getAniWorld(
   target: string | SearchResult,
-  _options: ProviderGetOptions = {}
+  options: ProviderGetOptions = {}
 ): Promise<ProviderResult | null> {
   let catalogId: string | null = null;
 
@@ -118,8 +119,14 @@ export async function getAniWorld(
     };
   });
 
+  const targetTitle = typeof target === 'object' ? target.title : detail.title;
+  const detectedSeason =
+    extractSeasonFromTitle(targetTitle) ||
+    (options?.season !== undefined ? options.season : 1);
+  const seasonNum = detectedSeason > 0 ? detectedSeason : 1;
+
   const season: Season = {
-    season: 1,
+    season: seasonNum,
     episodes,
   };
 

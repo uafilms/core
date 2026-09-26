@@ -4,7 +4,7 @@ import type { OmssSource, OmssSubtitle, OmssDiagnostic, PlatformType, OmssQualit
 import { providers } from '../../providers/index.js';
 import { extractVod } from '../../vods/index.js';
 import { detectCdn } from '../../utils/cdn.js';
-import { isSearchResultMatch } from '../../utils/sort.js';
+import { isSearchResultMatch, rankSearchResults } from '../../utils/sort.js';
 import { cleanStudioName, detectAudioLang, resolveStudioInfo } from '../../utils/studio.js';
 import { omssSourceResolutionCache, mediaParsedTimestampCache } from '../services/cache.js';
 import { runWithProvider } from '../../utils/proxyManager.js';
@@ -132,33 +132,58 @@ export class OrchestratorService {
     const tasks = targetProviders.map(async (provider) => {
       return runWithProvider(provider.name, async () => {
         try {
+          const searchOptions = {
+            meta,
+            year: meta.year,
+            type,
+            season,
+            episode,
+          };
           const query = meta.imdbId || meta.title;
-          let searchResults = await provider.search(query, { meta });
+          let searchResults = await provider.search(query, searchOptions);
 
           // If no results by IMDb ID, fallback to title
           if ((!searchResults || searchResults.length === 0) && meta.title && meta.imdbId) {
-            searchResults = await provider.search(meta.title, { meta });
+            searchResults = await provider.search(meta.title, searchOptions);
           }
 
           // If still no results, fallback to original title if available
           if ((!searchResults || searchResults.length === 0) && meta.originalTitle && meta.originalTitle !== meta.title) {
-            searchResults = await provider.search(meta.originalTitle, { meta });
+            searchResults = await provider.search(meta.originalTitle, searchOptions);
           }
 
           if (!searchResults || searchResults.length === 0) {
             return;
           }
 
-          // Find candidate that actually matches meta
-          const target = searchResults.find(r =>
-            (meta.title && isSearchResultMatch(r, meta.title, meta.year, meta.type)) ||
-            (meta.originalTitle && isSearchResultMatch(r, meta.originalTitle, meta.year, meta.type))
-          ) || (meta.title && isSearchResultMatch(searchResults[0], meta.title, meta.year, meta.type) ? searchResults[0] : null);
+          // Find candidate that best matches meta (taking season and year into account)
+          let target: typeof searchResults[0] | null = null;
+
+          if (meta.title) {
+            const ranked = rankSearchResults(searchResults, meta.title, meta.year, meta.type, season);
+            if (ranked.length > 0) {
+              target = ranked[0];
+            }
+          }
+
+          if (!target && meta.originalTitle) {
+            const ranked = rankSearchResults(searchResults, meta.originalTitle, meta.year, meta.type, season);
+            if (ranked.length > 0) {
+              target = ranked[0];
+            }
+          }
+
+          if (!target) {
+            target = searchResults.find(r =>
+              (meta.title && isSearchResultMatch(r, meta.title, meta.year, meta.type, 50, season)) ||
+              (meta.originalTitle && isSearchResultMatch(r, meta.originalTitle, meta.year, meta.type, 50, season))
+            ) || null;
+          }
 
           if (!target) {
             return;
           }
-          const res = await provider.get(target, { meta });
+          const res = await provider.get(target, { meta, season, episode });
           if (!res) return;
 
           let rawSources: StreamSource[] = [];

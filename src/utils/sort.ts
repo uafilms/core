@@ -119,13 +119,61 @@ export function tokenizeTitle(text?: string): string[] {
 }
 
 /**
+ * Визначає номер сезону з назви серіалу або аніме (наприклад: "2 сезон", "Season 3", "Частина 2", "II", "Кей-Он!!")
+ */
+export function extractSeasonFromTitle(title?: string): number | null {
+  if (!title) return null;
+  const t = title.trim();
+
+  // 1. Пряма вказівка сезону: "2 сезон", "сезон 2", "Season 3", "S2", "2-й сезон"
+  const seasonMatch =
+    t.match(/(?:^|[^\p{L}\p{N}])(\d{1,2})\s*(?:-?(?:й|ий|ій)?\s*)?сезон/iu) ||
+    t.match(/сезон\s*(\d{1,2})/iu) ||
+    t.match(/(?:^|[^\p{L}\p{N}])season\s*(\d{1,2})/iu) ||
+    t.match(/(?:^|[^\p{L}\p{N}])s(\d{1,2})(?:[^\p{L}\p{N}]|$)/iu);
+  if (seasonMatch && seasonMatch[1]) {
+    const s = parseInt(seasonMatch[1], 10);
+    if (!isNaN(s) && s > 0 && s < 100) return s;
+  }
+
+  // 2. Частина: "2 частина", "Part 2"
+  const partMatch =
+    t.match(/(?:^|[^\p{L}\p{N}])(\d{1,2})\s*(?:-?(?:я|а)?\s*)?частина/iu) ||
+    t.match(/частина\s*(\d{1,2})/iu) ||
+    t.match(/(?:^|[^\p{L}\p{N}])part\s*(\d{1,2})/iu);
+  if (partMatch && partMatch[1]) {
+    const p = parseInt(partMatch[1], 10);
+    if (!isNaN(p) && p > 0 && p < 100) return p;
+  }
+
+  // 3. Римські цифри в кінці або окремим словом: "II" (2), "III" (3), "IV" (4)
+  const romanMatch = t.match(/(?:^|[^\p{L}\p{N}])(IV|III|II)(?:[^\p{L}\p{N}]|$)/iu);
+  if (romanMatch && romanMatch[1]) {
+    const r = romanMatch[1].toUpperCase();
+    if (r === 'II') return 2;
+    if (r === 'III') return 3;
+    if (r === 'IV') return 4;
+  }
+
+  // 4. Специфіка аніме: кількість знаків оклику в кінці назви франшизи
+  // Наприклад: "Кей-Он!!" -> 2 сезон, "Кей-Он!" -> 1 сезон, "Working!!" -> 2 сезон, "Working!!!" -> 3 сезон
+  const exclMatch = t.match(/(!{1,4})(?:\s*\(|$)/);
+  if (exclMatch && exclMatch[1]) {
+    return exclMatch[1].length;
+  }
+
+  return null;
+}
+
+/**
  * Оцінює релевантність результату пошуку відносно запиту (0..100+)
  */
 export function scoreSearchResult(
   result: SearchResult,
   query: string,
   targetYear?: number,
-  targetType?: MediaType
+  targetType?: MediaType,
+  targetSeason?: number
 ): number {
   const normQ = normalizeTitle(query);
   if (!normQ) return 0;
@@ -217,18 +265,31 @@ export function scoreSearchResult(
     }
   }
 
-  // 6. Вплив року випуску (якщо відомий)
+  // 6. Вплив сезону (для серіалів/аніме)
+  if (targetType === 'tv' && targetSeason !== undefined && targetSeason > 0) {
+    const detectedSeasonInCandidate =
+      extractSeasonFromTitle(result.title) ||
+      extractSeasonFromTitle(result.originalTitle);
+
+    if (detectedSeasonInCandidate !== null) {
+      if (detectedSeasonInCandidate === targetSeason) {
+        bestScore += 35; // Великий бонус за точний сезон
+      } else {
+        bestScore = Math.max(0, bestScore - 55); // Жорсткий штраф за чужий сезон!
+      }
+    }
+  }
+
+  // 7. Вплив року випуску (якщо відомий)
   if (targetYear && result.year) {
     const yearDiff = Math.abs(result.year - targetYear);
     if (yearDiff === 0) {
-      bestScore += 10;
+      bestScore += 20;
     } else if (yearDiff === 1) {
-      bestScore += 5;
+      bestScore += 8;
     } else if (yearDiff >= 2) {
-      // Якщо рік відрізняється на 2+ роки і назва не була точним збігом — штрафуємо
-      if (bestScore < 95) {
-        bestScore = Math.max(0, bestScore - Math.min(40, yearDiff * 10));
-      }
+      // Якщо рік відрізняється на 2+ роки — штрафуємо
+      bestScore = Math.max(0, bestScore - Math.min(50, yearDiff * 15));
     }
   }
 
@@ -243,10 +304,11 @@ export function isSearchResultMatch(
   query: string,
   targetYear?: number,
   targetType?: MediaType,
-  minScore: number = 50
+  minScore: number = 50,
+  targetSeason?: number
 ): boolean {
   if (!result || !query) return false;
-  return scoreSearchResult(result, query, targetYear, targetType) >= minScore;
+  return scoreSearchResult(result, query, targetYear, targetType, targetSeason) >= minScore;
 }
 
 /**
@@ -257,7 +319,8 @@ export function rankSearchResults(
   results: SearchResult[],
   query: string,
   targetYear?: number,
-  targetType?: MediaType
+  targetType?: MediaType,
+  targetSeason?: number
 ): SearchResult[] {
   if (!results || results.length === 0 || !query) return [];
 
@@ -269,7 +332,7 @@ export function rankSearchResults(
   const scored = results
     .map(result => ({
       result,
-      score: scoreSearchResult(result, query, targetYear, targetType),
+      score: scoreSearchResult(result, query, targetYear, targetType, targetSeason),
     }))
     .filter(item => item.score >= 50);
 

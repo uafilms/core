@@ -4,11 +4,15 @@ export interface ProviderSearchOptions {
   signal?: AbortSignal;
   year?: number;
   type?: 'movie' | 'tv';
+  season?: number;
+  episode?: number;
   meta?: MediaMetadata;
 }
 
 export interface ProviderGetOptions {
   signal?: AbortSignal;
+  season?: number;
+  episode?: number;
   meta?: MediaMetadata;
 }
 
