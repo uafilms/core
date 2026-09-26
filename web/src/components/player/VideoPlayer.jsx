@@ -39,7 +39,9 @@ export default function VideoPlayer({
   const [playbackRate, setPlaybackRate] = useState(1);
   const [textTracksList, setTextTracksList] = useState([]);
   const [selectedTrackIndex, setSelectedTrackIndex] = useState(-1); // -1 = Off
+  const [playerContainerEl, setPlayerContainerEl] = useState(null);
   const closeTimeoutRef = useRef(null);
+  const openTimeRef = useRef(0);
   const sourcesRef = useRef(sources);
   const selectedSourceRef = useRef(selectedSource);
   const onSourceChangeRef = useRef(onSourceChange);
@@ -234,11 +236,15 @@ export default function VideoPlayer({
       clearTimeout(closeTimeoutRef.current);
       closeTimeoutRef.current = null;
     }
+    openTimeRef.current = Date.now();
     setIsClosing(false);
     setNavDirection('forward');
     setActiveMenu(menu);
     activeMenuRef.current = menu;
     setRenderedMenu(menu);
+    if (playerRef.current) {
+      playerRef.current.userActive(true);
+    }
   };
 
   const switchMenu = (menu, direction = 'forward') => {
@@ -273,6 +279,10 @@ export default function VideoPlayer({
           super(player, options);
           this.addClass('vjs-settings-btn');
           this.controlText('Налаштування');
+        }
+        handleClick(event) {
+          super.handleClick(event);
+          this.player_.trigger('toggleSettings');
         }
         createEl() {
           const el = super.createEl();
@@ -326,6 +336,7 @@ export default function VideoPlayer({
     playerRef.current = player;
 
     player.ready(() => {
+      setPlayerContainerEl(player.el());
       const holder = player.el()?.querySelector('.vjs-progress-holder');
       if (holder) setProgressHolderEl(holder);
     });
@@ -388,18 +399,25 @@ export default function VideoPlayer({
     player.on('loadedmetadata', patchVttTimeMapping);
     patchVttTimeMapping();
 
-    // Hook Settings button click
+    // Hook Settings button click and mobile tap
     const settingsBtn = player.controlBar.getChild('BeerSettingsButton');
+    let lastToggleTime = 0;
+    const handleSettingsToggle = (e) => {
+      if (e && e.stopPropagation) e.stopPropagation();
+      const now = Date.now();
+      if (now - lastToggleTime < 250) return;
+      lastToggleTime = now;
+      if (activeMenuRef.current) {
+        closeMenu();
+      } else {
+        openMenu('main');
+      }
+    };
+
     if (settingsBtn) {
-      settingsBtn.on('click', (e) => {
-        e.stopPropagation();
-        if (activeMenuRef.current) {
-          closeMenu();
-        } else {
-          openMenu('main');
-        }
-      });
+      settingsBtn.on(['click', 'tap', 'touchend'], handleSettingsToggle);
     }
+    player.on('toggleSettings', handleSettingsToggle);
 
     // Track text tracks (subtitles from HLS #EXT-X-MEDIA or remote tracks)
     const updateTextTracks = () => {
@@ -750,6 +768,7 @@ export default function VideoPlayer({
       if (skipNoticeTimeoutRef.current) clearTimeout(skipNoticeTimeoutRef.current);
       saveProgress(true);
       flushWatchProgress();
+      setPlayerContainerEl(null);
       if (playerRef.current) {
         playerRef.current.dispose();
         playerRef.current = null;
@@ -760,6 +779,7 @@ export default function VideoPlayer({
   // Close settings menu when clicking outside
   useEffect(() => {
     const handleOutsideClick = (e) => {
+      if (Date.now() - openTimeRef.current < 250) return;
       if (activeMenuRef.current) {
         const settingsMenuEl = document.querySelector('.vjs-settings-menu');
         const settingsBtnEl = document.querySelector('.vjs-settings-btn');
@@ -772,10 +792,24 @@ export default function VideoPlayer({
       }
     };
     document.addEventListener('click', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick, { passive: true });
     return () => {
       document.removeEventListener('click', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
     };
   }, []);
+
+  // Keep controls and player active while settings menu is open
+  useEffect(() => {
+    if (!renderedMenu || !playerRef.current) return;
+    playerRef.current.userActive(true);
+    const interval = setInterval(() => {
+      if (playerRef.current) {
+        playerRef.current.userActive(true);
+      }
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [renderedMenu]);
 
   // Update src dynamically without recreating player
   useEffect(() => {
@@ -898,7 +932,10 @@ export default function VideoPlayer({
         progressHolderEl
       )}
 
-      {/* Floating Skip Segment Button (hides after 10s, can also skip via Enter key) */}
+      {(() => {
+        const floatingOverlays = (
+          <>
+            {/* Floating Skip Segment Button (hides after 10s, can also skip via Enter key) */}
       {showSkipButton && displaySegment && (
         <button
           key={skipButtonKey}
@@ -1161,8 +1198,12 @@ export default function VideoPlayer({
               </div>
             </div>
           )}
-        </div>
-      )}
+          </div>
+        )}
+      </>
+    );
+    return playerContainerEl ? createPortal(floatingOverlays, playerContainerEl) : floatingOverlays;
+  })()}
     </div>
   );
 }

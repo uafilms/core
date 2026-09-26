@@ -4,11 +4,42 @@ import React, { useState, useRef, useEffect } from 'react';
  * Material 3 animated Dropdown Component
  * Designed for BeerCSS environments without style collisions
  */
-const Dropdown = ({ value, options, onChange, label, className = '' }) => {
+const Dropdown = ({
+  value,
+  options = [],
+  onChange,
+  label,
+  className = '',
+  maxVisibleItems = 5,
+  align = 'auto',
+}) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const selectedItemRef = useRef(null);
+  const [computedAlign, setComputedAlign] = useState(align === 'auto' ? 'left' : align);
 
   const selectedOption = options.find((opt) => opt.value === value) || options[0];
+
+  useEffect(() => {
+    if (align !== 'auto') {
+      setComputedAlign(align);
+      return;
+    }
+    if (isOpen && dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      if (rect.right + 40 > window.innerWidth && rect.left > 120) {
+        setComputedAlign('right');
+      } else {
+        setComputedAlign('left');
+      }
+    }
+  }, [isOpen, align]);
+
+  useEffect(() => {
+    if (isOpen && selectedItemRef.current) {
+      selectedItemRef.current.scrollIntoView({ block: 'nearest' });
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -25,13 +56,17 @@ const Dropdown = ({ value, options, onChange, label, className = '' }) => {
 
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside, { passive: true });
       document.addEventListener('keydown', handleKeyDown);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen]);
+
+  const isAlignRight = computedAlign === 'right';
 
   return (
     <div
@@ -57,6 +92,7 @@ const Dropdown = ({ value, options, onChange, label, className = '' }) => {
           fontSize: '14px',
           fontWeight: 500,
           transition: 'background-color 0.2s, border-color 0.2s, border-radius var(--speed2, 0.2s), transform var(--speed3, 0.3s), padding var(--speed3, 0.3s)',
+          touchAction: 'manipulation',
         }}
         onClick={() => setIsOpen((prev) => !prev)}
         aria-haspopup="listbox"
@@ -80,9 +116,17 @@ const Dropdown = ({ value, options, onChange, label, className = '' }) => {
         role="listbox"
         style={{
           position: 'absolute',
-          right: 0,
+          left: isAlignRight ? 'auto' : 0,
+          right: isAlignRight ? 0 : 'auto',
           top: 'calc(100% + 6px)',
           minWidth: '180px',
+          maxWidth: 'calc(100vw - 32px)',
+          maxHeight: `${maxVisibleItems * 41 + 12}px`,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          scrollbarWidth: 'thin',
+          scrollbarColor: 'var(--outline-variant, rgba(255, 255, 255, 0.2)) transparent',
+          WebkitOverflowScrolling: 'touch',
           zIndex: 9999,
           backgroundColor: 'var(--surface-container-high, #2b2831)',
           color: 'var(--on-surface, #e6e1e5)',
@@ -93,7 +137,7 @@ const Dropdown = ({ value, options, onChange, label, className = '' }) => {
           opacity: isOpen ? 1 : 0,
           visibility: isOpen ? 'visible' : 'hidden',
           transform: isOpen ? 'scale(1) translateY(0)' : 'scale(0.95) translateY(-8px)',
-          transformOrigin: 'top right',
+          transformOrigin: isAlignRight ? 'top right' : 'top left',
           transition: 'opacity 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1), visibility 0.2s',
           pointerEvents: isOpen ? 'auto' : 'none',
           display: 'flex',
@@ -106,6 +150,7 @@ const Dropdown = ({ value, options, onChange, label, className = '' }) => {
           return (
             <div
               key={opt.value}
+              ref={isSelected ? selectedItemRef : null}
               role="option"
               aria-selected={isSelected}
               onClick={() => {
