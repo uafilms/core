@@ -1,6 +1,6 @@
 import type { VodExtractor, VodExtractionOptions, VodExtractionResult } from '../../types/vod.js';
 import type { Episode, Season, StreamSource } from '../../types/media.js';
-import { getHtml } from '../../utils/http.js';
+import { getHtml, httpRequest } from '../../utils/http.js';
 import { normalizeAshdiUrl, parseAshdiSubtitles } from './decrypt.js';
 import { sortSeasons, sortSources } from '../../utils/sort.js';
 
@@ -19,6 +19,24 @@ export class AshdiVodExtractor implements VodExtractor {
     if (targetUrl.includes('cdn=ashdi') || (targetUrl.includes('/master.m3u8') && !targetUrl.includes('cdn='))) {
       try {
         const parsed = new URL(targetUrl.startsWith('http') ? targetUrl : `http://localhost${targetUrl}`);
+        if (parsed.searchParams.get('type') === 'animeon') {
+          const epId = parsed.searchParams.get('id') || parsed.searchParams.get('episodeId');
+          if (epId) {
+            const apiRes = await httpRequest<{ videoUrl?: string }>(`https://animeon.club/api/player/${epId}/episode`, {
+              headers: {
+                Referer: 'https://animeon.club/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+              },
+              signal: options?.signal,
+              timeout: 8000,
+            });
+            if (apiRes.data?.videoUrl) {
+              return this.extract(apiRes.data.videoUrl, options);
+            }
+          }
+          return null;
+        }
+
         const innerUrl = parsed.searchParams.get('url');
         if (innerUrl) {
           targetUrl = decodeURIComponent(innerUrl);

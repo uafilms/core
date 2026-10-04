@@ -39,31 +39,33 @@ export const vodExtractors: VodExtractor[] = [
 export async function extractVod(url: string, options: VodExtractionOptions = {}): Promise<VodExtractionResult | null> {
   if (!url) return null;
 
-  // 1. Якщо явно вказано параметр cdn, викликаємо ВИКЛЮЧНО відповідний екстрактор
-  if (url.includes('cdn=')) {
+  // 1. Якщо явно вказано параметр cdn або type=animeon, викликаємо відповідний екстрактор
+  if (url.includes('cdn=') || url.includes('type=animeon')) {
     try {
       const parsed = new URL(url.startsWith('http') ? url : `http://localhost${url}`);
       const explicitCdn = parsed.searchParams.get('cdn');
+      const explicitType = parsed.searchParams.get('type')?.toLowerCase();
+
+      if (explicitType === 'animeon' || explicitCdn?.toLowerCase() === 'animeon') {
+        const epId = parsed.searchParams.get('id') || parsed.searchParams.get('episodeId');
+        if (epId) {
+          const apiRes = await httpRequest<{ videoUrl?: string }>(`https://animeon.club/api/player/${epId}/episode`, {
+            headers: {
+              Referer: 'https://animeon.club/',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            },
+            signal: options.signal,
+            timeout: 8000,
+          });
+          if (apiRes.data?.videoUrl) {
+            return extractVod(apiRes.data.videoUrl, options);
+          }
+        }
+        return null;
+      }
+
       if (explicitCdn) {
         const lowerCdn = explicitCdn.toLowerCase();
-        if (lowerCdn === 'animeon') {
-          const epId = parsed.searchParams.get('id') || parsed.searchParams.get('episodeId');
-          if (epId) {
-            const apiRes = await httpRequest<{ videoUrl?: string }>(`https://animeon.club/api/player/${epId}/episode`, {
-              headers: {
-                Referer: 'https://animeon.club/',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-              },
-              signal: options.signal,
-              timeout: 8000,
-            });
-            if (apiRes.data?.videoUrl) {
-              return extractVod(apiRes.data.videoUrl, options);
-            }
-          }
-          return null;
-        }
-
         const targetExtractor = vodExtractors.find(e => e.name.toLowerCase() === lowerCdn);
         if (targetExtractor) {
           try {
@@ -84,11 +86,32 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
     return null;
   }
 
-  // Якщо передали наш proxy URL з параметром url
-  if (url.includes('/master.m3u8') && url.includes('url=')) {
+  // Якщо передали наш proxy URL з параметром url або id
+  if (url.includes('/master.m3u8')) {
     try {
       const parsed = new URL(url.startsWith('http') ? url : `http://localhost${url}`);
-      const innerUrl = parsed.searchParams.get('url');
+      const explicitType = parsed.searchParams.get('type')?.toLowerCase();
+      const explicitCdn = parsed.searchParams.get('cdn')?.toLowerCase();
+
+      if (explicitType === 'animeon' || explicitCdn === 'animeon') {
+        const epId = parsed.searchParams.get('id') || parsed.searchParams.get('episodeId');
+        if (epId) {
+          const apiRes = await httpRequest<{ videoUrl?: string }>(`https://animeon.club/api/player/${epId}/episode`, {
+            headers: {
+              Referer: 'https://animeon.club/',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            },
+            signal: options.signal,
+            timeout: 8000,
+          });
+          if (apiRes.data?.videoUrl) {
+            return extractVod(apiRes.data.videoUrl, options);
+          }
+        }
+        return null;
+      }
+
+      const innerUrl = parsed.searchParams.get('url') || (parsed.searchParams.get('id')?.startsWith('http') ? parsed.searchParams.get('id') : null);
       if (innerUrl) {
         const decodedInner = decodeURIComponent(innerUrl);
 

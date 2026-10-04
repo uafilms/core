@@ -135,12 +135,13 @@ export async function getAnimeOnStreams(
 
         const playerLower = task.playerName.toLowerCase();
         const cdnType = playerLower === 'moon' ? 'moonanime' : 'ashdi';
+        const lazyUrl = `/master.m3u8?cdn=${cdnType}&type=animeon&id=${ep.id}`;
 
         const source: StreamSource = {
           quality: '1080p',
           title: `${task.translationName} (${task.playerName})`,
           audio: task.translationName,
-          url: `/master.m3u8?cdn=animeon&episodeId=${ep.id}&player=${playerLower}`,
+          url: lazyUrl,
           mime: 'application/x-mpegURL',
           poster: ep.poster || undefined,
           headers: {
@@ -148,10 +149,11 @@ export async function getAnimeOnStreams(
             Referer: 'https://animeon.club/',
           },
           lazy: {
-            cdn: 'animeon',
-            type: cdnType,
+            cdn: cdnType,
+            type: 'animeon',
             id: String(ep.id),
-            url: `https://animeon.club/api/player/${ep.id}/episode`,
+            url: lazyUrl,
+            directUrl: `https://animeon.club/api/player/${ep.id}/episode`,
           },
         };
 

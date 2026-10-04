@@ -27,17 +27,39 @@ export class MoonAnimeVodExtractor implements VodExtractor {
     const trimmed = url.trim();
     if (!trimmed) return null;
 
-    // Case 0: If proxy URL with url= was passed, unwrap it
-    if (trimmed.includes('/master.m3u8') && trimmed.includes('url=')) {
+    // Case 0: If proxy URL with url= or id= was passed, unwrap it
+    if (trimmed.includes('/master.m3u8')) {
       try {
         const u = new URL(trimmed.startsWith('http') ? trimmed : `http://localhost${trimmed}`);
-        const inner = u.searchParams.get('url');
-        if (inner) return this.extract(decodeURIComponent(inner), options);
-      } catch {}
-    }
+        if (u.searchParams.get('type') === 'animeon') {
+          const epId = u.searchParams.get('id') || u.searchParams.get('episodeId');
+          if (epId) {
+            const apiRes = await httpRequest<{ videoUrl?: string }>(`https://animeon.club/api/player/${epId}/episode`, {
+              headers: {
+                Referer: 'https://animeon.club/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+              },
+              signal: options?.signal,
+              timeout: 8000,
+            });
+            if (apiRes.data?.videoUrl) {
+              return this.extract(apiRes.data.videoUrl, options);
+            }
+          }
+          return null;
+        }
 
-    // Never treat self-proxy /master.m3u8 as a raw video stream
-    if (trimmed.includes('/master.m3u8')) {
+        const inner = u.searchParams.get('url') || u.searchParams.get('id');
+        if (inner) {
+          const decoded = decodeURIComponent(inner);
+          if (decoded.startsWith('http://') || decoded.startsWith('https://')) {
+            return this.extract(decoded, options);
+          }
+          if (u.searchParams.get('type') === 'vod' || !u.searchParams.get('type')) {
+            return this.extract(`https://moonanime.art/vod/${decoded}`, options);
+          }
+        }
+      } catch {}
       return null;
     }
 
