@@ -35,6 +35,9 @@
   font-family: Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 14px;
   user-select: none;
+  /* Container query context: settings menu adapts to player height */
+  container-name: vjs-player;
+  container-type: size;
 }
 
 /* =========================================================
@@ -76,8 +79,10 @@
   cursor: pointer !important;
 }
 
-/* Reset all button properties overridden by BeerCSS */
-.video-js button,
+/* Reset all button properties overridden by BeerCSS.
+   Custom overlay buttons are excluded via :where() so the selector keeps its
+   original low specificity (otherwise it overrides the control bar sizing). */
+.video-js button:not(:where(.vjs-skip-segment-btn, .vjs-next-btn-cancel, .vjs-next-btn-play, .vjs-skip-notice-undo)),
 .video-js .vjs-button,
 .video-js .vjs-control {
   background: transparent !important;
@@ -624,6 +629,8 @@
   display: flex;
   flex-direction: column;
   width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 @keyframes vjsPageEnter {
@@ -706,6 +713,7 @@
   gap: 8px;
   border-bottom: 1px solid var(--vjs-outline-variant);
   color: var(--vjs-on-surface);
+  flex-shrink: 0;
 }
 
 .vjs-submenu-header:hover {
@@ -713,9 +721,13 @@
 }
 
 .vjs-submenu-scroll {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   max-height: 240px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  -webkit-overflow-scrolling: touch;
 }
 
 .vjs-submenu-option {
@@ -900,9 +912,101 @@
   .vjs-settings-item {
     padding: 10px 14px !important;
   }
+}
 
-  .vjs-submenu-scroll {
-    max-height: 180px !important;
+/* === ADAPTIVE DENSITY: fit all settings tabs on short players (phone portrait) === */
+@container vjs-player (max-height: 430px) {
+  .vjs-settings-menu {
+    bottom: 56px !important;
+    max-height: calc(100% - 62px) !important;
+    border-radius: 14px !important;
+  }
+
+  .vjs-settings-item {
+    padding: 7px 12px !important;
+  }
+
+  .vjs-settings-label {
+    font-size: 12.5px !important;
+    gap: 8px !important;
+  }
+
+  .vjs-settings-label i {
+    font-size: 17px !important;
+  }
+
+  .vjs-settings-val {
+    font-size: 12px !important;
+  }
+
+  .vjs-submenu-header {
+    padding: 8px 12px !important;
+    font-size: 12.5px !important;
+  }
+
+  .vjs-submenu-option {
+    padding: 7px 14px !important;
+    font-size: 12.5px !important;
+    margin: 1px 5px !important;
+  }
+
+  .vjs-audio-option {
+    padding: 6px 10px !important;
+  }
+
+  .vjs-studio-logo {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
+  .vjs-audio-title {
+    font-size: 12.5px !important;
+  }
+
+  .vjs-audio-sub {
+    font-size: 10.5px !important;
+  }
+
+  .vjs-submenu-option.selected:after {
+    right: 12px !important;
+  }
+}
+
+@container vjs-player (max-height: 300px) {
+  .vjs-settings-menu {
+    bottom: 52px !important;
+    max-height: calc(100% - 58px) !important;
+  }
+
+  .vjs-settings-item {
+    padding: 6px 10px !important;
+  }
+
+  .vjs-settings-label,
+  .vjs-submenu-header {
+    font-size: 12px !important;
+  }
+
+  .vjs-settings-label i {
+    font-size: 16px !important;
+  }
+
+  .vjs-settings-val,
+  .vjs-submenu-option {
+    font-size: 11.5px !important;
+  }
+
+  .vjs-submenu-option {
+    padding: 6px 12px !important;
+  }
+
+  .vjs-audio-option {
+    padding: 5px 9px !important;
+  }
+
+  .vjs-studio-logo {
+    width: 18px !important;
+    height: 18px !important;
   }
 }
 
@@ -1060,6 +1164,8 @@
   line-height: 1 !important;
   color: var(--vjs-primary, #bb86fc) !important;
   display: inline-block !important;
+  /* Material Symbols glyphs sit above the optical center of their box */
+  transform: translateY(2px) !important;
 }
 
 .vjs-skip-kbd {
