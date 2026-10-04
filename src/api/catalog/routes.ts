@@ -5,6 +5,7 @@ import { TmdbService } from '../services/tmdb.js';
 import { TheIntroDbService } from '../services/theintrodb.js';
 import { AniSkipService } from '../services/aniskip.js';
 import { metaCache } from '../services/cache.js';
+import { resolveUakinoNewsId, fetchUakinoComments } from '../../providers/uakino/comments.js';
 
 export const catalogRouter = new Hono();
 
@@ -173,67 +174,47 @@ catalogRouter.get('/segments', async (c) => {
 });
 
 catalogRouter.get('/comments', async (c) => {
-  const imdbId = c.req.query('imdb_id');
+  const imdbId = c.req.query('imdb_id') || c.req.query('imdbId');
+  const newsId = c.req.query('news_id') || c.req.query('newsId');
+  const title = c.req.query('title');
+  const originalTitle = c.req.query('original_title') || c.req.query('originalTitle');
+  const yearStr = c.req.query('year');
+  const year = yearStr ? parseInt(yearStr, 10) : undefined;
   const page = parseInt(c.req.query('page') || '1', 10);
+  const format = c.req.query('format');
 
-  if (!imdbId) {
-    return c.json({ error: 'imdb_id is required' }, 400);
+  if (!newsId && !imdbId && !title && !originalTitle) {
+    return c.json({ error: 'imdb_id, news_id, or title is required' }, 400);
   }
 
   try {
-    const searchUrl = 'https://uakino.best/engine/lazydev/dle_search/ajax.php';
-    const params = new URLSearchParams();
-    params.append('story', imdbId);
-
-    const searchRes = await axios.post<any>(searchUrl, params, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      },
-      timeout: 5000,
+    const resolvedNewsId = await resolveUakinoNewsId({
+      newsId,
+      imdbId,
+      title,
+      originalTitle,
+      year: isNaN(year!) ? undefined : year,
     });
 
-    const searchHtml = typeof searchRes.data === 'string' ? searchRes.data : searchRes.data?.content || '';
-    const linkMatch = searchHtml.match(/href=["'](https?:\/\/uakino\.best\/(\d+)-[^"']+\.html)["']/);
-
-    if (!linkMatch || !linkMatch[2]) {
+    if (!resolvedNewsId) {
+      if (format === 'paginated') {
+        return c.json({ comments: [], hasMore: false });
+      }
       return c.json([]);
     }
 
-    const newsId = linkMatch[2];
-    const commentsUrl = `https://uakino.best/engine/ajax/controller.php?mod=comments&cstart=${page}&news_id=${newsId}&skin=uakino&massact=disable`;
+    const { comments, hasMore } = await fetchUakinoComments(resolvedNewsId, page);
+    c.header('X-Has-More', String(hasMore));
 
-    const commentsRes = await axios.get<string>(commentsUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'X-Requested-With': 'XMLHttpRequest',
-      },
-      timeout: 5000,
-    });
+    if (format === 'paginated') {
+      return c.json({ comments, hasMore, newsId: resolvedNewsId });
+    }
 
-    const $ = cheerio.load(commentsRes.data || '');
-    const items: any[] = [];
-
-    $('li.comments-tree-item').each((_, el) => {
-      const $el = $(el);
-      const author = $el.find('.comm-author').text().trim();
-      const date = $el.find('.comm-bottom .comm-date').text().trim();
-      const text = $el.find('.comm-text').text().trim();
-      const avatar = $el.find('.comm-av img').attr('src');
-
-      if (text && author) {
-        items.push({
-          author,
-          date,
-          text,
-          avatar: avatar ? (avatar.startsWith('http') ? avatar : `https://uakino.best${avatar}`) : undefined,
-        });
-      }
-    });
-
-    return c.json(items);
+    return c.json(comments);
   } catch (err) {
+    if (format === 'paginated') {
+      return c.json({ comments: [], hasMore: false });
+    }
     return c.json([]);
   }
 });

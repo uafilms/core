@@ -36,3 +36,19 @@ export interface UakinoDbRow {
   is_tv: number;
   updated_at: number;
 }
+
+export interface UakinoCommentAuthor {
+  name: string;
+  avatar?: string;
+  group?: string;
+}
+
+export interface UakinoComment {
+  id: string;
+  author: UakinoCommentAuthor;
+  text: string;
+  date: string;
+  rating?: number;
+  replies?: UakinoComment[];
+}
+
