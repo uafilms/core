@@ -624,7 +624,12 @@ const Details = () => {
         </div>
 
         <div style={{ marginTop: '40px' }}>
-          <Comments title={data.title} imdbId={data.imdbId} />
+          <Comments
+            title={data.title}
+            originalTitle={data.originalTitle}
+            year={data.year}
+            imdbId={data.imdbId}
+          />
         </div>
       </div>
 
