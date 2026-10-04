@@ -134,7 +134,7 @@ streamRouter.get('/master.m3u8', async (c) => {
   const cdn = query.cdn;
   const type = query.type;
   const id = query.id;
-  const rawUrl = query.url;
+  const rawUrl = query.url || (id && (id.startsWith('http://') || id.startsWith('https://')) ? id : undefined);
   const translation = query.translation;
   const episodeId = query.episodeId;
 
@@ -152,25 +152,28 @@ streamRouter.get('/master.m3u8', async (c) => {
       if (!first.includes('/master.m3u8')) return first;
       try {
         const u = new URL(first, 'http://localhost');
-        const inner = u.searchParams.get('url');
-        if (inner) return decodeURIComponent(inner);
+        const inner = u.searchParams.get('url') || u.searchParams.get('id');
+        if (inner && (inner.startsWith('http://') || inner.startsWith('https://'))) return decodeURIComponent(inner);
       } catch {}
       return first;
     }
-    const candidates = [first.lazy?.directUrl, first.lazy?.url, first.url];
+    const candidates = [first.lazy?.directUrl, first.lazy?.url, first.lazy?.id, first.url, first.id];
     for (const candidate of candidates) {
       if (typeof candidate === 'string' && candidate) {
         if (!candidate.includes('/master.m3u8')) {
-          return candidate;
+          if (candidate.startsWith('http://') || candidate.startsWith('https://')) {
+            return candidate;
+          }
+        } else {
+          try {
+            const u = new URL(candidate, 'http://localhost');
+            const inner = u.searchParams.get('url') || u.searchParams.get('id');
+            if (inner && (inner.startsWith('http://') || inner.startsWith('https://'))) return decodeURIComponent(inner);
+          } catch {}
         }
-        try {
-          const u = new URL(candidate, 'http://localhost');
-          const inner = u.searchParams.get('url');
-          if (inner) return decodeURIComponent(inner);
-        } catch {}
       }
     }
-    return first.url || first.lazy?.url;
+    return first.url || first.lazy?.url || (typeof first.lazy?.id === 'string' && first.lazy.id.startsWith('http') ? first.lazy.id : undefined);
   };
 
   if (rawUrl) {
@@ -281,17 +284,12 @@ streamRouter.get('/master.m3u8', async (c) => {
   } else if (isMoon) {
     headers['Origin'] = 'https://moonanime.art';
     headers['Referer'] = 'https://moonanime.art/';
-    headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0';
-    headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+    headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36';
+    headers['Accept'] = '*/*';
     headers['Accept-Language'] = 'en-US,en;q=0.9';
-    headers['Sec-Fetch-Dest'] = 'document';
-    headers['Sec-Fetch-Mode'] = 'navigate';
-    headers['Sec-Fetch-Site'] = 'none';
-    headers['Sec-Fetch-User'] = '?1';
-    headers['Upgrade-Insecure-Requests'] = '1';
-    headers['Priority'] = 'u=0, i';
-    headers['Pragma'] = 'no-cache';
-    headers['Cache-Control'] = 'no-cache';
+    headers['sec-fetch-dest'] = 'empty';
+    headers['sec-fetch-mode'] = 'cors';
+    headers['sec-fetch-site'] = 'same-site';
   } else if (isBamboo) {
     headers['Origin'] = 'https://bambooua.com';
     headers['Referer'] = 'https://bambooua.com/';
@@ -357,7 +355,7 @@ streamRouter.get('/master.m3u8', async (c) => {
     }
 
     const modifiedM3u8 = parseMasterPlaylist(manifestData, streamUrl, proxyHost, {
-      corsProxySegments: isMoon || isAshdi || isBamboo,
+      corsProxySegments: isAshdi || isBamboo,
       subtitles: extractedSubtitles,
     });
 

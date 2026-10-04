@@ -161,7 +161,8 @@ export function parseMasterPlaylist(
         nextIsStreamUrl = false;
         currentStreamHeight = undefined;
       } else if (nextIsSegmentUrl) {
-        if (corsProxySegments && !absoluteUrl.startsWith(CORS_PROXY)) {
+        const isMooncdn = /mooncdn\.(online|net)|moonanime\.art/i.test(absoluteUrl);
+        if (corsProxySegments && !isMooncdn && !absoluteUrl.startsWith(CORS_PROXY)) {
           newLines.push(`${CORS_PROXY}${absoluteUrl}`);
         } else {
           newLines.push(absoluteUrl);
@@ -175,7 +176,8 @@ export function parseMasterPlaylist(
         if (looksLikePlaylist) {
           newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(absoluteUrl)}`);
         } else {
-          if (corsProxySegments && !absoluteUrl.startsWith(CORS_PROXY)) {
+          const isMooncdn = /mooncdn\.(online|net)|moonanime\.art/i.test(absoluteUrl);
+          if (corsProxySegments && !isMooncdn && !absoluteUrl.startsWith(CORS_PROXY)) {
             newLines.push(`${CORS_PROXY}${absoluteUrl}`);
           } else {
             newLines.push(absoluteUrl);
