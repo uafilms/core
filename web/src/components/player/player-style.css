@@ -608,6 +608,7 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   opacity: 0;
   transform: translateY(10px) scale(0.96);
   transition: opacity 0.2s cubic-bezier(0.2, 0, 0, 1), transform 0.2s cubic-bezier(0.2, 0, 0, 1);
@@ -744,6 +745,8 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .vjs-submenu-option {
@@ -775,11 +778,25 @@
   color: var(--vjs-primary);
 }
 
+/* Бейдж типу доріжки (напр. ASS = стилізовані субтитри) */
+.vjs-submenu-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--vjs-primary);
+  background: rgba(168, 199, 250, 0.16);
+  vertical-align: 1px;
+}
+
 /* Audio Submenu with Studio Logos */
 .vjs-studio-logo-sm {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
   object-fit: contain;
   background: #ffffff;
   padding: 1px;
@@ -1517,3 +1534,40 @@
 }
 
 
+
+/* Мобільний контрол-бар: тиснемо другорядні контроли, щоб кнопки
+   (особливо fullscreen) не вилазили за межі плеєра */
+@media (max-width: 600px) {
+  .video-js .vjs-control-bar .vjs-time-control {
+    font-size: 12px !important;
+    padding: 0 1px !important;
+  }
+
+  .video-js .vjs-control-bar .vjs-time-divider {
+    display: none !important;
+  }
+
+  .video-js .vjs-control-bar .vjs-progress-control {
+    min-width: 0 !important;
+    flex: 1 1 30px !important;
+  }
+
+  /* Тільки кнопка гучності, без слайдера: місце для fullscreen */
+  .video-js .vjs-control-bar .vjs-volume-panel {
+    width: 36px !important;
+  }
+
+  .video-js .vjs-control-bar .vjs-volume-panel .vjs-volume-control,
+  .video-js .vjs-control-bar .vjs-volume-panel:hover .vjs-volume-control,
+  .video-js .vjs-control-bar .vjs-volume-panel:focus-within .vjs-volume-control {
+    display: none !important;
+  }
+}
+
+/* video.js ховає кнопки класом vjs-hidden, але наш display:inline-flex !important
+   його перебивав — тому «Наступна серія» висіла навіть на фільмах. */
+.video-js .vjs-control-bar .vjs-button.vjs-hidden,
+.video-js .vjs-control-bar .vjs-time-control.vjs-hidden,
+.video-js .vjs-control-bar .vjs-control.vjs-hidden {
+  display: none !important;
+}

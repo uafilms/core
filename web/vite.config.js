@@ -4,6 +4,11 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // JASSUB (styled ASS subtitles) вантажить воркер як ES-модуль —
+  // за замовчуванням Vite збирає воркери в iife, що ламає його імпорти.
+  worker: {
+    format: 'es',
+  },
   build: {
     // Збільшуємо ліміт попередження (опціонально, щоб не муляло очі, але краще робити чанкінг)
     chunkSizeWarningLimit: 1000, 

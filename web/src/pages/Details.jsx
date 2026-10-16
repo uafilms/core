@@ -17,6 +17,18 @@ const formatSourceName = (source) => {
   return parts.join(' • ');
 };
 
+// Фаворитні CDN: стоять першими у списку джерел і отримують зірочку біля назви.
+// Порядок у масиві задає пріоритет (fenix вище за ashdi).
+const FAVORITE_CDNS = ['fenix', 'ashdi'];
+const favoriteCdnRank = (source) => {
+  const id = source?.provider?.id || '';
+  const index = FAVORITE_CDNS.indexOf(id);
+  return index === -1 ? Number.POSITIVE_INFINITY : index;
+};
+const sortWithFavoriteCdns = (list) => {
+  return [...list].sort((a, b) => favoriteCdnRank(a) - favoriteCdnRank(b));
+};
+
 const Details = () => {
   const { type, id } = useParams();
   const navigate = useNavigate();
@@ -46,6 +58,8 @@ const Details = () => {
   const [sources, setSources] = useState([]);
   const [selectedSource, setSelectedSource] = useState(null);
   const [loadingSources, setLoadingSources] = useState(true);
+  // Субтитри з провайдерів (ASS окремо рендерить плеєр через JASSUB)
+  const [subtitles, setSubtitles] = useState([]);
 
   // TV Series Navigation & TMDB Season/Episode Stills
   const [season, setSeason] = useState(initialSeason > 0 ? initialSeason : 1);
@@ -172,6 +186,68 @@ const Details = () => {
     const count = currentSeasonObj?.episodeCount || 1;
     return Array.from({ length: count }, (_, i) => i + 1);
   }, [currentSeasonObj]);
+
+  // Auto-resume: якщо серіал відкрито без явних ?s/?e, підхоплюємо серію,
+  // на якій користувач зупинився (localStorage.uafilms_watch_progress). Один раз.
+  const resumeAppliedRef = useRef(false);
+  useEffect(() => {
+    if (resumeAppliedRef.current || type !== 'tv' || !data) return;
+    if (searchParams.get('s') || searchParams.get('season') || searchParams.get('e') || searchParams.get('episode')) {
+      resumeAppliedRef.current = true;
+      return;
+    }
+
+    let store = {};
+    try {
+      store = JSON.parse(localStorage.getItem('uafilms_watch_progress') || '{}') || {};
+    } catch {
+      store = {};
+    }
+
+    const showId = data?.id || id;
+    const prefix = `tv_${showId}_s`;
+    let best = null;
+
+    for (const [mediaId, entry] of Object.entries(store)) {
+      if (!mediaId.startsWith(prefix) || !entry) continue;
+      const match = mediaId.match(/_s(\d+)_e(\d+)$/);
+      if (!match) continue;
+      const updated = entry.updated || 0;
+      if (!best || updated > best.updated) {
+        best = {
+          updated,
+          time: entry.time || 0,
+          duration: entry.duration || 0,
+          season: parseInt(match[1], 10) || 1,
+          episode: parseInt(match[2], 10) || 1,
+        };
+      }
+    }
+
+    resumeAppliedRef.current = true;
+    if (!best) return;
+
+    let targetSeason = best.season;
+    let targetEpisode = best.episode;
+
+    // Серію додивились (>=95%) — підхоплюємо наступну
+    if (best.duration > 0 && best.time / best.duration >= 0.95) {
+      const seasonObj = availableSeasons.find((s) => s.seasonNumber === targetSeason);
+      const count = seasonObj?.episodeCount || 0;
+      if (!count || targetEpisode + 1 <= count) {
+        targetEpisode += 1;
+      } else {
+        const nextSeason = availableSeasons.find((s) => s.seasonNumber === targetSeason + 1);
+        if (nextSeason) {
+          targetSeason += 1;
+          targetEpisode = 1;
+        }
+      }
+    }
+
+    setSeason(targetSeason);
+    setEpisode(targetEpisode);
+  }, [data, type, id, searchParams, availableSeasons]);
 
   const nextEpisodeInfo = useMemo(() => {
     if (type !== 'tv') return null;
@@ -302,6 +378,7 @@ const Details = () => {
     setLoadingSources(true);
     setSources([]);
     setSelectedSource(null);
+    setSubtitles([]);
     userPickedSourceRef.current = false;
 
     const targetId = data.imdbId || id;
@@ -311,17 +388,6 @@ const Details = () => {
 
     const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
     let eventSource = null;
-
-    const isAshdi = (s) => s?.provider?.id === 'ashdi' || s?.url?.includes('cdn=ashdi') || s?.url?.includes('ashdi.vip');
-    const sortWithAshdiFirst = (list) => {
-      return [...list].sort((a, b) => {
-        const aAsh = isAshdi(a);
-        const bAsh = isAshdi(b);
-        if (aAsh && !bAsh) return -1;
-        if (!aAsh && bAsh) return 1;
-        return 0;
-      });
-    };
 
     (async () => {
       let turnstileToken = window.cfToken;
@@ -342,11 +408,33 @@ const Details = () => {
           if (cancelled) return;
           try {
             const chunk = JSON.parse(event.data);
+
+            // CDN витіснив провайдер з вищим пріоритетом — прибираємо його джерела
+            if (chunk.removed) {
+              setSources((prev) => {
+                const updated = prev.filter((s) => s.provider?.id !== chunk.provider);
+                setSelectedSource((cur) => {
+                  if (cur && cur.provider?.id !== chunk.provider) return cur;
+                  return findBestSource(updated) || updated[0] || null;
+                });
+                return updated;
+              });
+              setSubtitles((prev) => prev.filter((s) => s.provider?.id !== chunk.provider));
+              return;
+            }
+
+            if (chunk.subtitles && Array.isArray(chunk.subtitles) && chunk.subtitles.length > 0) {
+              setSubtitles((prev) => {
+                const seen = new Set(prev.map((s) => s.url));
+                const fresh = chunk.subtitles.filter((s) => s?.url && !seen.has(s.url));
+                return fresh.length > 0 ? [...prev, ...fresh] : prev;
+              });
+            }
             if (chunk.sources && Array.isArray(chunk.sources) && chunk.sources.length > 0) {
               setSources((prev) => {
                 const existingIds = new Set(prev.map((s) => s.id || s.url));
                 const newSources = chunk.sources.filter((s) => !existingIds.has(s.id || s.url));
-                const updated = sortWithAshdiFirst([...prev, ...newSources]);
+                const updated = sortWithFavoriteCdns([...prev, ...newSources]);
 
                 // Auto-select preferred source/voice, allowing later upgrade to it
                 const best = findBestSource(updated) || updated[0];
@@ -379,8 +467,9 @@ const Details = () => {
         api.get(subpath)
           .then((res) => {
             if (cancelled) return;
-            const list = sortWithAshdiFirst(res.data?.sources || []);
+            const list = sortWithFavoriteCdns(res.data?.sources || []);
             setSources(list);
+            setSubtitles(Array.isArray(res.data?.subtitles) ? res.data.subtitles.filter((s) => s?.url) : []);
             if (list.length > 0) {
               const best = findBestSource(list) || list[0];
               setSelectedSource((cur) => preferBetterSource(cur, best));
@@ -578,13 +667,15 @@ const Details = () => {
               cdnMap.set(key, s);
             }
           }
-          const uniqueCdns = Array.from(cdnMap.values());
+          const uniqueCdns = Array.from(cdnMap.values())
+            .sort((a, b) => favoriteCdnRank(a) - favoriteCdnRank(b));
 
           if (uniqueCdns.length > 0) {
             return (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
                 {uniqueCdns.map((src, index) => {
                   const isSelected = selectedSource?.provider?.id === src.provider?.id;
+                  const isFavorite = favoriteCdnRank(src) !== Number.POSITIVE_INFINITY;
                   return (
                     <button
                       key={src.provider?.id || index}
@@ -600,6 +691,9 @@ const Details = () => {
                       }}
                       style={{ cursor: 'pointer' }}
                     >
+                      {isFavorite && (
+                        <span className="provider-favorite-star" title="Улюблений CDN" aria-label="Улюблений CDN">★</span>
+                      )}
                       <span>{src.provider?.name || src.provider?.id}</span>
                     </button>
                   );
@@ -664,6 +758,9 @@ const Details = () => {
                 savePreferences(src?.provider?.id, label);
               }}
               desiredAudioLabel={desiredAudioLabel}
+              styledSubtitles={subtitles.filter(
+                (s) => s.format === 'ass' && (!selectedSource?.provider?.id || s.provider?.id === selectedSource.provider.id)
+              )}
               onNativeAudioTracksChange={(count) => {
                 nativeAudioCountRef.current = count;
               }}
@@ -673,7 +770,7 @@ const Details = () => {
                 savePreferences(selectedSource?.provider?.id, label);
               }}
               autoPlay={autoPlayNext}
-              hasNextEpisode={Boolean(nextEpisodeInfo)}
+              hasNextEpisode={type === 'tv' && Boolean(nextEpisodeInfo)}
               nextEpisodeLabel={nextEpisodeInfo?.label || ''}
               onNextEpisode={handleNextEpisode}
               mediaId={`${type}_${data?.id || id}${type === 'tv' ? `_s${season}_e${episode}` : ''}`}

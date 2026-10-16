@@ -250,3 +250,17 @@ footer,
     transform: translateY(0);
   }
 }
+
+/* Favorite CDN star on provider chips */
+.provider-favorite-star {
+  color: inherit;
+  font-size: 0.9em;
+  line-height: 1;
+  margin: 0;
+}
+
+/* Тісніше пакуємо чіпи з зірочкою: beercss дає 0.75rem падінгів і gap 0.5rem */
+.chip:has(.provider-favorite-star) {
+  --_padding: 0.65rem;
+  gap: 0.3rem;
+}

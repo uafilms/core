@@ -6,6 +6,10 @@ import 'videojs-hotkeys';
 import 'videojs-mobile-ui';
 import 'videojs-mobile-ui/dist/videojs-mobile-ui.css';
 import './player-style.css';
+import jassubWorkerUrl from 'jassub/dist/worker/worker.js?worker&url';
+import jassubWasmUrl from 'jassub/dist/wasm/jassub-worker.wasm?url';
+import jassubModernWasmUrl from 'jassub/dist/wasm/jassub-worker-modern.wasm?url';
+import jassubDefaultFontUrl from 'jassub/dist/default.woff2?url';
 import { saveWatchProgress, removeWatchProgress, getLocalWatchProgress, flushWatchProgress } from '../../utils/sync.js';
 
 // Родини кодеків для перемикача "Кодек". Деякі CDN (напр. Fenix) віддають в одному
@@ -40,12 +44,20 @@ const isCodecSupported = (codecs) => {
   }
 };
 
+// Деякі джерела (зокрема HLS-групи Fenix через VHS) віддають технічний label
+// на кшталт 'default' замість назви озвучки — такі значення не показуємо.
+const GENERIC_AUDIO_LABEL_RE = /^(default|undefined|null|audio|unknown|невідомо|доріжка\s*\d+)$/i;
+const isGenericAudioLabel = (label) => !label || GENERIC_AUDIO_LABEL_RE.test(String(label).trim());
+
+
 export default function VideoPlayer({
   src,
   type = 'application/x-mpegURL',
   poster,
   title = '',
   subtitles = [],
+  // Стилізовані (ASS) субтитри — рендерить JASSUB/libass поверх відео
+  styledSubtitles = [],
   sources = [],
   selectedSource = null,
   onSourceChange = null,
@@ -90,6 +102,9 @@ export default function VideoPlayer({
   const [selectedQuality, setSelectedQuality] = useState(-1); // -1 = Auto
   // Нативні аудіодоріжки джерела (напр. Fenix: одне відео + кілька озвучок)
   const [nativeAudioTracks, setNativeAudioTracks] = useState([]);
+  // Назви озвучок із джерела (OMSS audioTracks) — запасний варіант, якщо VHS віддав технічний label
+  const sourceAudioLabelsRef = useRef([]);
+  sourceAudioLabelsRef.current = Array.isArray(selectedSource?.audioTracks) ? selectedSource.audioTracks : [];
   const [codecOptions, setCodecOptions] = useState([]); // [{ id, label, maxHeight, supported }]
   const [selectedCodec, setSelectedCodec] = useState(null); // null = Auto (найкращий підтримуваний)
   const [autoCodec, setAutoCodec] = useState(null); // id родини, яку Auto обрав за пріоритетом
@@ -98,9 +113,18 @@ export default function VideoPlayer({
   const [playbackRate, setPlaybackRate] = useState(1);
   const [textTracksList, setTextTracksList] = useState([]);
   const [selectedTrackIndex, setSelectedTrackIndex] = useState(-1); // -1 = Off
+  // Стилізовані ASS-субтитри (JASSUB): окремий список і активний url
+  const [styledTracks, setStyledTracks] = useState([]);
+  const [activeStyledUrl, setActiveStyledUrl] = useState(null);
+  const jassubRef = useRef(null);
+  const activeStyledUrlRef = useRef(null);
+  activeStyledUrlRef.current = activeStyledUrl;
   const [playerContainerEl, setPlayerContainerEl] = useState(null);
   const closeTimeoutRef = useRef(null);
   const openTimeRef = useRef(0);
+  const settingsMenuRef = useRef(null);
+  // Курсор поза плеєром — потрібно, щоб гасити спонтанну реактивацію панелі від video.js
+  const pointerOutsideRef = useRef(false);
   const sourcesRef = useRef(sources);
   const selectedSourceRef = useRef(selectedSource);
   selectedCodecRef.current = selectedCodec;
@@ -111,6 +135,127 @@ export default function VideoPlayer({
   useEffect(() => {
     metaRef.current = { title, poster, mediaType, tmdbId, season, episode };
   }, [title, poster, mediaType, tmdbId, season, episode]);
+
+  // --- Стилізовані ASS-субтитри (JASSUB) -------------------------------------
+  // Список приходить з батька (Fenix дає .ass поруч із .vtt). Активний url
+  // тримаємо окремо від нативних text track: ASS рендерить libass у canvas.
+  const styledKey = styledSubtitles.map((s) => s.url).join('|');
+  const styledTracksRef = useRef(styledTracks);
+  styledTracksRef.current = styledTracks;
+
+  useEffect(() => {
+    const list = Array.isArray(styledSubtitles) ? styledSubtitles.filter((s) => s && s.url) : [];
+    setStyledTracks(list);
+    setActiveStyledUrl(null);
+
+    if (list.length === 0) return;
+
+    // Вибір субтитрів зберігаємо між епізодами; '__off__' = користувач вимкнув
+    let pref = null;
+    try {
+      pref = localStorage.getItem('uafilms_pref_subs');
+    } catch {
+      pref = null;
+    }
+    if (pref === '__off__') return;
+
+    const match = pref ? list.find((s) => s.label === pref) : null;
+    // Бекенд кладе «Написи/Forced» першими — вони й стають дефолтними
+    setActiveStyledUrl((match || list[0]).url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [styledKey]);
+
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+
+    if (!activeStyledUrl) {
+      if (jassubRef.current) {
+        try {
+          jassubRef.current.destroy();
+        } catch {
+          // ignore
+        }
+        jassubRef.current = null;
+      }
+      return;
+    }
+
+    const videoEl = player.el()?.querySelector('video');
+    if (!videoEl) return;
+
+    let cancelled = false;
+    const activeUrl = activeStyledUrl;
+
+    // Нативні доріжки вимикаємо, інакше субтитри дублюються
+    const tracks = player.textTracks();
+    if (tracks) {
+      for (let i = 0; i < tracks.length; i++) {
+        tracks[i].mode = 'disabled';
+      }
+    }
+    setSelectedTrackIndex(-1);
+
+    (async () => {
+      try {
+        const { default: JASSUB } = await import('jassub');
+        if (cancelled) return;
+        if (jassubRef.current) {
+          try {
+            jassubRef.current.destroy();
+          } catch {
+            // ignore
+          }
+          jassubRef.current = null;
+        }
+        jassubRef.current = new JASSUB({
+          video: videoEl,
+          subUrl: activeUrl,
+          workerUrl: jassubWorkerUrl,
+          wasmUrl: jassubWasmUrl,
+          modernWasmUrl: jassubModernWasmUrl,
+          defaultFont: jassubDefaultFontUrl,
+          queryFonts: 'local',
+        });
+      } catch (err) {
+        console.warn('JASSUB init failed, falling back to native subtitles:', err);
+        if (cancelled) return;
+        // Фолбек: вмикаємо однойменний VTT-трек, якщо він є
+        const failed = styledTracksRef.current.find((t) => t.url === activeUrl);
+        setActiveStyledUrl(null);
+        if (failed?.label) {
+          const list = player.textTracks();
+          if (list) {
+            for (let i = 0; i < list.length; i++) {
+              const t = list[i];
+              if ((t.kind === 'subtitles' || t.kind === 'captions') && t.label === failed.label) {
+                t.mode = 'showing';
+                setSelectedTrackIndex(i);
+                break;
+              }
+            }
+          }
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStyledUrl, src]);
+
+  useEffect(() => () => {
+    if (jassubRef.current) {
+      try {
+        jassubRef.current.destroy();
+      } catch {
+        // ignore
+      }
+      jassubRef.current = null;
+    }
+  }, []);
+  // --------------------------------------------------------------------------
 
   // SponsorBlock / TheIntroDB Media Segments
   const [segments, setSegments] = useState([]);
@@ -418,8 +563,14 @@ export default function VideoPlayer({
       html5: {
         vhs: {
           overrideNative: true,
-          enableLowInitialPlaylist: true,
+          enableLowInitialPlaylist: false,
           smoothQualityChange: true,
+          // Плеєр часто менший за відео: не обмежуємо рендицію розміром елемента,
+          // інакше VHS тримає 480p навіть із швидким інтернетом.
+          limitRenditionByPlayerDimensions: false,
+          // Стартова оцінка швидкості з Network Information API та з попередніх сесій
+          useNetworkInformationApi: true,
+          useBandwidthFromLocalStorage: true,
         },
         nativeVideoTracks: false,
         nativeAudioTracks: false,
@@ -449,11 +600,13 @@ export default function VideoPlayer({
       try {
         const list = player.audioTracks?.();
         if (!list) return;
+        const fallbackLabels = sourceAudioLabelsRef.current || [];
         const tracks = [];
         for (let i = 0; i < list.length; i++) {
           const track = list[i];
+          const label = isGenericAudioLabel(track.label) ? null : track.label;
           tracks.push({
-            label: track.label || track.language || `Доріжка ${i + 1}`,
+            label: label || fallbackLabels[i] || track.language || `Доріжка ${i + 1}`,
             language: track.language || '',
             enabled: track.enabled !== false,
           });
@@ -490,13 +643,32 @@ export default function VideoPlayer({
     }
 
     // Курсор пішов з плеєра — ховаємо панель одразу, не чекаючи inactivityTimeout.
-    // Поки відкрите меню налаштувань, панель не чіпаємо (нею керує окремий ефект).
+    // Нюанс video.js: його listenForUserActivity_ вважає mouseleave активністю, тож
+    // activityCheck (~250 мс) повертає панель назад, і вона висить аж до inactivityTimeout —
+    // саме тому панель «зникала й поверталася». Тому гасимо активність вручну,
+    // поки курсор поза плеєром. Поки відкрите меню налаштувань — панель не чіпаємо.
     const playerEl = player.el();
-    const onPlayerMouseLeave = () => {
+    const suppressUserActiveOutside = () => {
       if (renderedMenuRef.current) return;
-      if (!player.paused()) player.userActive(false);
+      if (player.userActivity_) player.userActivity_ = false;
+      if (player.userActive()) player.userActive(false);
     };
+    const onPlayerPointerInside = () => {
+      pointerOutsideRef.current = false;
+    };
+    const onPlayerMouseLeave = () => {
+      pointerOutsideRef.current = true;
+      if (renderedMenuRef.current || player.paused()) return;
+      suppressUserActiveOutside();
+    };
+    const onUserActiveWhileOutside = () => {
+      if (!pointerOutsideRef.current) return;
+      suppressUserActiveOutside();
+    };
+    playerEl?.addEventListener('mouseenter', onPlayerPointerInside);
+    playerEl?.addEventListener('mousemove', onPlayerPointerInside);
     playerEl?.addEventListener('mouseleave', onPlayerMouseLeave);
+    player.on('useractive', onUserActiveWhileOutside);
 
     // Patch VHS VTTSegmentLoader time mapping: prevent negative PTS offset from causing cues to rush ahead
     const patchVttTimeMapping = () => {
@@ -968,7 +1140,10 @@ export default function VideoPlayer({
       if (closeSkipTimeoutRef.current) clearTimeout(closeSkipTimeoutRef.current);
       if (skipNoticeTimeoutRef.current) clearTimeout(skipNoticeTimeoutRef.current);
       if (nextCountdownTimerRef.current) clearInterval(nextCountdownTimerRef.current);
+      playerEl?.removeEventListener('mouseenter', onPlayerPointerInside);
+      playerEl?.removeEventListener('mousemove', onPlayerPointerInside);
       playerEl?.removeEventListener('mouseleave', onPlayerMouseLeave);
+      player.off('useractive', onUserActiveWhileOutside);
       saveProgress(true);
       flushWatchProgress();
       setPlayerContainerEl(null);
@@ -1042,6 +1217,66 @@ export default function VideoPlayer({
   // Актуальний стан меню для обробників поза React (mouseleave плеєра)
   useEffect(() => {
     renderedMenuRef.current = renderedMenu;
+  }, [renderedMenu]);
+
+  // Скролінг списків у меню: колесо над підменю має гортати список, а не сторінку.
+  // React-обробник onWheel пасивний, тому вішаємо нативний із { passive: false }.
+  useEffect(() => {
+    const el = settingsMenuRef.current;
+    if (!el || !renderedMenu) return;
+
+    const onWheel = (event) => {
+      const target = event.target instanceof Element ? event.target.closest('.vjs-submenu-scroll, .vjs-menu-page, .vjs-settings-menu') : null;
+      const scroller = target || el;
+      if (scroller.scrollHeight > scroller.clientHeight + 1) {
+        const pending = animations.get(scroller);
+        animateTo(scroller, (pending ? pending.goal : scroller.scrollTop) + event.deltaY);
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    // Плавне гортання: анімуємо scrollTop до цільової позиції через rAF.
+    // Без цього кожен тік колеса стрибає ривком і список «смикається».
+    const animations = new Map();
+    const reduceMotion =
+      typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+    const animateTo = (scroller, targetTop) => {
+      const pending = animations.get(scroller);
+      if (pending) cancelAnimationFrame(pending.raf);
+
+      const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      const goal = Math.min(max, Math.max(0, targetTop));
+
+      if (reduceMotion) {
+        scroller.scrollTop = goal;
+        animations.delete(scroller);
+        return;
+      }
+
+      const step = () => {
+        const diff = goal - scroller.scrollTop;
+        if (Math.abs(diff) < 0.5) {
+          scroller.scrollTop = goal;
+          animations.delete(scroller);
+          return;
+        }
+        scroller.scrollTop += diff * 0.22;
+        const raf = requestAnimationFrame(step);
+        animations.set(scroller, { raf, goal });
+      };
+
+      const raf = requestAnimationFrame(step);
+      animations.set(scroller, { raf, goal });
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      for (const { raf } of animations.values()) cancelAnimationFrame(raf);
+      animations.clear();
+    };
   }, [renderedMenu]);
 
   // Keep controls and player active while settings menu is open
@@ -1196,6 +1431,28 @@ export default function VideoPlayer({
       }
     }
     setSelectedTrackIndex(targetIndex);
+    // Нативний трек витісняє стилізований (ASS рендерить libass)
+    setActiveStyledUrl(null);
+    try {
+      const label = targetIndex === -1
+        ? '__off__'
+        : textTracksList.find((t) => t.index === targetIndex)?.label || '__off__';
+      localStorage.setItem('uafilms_pref_subs', label);
+    } catch {
+      // ignore
+    }
+    closeMenu();
+  };
+
+  // Вибір стилізованих ASS-субтитрів (рендерить JASSUB поверх відео)
+  const setStyledSubtitleTrack = (url) => {
+    setActiveStyledUrl(url);
+    try {
+      const label = url ? styledTracks.find((t) => t.url === url)?.label || url : '__off__';
+      localStorage.setItem('uafilms_pref_subs', label);
+    } catch {
+      // ignore
+    }
     closeMenu();
   };
 
@@ -1228,6 +1485,13 @@ export default function VideoPlayer({
   };
 
   const activeNativeAudioLabel = nativeAudioTracks.find((track) => track.enabled)?.label || null;
+  // VHS для аудіогруп інколи віддає технічний label ('default'), тому в налаштуваннях
+  // показуємо його лише коли він осмислений, інакше — студію/список озвучок джерела.
+  const displayAudioLabel =
+    (activeNativeAudioLabel && !isGenericAudioLabel(activeNativeAudioLabel) ? activeNativeAudioLabel : null) ||
+    selectedSource?.studio?.name ||
+    (selectedSource?.audioTracks || []).find((label) => !isGenericAudioLabel(label)) ||
+    'За замовчуванням';
 
   // Підрахунок доступних озвучок для поточного провайдера
   const currentProviderId = selectedSource?.provider?.id;
@@ -1239,6 +1503,17 @@ export default function VideoPlayer({
   const uniqueAudioCount = new Set(
     audioList.map((s) => `${s.studio?.name || s.audioTracks?.[0] || ''}:${s.url}`)
   ).size;
+
+  // Логотипи студій за назвою озвучки — щоб нативні доріжки (Fenix) теж мали іконки,
+  // як у списку джерел.
+  const studioLogoByLabel = new Map();
+  for (const source of allSources) {
+    const name = source.studio?.name?.trim().toLowerCase();
+    const logo = source.studio?.logoUrl;
+    if (name && logo && !studioLogoByLabel.has(name)) studioLogoByLabel.set(name, logo);
+  }
+  const displayAudioLogo =
+    studioLogoByLabel.get(displayAudioLabel.trim().toLowerCase()) || selectedSource?.studio?.logoUrl || null;
 
   return (
     <div className="player-wrapper">
@@ -1417,6 +1692,7 @@ export default function VideoPlayer({
       {renderedMenu && (
         <div
           className={`vjs-settings-menu ${isClosing ? 'vjs-menu-closing' : 'vjs-menu-open'}`}
+          ref={settingsMenuRef}
           onClick={(e) => e.stopPropagation()}
           onMouseMove={() => playerRef.current?.reportUserActivity()}
         >
@@ -1457,31 +1733,33 @@ export default function VideoPlayer({
                     <span>Озвучка</span>
                   </div>
                   <div className="vjs-settings-val" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {selectedSource?.studio?.logoUrl && (
+                    {displayAudioLogo && (
                       <img
-                        src={selectedSource.studio.logoUrl}
+                        src={displayAudioLogo}
                         alt=""
                         className="vjs-studio-logo-sm"
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       />
                     )}
                     <span style={{ maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {activeNativeAudioLabel || selectedSource?.studio?.name || selectedSource?.audioTracks?.[0] || 'За замовчуванням'}
+                      {displayAudioLabel}
                     </span>
                   </div>
                 </div>
               )}
 
-              {textTracksList.length > 0 && (
+              {(textTracksList.length > 0 || styledTracks.length > 0) && (
                 <div className="vjs-settings-item" onClick={() => switchMenu('subs', 'forward')}>
                   <div className="vjs-settings-label">
                     <i className="material-symbols-rounded">subtitles</i>
                     <span>Субтитри</span>
                   </div>
                   <div className="vjs-settings-val">
-                    {selectedTrackIndex === -1
-                      ? 'Вимкнено'
-                      : textTracksList.find((t) => t.index === selectedTrackIndex)?.label || 'Увімкнено'}
+                    {activeStyledUrl
+                      ? styledTracks.find((t) => t.url === activeStyledUrl)?.label || 'Увімкнено'
+                      : selectedTrackIndex === -1
+                        ? 'Вимкнено'
+                        : textTracksList.find((t) => t.index === selectedTrackIndex)?.label || 'Увімкнено'}
                   </div>
                 </div>
               )}
@@ -1510,6 +1788,17 @@ export default function VideoPlayer({
                       className={`vjs-submenu-option vjs-audio-option ${track.enabled ? 'selected' : ''}`}
                       onClick={() => selectNativeAudioTrack(trackIndex)}
                     >
+                      {studioLogoByLabel.get((track.label || '').trim().toLowerCase()) && (
+                        <div className="vjs-studio-logo-wrapper">
+                          <img
+                            src={studioLogoByLabel.get((track.label || '').trim().toLowerCase())}
+                            alt=""
+                            className="vjs-studio-logo"
+                            loading="lazy"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                        </div>
+                      )}
                       <div className="vjs-audio-text-group">
                         <span className="vjs-audio-title">{track.label}</span>
                         {track.language && (
@@ -1604,11 +1893,21 @@ export default function VideoPlayer({
               </div>
               <div className="vjs-submenu-scroll">
                 <div
-                  className={`vjs-submenu-option ${selectedTrackIndex === -1 ? 'selected' : ''}`}
-                  onClick={() => setSubtitleTrack(-1)}
+                  className={`vjs-submenu-option ${selectedTrackIndex === -1 && !activeStyledUrl ? 'selected' : ''}`}
+                  onClick={() => (activeStyledUrl ? setStyledSubtitleTrack(null) : setSubtitleTrack(-1))}
                 >
                   Вимкнено
                 </div>
+                {styledTracks.map((track) => (
+                  <div
+                    key={track.url}
+                    className={`vjs-submenu-option ${activeStyledUrl === track.url ? 'selected' : ''}`}
+                    onClick={() => setStyledSubtitleTrack(track.url)}
+                  >
+                    {track.label}
+                    <span className="vjs-submenu-badge">ASS</span>
+                  </div>
+                ))}
                 {textTracksList.map((track) => (
                   <div
                     key={track.index}
