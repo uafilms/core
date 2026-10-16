@@ -290,6 +290,7 @@ export class OrchestratorService {
               name: cdn.name,
             },
             ...(platform === 'native' && reqHeaders ? { headers: reqHeaders } : {}),
+            ...(raw.sharedVideo ? { sharedVideo: true } : {}),
           };
 
           const group = providerGroups.get(cdn.id) ?? { id: cdn.id, name: cdn.name, sources: [], subtitles: [] };

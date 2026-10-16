@@ -24,6 +24,11 @@ export interface StreamSource {
   headers?: Record<string, string>;
   poster?: string | null;
   lazy?: LazyStream;
+  /**
+   * Істина, якщо всі озвучки CDN використовують один і той самий відеопотік,
+   * тож плеєр може перемикати аудіодоріжки нативно (без перезавантаження джерела).
+   */
+  sharedVideo?: boolean;
 }
 
 export interface MediaItem {

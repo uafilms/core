@@ -45,6 +45,11 @@ export interface OmssSource {
     name: string;
   };
   headers?: Record<string, string>;
+  /**
+   * Озвучки джерела ділять одне відео (напр. Fenix) — клієнт має перемикати
+   * їх нативно, запитуючи в проксі злитий майстер (`mergeAudio=1`).
+   */
+  sharedVideo?: boolean;
 }
 
 export interface OmssSubtitle {

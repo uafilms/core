@@ -21,7 +21,7 @@ export { frankoVod, resolveFrankoFile } from './franko/main.js';
 export { bunnyVod } from './bunny/main.js';
 export { aniWorldVod } from './aniworld/main.js';
 export { zetvideoVod } from './zetvideo/main.js';
-export { fenixVod } from './fenix/main.js';
+export { fenixVod, buildFenixMergedManifest } from './fenix/main.js';
 export { uakinoAxVod, stripUakinoAxIntro } from './uakinoax/main.js';
 export { playUakinoAx, findUakinoAxMovie, uakinoAxVoiceCdnId } from './uakinoax/api.js';
 
@@ -50,6 +50,21 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
       const parsed = new URL(url.startsWith('http') ? url : `http://localhost${url}`);
       const explicitCdn = parsed.searchParams.get('cdn');
       const explicitType = parsed.searchParams.get('type')?.toLowerCase();
+
+      // Якщо cdn задано явно (і це не animeon), спершу даємо шанс самому екстрактору:
+      // fenix/ashdi самі вміють розкривати type=animeon і зберігають додаткові параметри
+      // (напр. voice) — через резолв в animeon API вони б загубилися.
+      if (explicitCdn && explicitCdn.toLowerCase() !== 'animeon') {
+        const directExtractor = vodExtractors.find(e => e.name.toLowerCase() === explicitCdn.toLowerCase());
+        if (directExtractor) {
+          try {
+            const res = await runWithProvider(directExtractor.name, () => directExtractor.extract(url, options));
+            if (res) return res;
+          } catch {
+            // ігноруємо — нижче спрацює загальний шлях через animeon API
+          }
+        }
+      }
 
       if (explicitType === 'animeon' || explicitCdn?.toLowerCase() === 'animeon') {
         const epId = parsed.searchParams.get('id') || parsed.searchParams.get('episodeId');

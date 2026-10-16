@@ -148,6 +148,30 @@ function pickTrack(episode: FenixEpisode, voice?: string): FenixTrack | null {
   return partial || tracks[0];
 }
 
+async function fetchFenixText(url: string, options: VodExtractionOptions = {}): Promise<string | null> {
+  try {
+    const res = await httpRequest<string>(url, {
+      headers: { 'User-Agent': UA, Referer: `${FENIX_EMBED_ORIGIN}/` },
+      signal: options.signal,
+      timeout: 12000,
+      responseType: 'text',
+    });
+    return typeof res.data === 'string' ? res.data : String(res.data ?? '');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Шлях аудіоплейлиста треку: у Fenix майстер треку лежить поруч із `audio/` —
+ * `…/versions/<hash>/master.m3u8` → `…/versions/<hash>/audio/playlist.m3u8`.
+ */
+function audioPlaylistUrl(track: FenixTrack, token: string): string | null {
+  const source = track.hls_url || track.cast_avc_url;
+  if (!source) return null;
+  return withToken(source.replace(/[^/]+\.m3u8(\?|$)/, 'audio/playlist.m3u8$1'), token);
+}
+
 function pickEpisode(playlist: FenixPlaylist, episodeNumber?: number): FenixEpisode | null {
   const episodes = playlist.episodes || [];
   if (episodes.length === 0) return null;
@@ -155,20 +179,51 @@ function pickEpisode(playlist: FenixPlaylist, episodeNumber?: number): FenixEpis
   return episodes.find((episode) => episode.number === episodeNumber) || episodes[0];
 }
 
+/**
+ * «Написи»/«Форсовані» (kind=signs|forced) — це оверлейні переклади написів на екрані.
+ * Вони мають бути першими й увімкненими за замовчуванням: їх ставимо на позицію 0,
+ * а parseMasterPlaylist віддає першому субтитру DEFAULT=YES,AUTOSELECT=YES, тож
+ * video.js сам вмикає доріжку.
+ */
+const SIGNS_KINDS = new Set(['signs', 'forced']);
+const SIGNS_LABEL_RE = /напис|forced|форсов/i;
+
+function isSignsSubtitle(sub: FenixSubtitle): boolean {
+  const kind = (sub.kind || '').toLowerCase();
+  if (SIGNS_KINDS.has(kind)) return true;
+  return SIGNS_LABEL_RE.test(sub.label || '');
+}
+
 function pickSubtitles(episode: FenixEpisode, track: FenixTrack | null, token: string): Subtitle[] {
   const subs = episode.subtitles || [];
   const voiceName = track?.label;
-  const withVoice = subs.filter((sub) => !!sub.voice_studio_name);
-  const matching = voiceName
-    ? withVoice.filter((sub) => normalizeVoice(sub.voice_studio_name as string) === normalizeVoice(voiceName))
-    : [];
-  const chosen = matching.length > 0 ? matching : subs.filter((sub) => !sub.voice_studio_name);
+  const wantedVoice = voiceName ? normalizeVoice(voiceName) : null;
+  const matchesVoice = (sub: FenixSubtitle): boolean =>
+    !!wantedVoice && !!sub.voice_studio_name && normalizeVoice(sub.voice_studio_name) === wantedVoice;
+
+  const signsVoice: FenixSubtitle[] = [];
+  const signsOther: FenixSubtitle[] = [];
+  const fullVoice: FenixSubtitle[] = [];
+  const fullOther: FenixSubtitle[] = [];
+
+  for (const sub of subs) {
+    if (!sub.url) continue;
+    const bucket = isSignsSubtitle(sub)
+      ? matchesVoice(sub)
+        ? signsVoice
+        : signsOther
+      : matchesVoice(sub)
+        ? fullVoice
+        : fullOther;
+    bucket.push(sub);
+  }
+
+  const ordered = [...signsVoice, ...signsOther, ...fullVoice, ...fullOther];
 
   const seen = new Set<string>();
   const subtitles: Subtitle[] = [];
-  for (const sub of chosen) {
-    if (!sub.url) continue;
-    const url = withToken(sub.url, token);
+  for (const sub of ordered) {
+    const url = withToken(sub.url as string, token);
     if (seen.has(url)) continue;
     seen.add(url);
     subtitles.push({
@@ -180,86 +235,200 @@ function pickSubtitles(episode: FenixEpisode, track: FenixTrack | null, token: s
   return subtitles;
 }
 
+interface FenixInput {
+  target: string;
+  voice?: string;
+  episodeNumber?: number;
+}
+
+interface FenixContext {
+  playlist: FenixPlaylist;
+  episode: FenixEpisode;
+  token: string;
+  voice?: string;
+  target: string;
+}
+
+function parseFenixUrl(url: string): FenixInput | null {
+  if (!url) return null;
+  let target = url;
+  let voice: string | undefined;
+  let episodeNumber: number | undefined;
+
+  try {
+    const parsed = new URL(url.startsWith('http') ? url : `http://localhost${url}`);
+    const rawVoice = parsed.searchParams.get('voice') || parsed.searchParams.get('translation');
+    if (rawVoice) voice = rawVoice;
+
+    const rawEpisode = parsed.searchParams.get('ep') || parsed.searchParams.get('episode');
+    if (rawEpisode) episodeNumber = parseInt(rawEpisode, 10) || undefined;
+
+    const type = parsed.searchParams.get('type')?.toLowerCase();
+    const animeOnId = parsed.searchParams.get('id') || parsed.searchParams.get('episodeId');
+    const innerUrl = parsed.searchParams.get('url');
+
+    if (innerUrl) target = decodeURIComponent(innerUrl);
+    else if (type === 'animeon' && animeOnId) return { target: `animeon:${animeOnId}`, voice, episodeNumber };
+
+    // Епізод може бути закодований лише в embed-URL від animeon API (?ep=N)
+    if (episodeNumber === undefined) {
+      try {
+        const targetUrl = new URL(target);
+        const rawTargetEp = targetUrl.searchParams.get('ep') || targetUrl.searchParams.get('episode');
+        if (rawTargetEp) episodeNumber = parseInt(rawTargetEp, 10) || undefined;
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return { target, voice, episodeNumber };
+}
+
+async function resolveFenixContext(input: FenixInput, options: VodExtractionOptions = {}): Promise<FenixContext | null> {
+  let target = input.target;
+  if (target.startsWith('animeon:')) {
+    const embed = await resolveAnimeOnEpisodeEmbed(target.slice('animeon:'.length), options);
+    if (!embed) return null;
+    target = embed;
+  }
+
+  if (!target.includes('fenixplay.xyz') || target.includes('media.fenixplay.xyz')) return null;
+
+  let episodeNumber = input.episodeNumber;
+  if (episodeNumber === undefined) {
+    try {
+      const targetUrl = new URL(target);
+      const rawTargetEp = targetUrl.searchParams.get('ep') || targetUrl.searchParams.get('episode');
+      if (rawTargetEp) episodeNumber = parseInt(rawTargetEp, 10) || undefined;
+    } catch {
+      // ignore
+    }
+  }
+
+  const html = await fetchFenixText(target, options);
+  if (!html) return null;
+
+  const playlist = extractJsonAssignment(html, 'window.FENIX_PLAYLIST') as FenixPlaylist | null;
+  const access = extractJsonAssignment(html, 'window.FENIX_MEDIA_ACCESS') as FenixMediaAccess | null;
+  const token = access?.token;
+  if (!playlist || !token) return null;
+
+  const episode = pickEpisode(playlist, episodeNumber);
+  if (!episode) return null;
+
+  return { playlist, episode, token, voice: input.voice, target };
+}
+
+export interface FenixMergedManifest {
+  manifest: string;
+  baseUrl: string;
+  subtitles: Subtitle[];
+}
+
+/**
+ * Збирає один майстер, у якому відео-варіанти спільні, а всі озвучки —
+ * окремі `#EXT-X-MEDIA:TYPE=AUDIO` групи того самого GROUP-ID. Плеєр тоді
+ * перемикає доріжки на місці, без перезавантаження джерела.
+ */
+export async function buildFenixMergedManifest(url: string, options: VodExtractionOptions = {}): Promise<FenixMergedManifest | null> {
+  const input = parseFenixUrl(url);
+  if (!input) return null;
+
+  const ctx = await resolveFenixContext(input, options);
+  if (!ctx) return null;
+
+  const masterUrl = PREFER_AVC
+    ? ctx.episode.cast_avc_url || ctx.episode.hls_master_url
+    : ctx.episode.hls_master_url || ctx.episode.cast_avc_url;
+  if (!masterUrl) return null;
+
+  const baseUrl = withToken(masterUrl, ctx.token);
+  const master = await fetchFenixText(baseUrl, options);
+  if (!master) return null;
+
+  const tracks = (ctx.episode.tracks || []).filter((track) => track.track_type !== 'sub' && (track.hls_url || track.cast_avc_url));
+  if (tracks.length === 0) return null;
+
+  const wanted = ctx.voice ? normalizeVoice(ctx.voice) : '';
+  const defaultTrack = (wanted && tracks.find((track) => track.label && normalizeVoice(track.label) === wanted)) || tracks[0];
+
+  const mediaLines = tracks.map((track) => {
+    const uri = audioPlaylistUrl(track, ctx.token);
+    const label = (track.label || 'Audio').replace(/"/g, '\\"');
+    const attrs = [
+      '#EXT-X-MEDIA:TYPE=AUDIO',
+      'GROUP-ID="audio"',
+      `NAME="${label}"`,
+      `LANGUAGE="${track.language || 'uk'}"`,
+      'CHANNELS="2"',
+      `DEFAULT=${track === defaultTrack ? 'YES' : 'NO'}`,
+      'AUTOSELECT=YES',
+    ];
+    if (uri) attrs.push(`URI="${uri}"`);
+    return attrs.join(',');
+  });
+
+  const output: string[] = [];
+  let mediaInserted = false;
+  for (const line of master.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!mediaInserted && trimmed.startsWith('#EXT-X-STREAM-INF')) {
+      output.push(...mediaLines);
+      mediaInserted = true;
+    }
+    if (/^#EXT-X-MEDIA:TYPE=AUDIO/i.test(trimmed)) continue;
+    output.push(trimmed.startsWith('#EXT-X-STREAM-INF') ? trimmed.replace(/AUDIO="[^"]*"/, 'AUDIO="audio"') : line);
+  }
+
+  if (!mediaInserted) return null;
+
+  return {
+    manifest: output.join('\n'),
+    baseUrl,
+    subtitles: pickSubtitles(ctx.episode, defaultTrack, ctx.token),
+  };
+}
+
 class FenixVodExtractor implements VodExtractor {
   readonly name = 'fenix';
 
   async extract(url: string, options: VodExtractionOptions = {}): Promise<VodExtractionResult | null> {
-    if (!url) return null;
-
-    let target = url;
-    let voice: string | undefined;
-    let episodeNumber: number | undefined;
-
-    try {
-      const parsed = new URL(url.startsWith('http') ? url : `http://localhost${url}`);
-      const rawVoice = parsed.searchParams.get('voice') || parsed.searchParams.get('translation');
-      if (rawVoice) voice = rawVoice;
-
-      const rawEpisode = parsed.searchParams.get('ep') || parsed.searchParams.get('episode');
-      if (rawEpisode) episodeNumber = parseInt(rawEpisode, 10) || undefined;
-
-      const type = parsed.searchParams.get('type')?.toLowerCase();
-      const animeOnId = parsed.searchParams.get('id') || parsed.searchParams.get('episodeId');
-      const innerUrl = parsed.searchParams.get('url');
-
-      if (innerUrl) target = decodeURIComponent(innerUrl);
-      else if (type === 'animeon' && animeOnId) {
-        const embed = await resolveAnimeOnEpisodeEmbed(animeOnId, options);
-        if (!embed) return null;
-        target = embed;
-      }
-    } catch {
-      return null;
-    }
-
-    if (!target.includes('fenixplay.xyz')) return null;
+    const input = parseFenixUrl(url);
+    if (!input) return null;
 
     // Прямий медіа-запит із підписом — віддаємо як є, токен у ньому вже є.
-    if (target.includes('media.fenixplay.xyz')) {
-      if (!/[?&]token=/.test(target)) return null;
+    if (input.target.includes('media.fenixplay.xyz')) {
+      if (!/[?&]token=/.test(input.target)) return null;
       const source: StreamSource = {
-        title: voice || 'Fenix',
-        audio: voice,
-        url: target,
+        title: input.voice || 'Fenix',
+        audio: input.voice,
+        url: input.target,
         mime: 'application/x-mpegURL',
       };
       return { sources: [source] };
     }
 
-    let html: string;
-    try {
-      const res = await httpRequest<string>(target, {
-        headers: { 'User-Agent': UA, Referer: `${FENIX_EMBED_ORIGIN}/` },
-        signal: options.signal,
-        timeout: 12000,
-        responseType: 'text',
-      });
-      html = typeof res.data === 'string' ? res.data : String(res.data ?? '');
-    } catch {
-      return null;
-    }
+    const ctx = await resolveFenixContext(input, options);
+    if (!ctx) return null;
 
-    const playlist = extractJsonAssignment(html, 'window.FENIX_PLAYLIST') as FenixPlaylist | null;
-    const access = extractJsonAssignment(html, 'window.FENIX_MEDIA_ACCESS') as FenixMediaAccess | null;
-    const token = access?.token;
-    if (!playlist || !token) return null;
-
-    const episode = pickEpisode(playlist, episodeNumber);
-    if (!episode) return null;
-
-    const track = pickTrack(episode, voice);
+    const track = pickTrack(ctx.episode, ctx.voice);
     if (!track) return null;
 
     const mediaUrl = (PREFER_AVC ? track.cast_avc_url || track.hls_url : track.hls_url || track.cast_avc_url) as string | undefined;
     if (!mediaUrl) return null;
 
     const source: StreamSource = {
-      title: track.label || voice || 'Fenix',
-      audio: track.label || voice,
-      url: withToken(mediaUrl, token),
+      title: track.label || ctx.voice || 'Fenix',
+      audio: track.label || ctx.voice,
+      url: withToken(mediaUrl, ctx.token),
       mime: 'application/x-mpegURL',
-      poster: episode.thumbnail_url || playlist.poster_url,
-      subtitles: pickSubtitles(episode, track, token),
+      poster: ctx.episode.thumbnail_url || ctx.playlist.poster_url,
+      subtitles: pickSubtitles(ctx.episode, track, ctx.token),
+      // Відео в Fenix спільне для всіх озвучок — плеєр може перемикати їх нативно.
+      sharedVideo: true,
     };
 
     return { sources: [source] };

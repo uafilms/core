@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import axios from 'axios';
-import { extractVod, stripUakinoAxIntro } from '../../vods/index.js';
+import { extractVod, stripUakinoAxIntro, buildFenixMergedManifest } from '../../vods/index.js';
 import { parseMasterPlaylist, stripCorsProxy } from '../../utils/m3u8.js';
 import { logWarn, logError } from '../../utils/logger.js';
 import { m3u8PlaylistCache } from '../services/cache.js';
@@ -110,10 +110,15 @@ streamRouter.get('/subs.vtt', async (c) => {
     content = content.replace(/(\r?\n|^)(\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})/g, '$100:$2 --> $3');
     content = content.replace(/(\r?\n|^)(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}\.\d{3})/g, '$1$2 --> 00:$3');
 
-    // 2. Додаємо X-TIMESTAMP-MAP для точної синхронізації MPEGTS PTS у HLS
-    // Не додаємо штучний X-TIMESTAMP-MAP, оскільки це спричиняє розсинхрон і затримку (~1.5-3 сек)
-    // у VHS через різницю PTS аудіо/відео та LOCAL time.
-    // WebVTT таймкоди вже синхронізовані з початком потоку (0:00).
+    // 2. Прибираємо ASS-подібні escape-послідовності, які трапляються у VTT
+    //    деяких CDN (Fenix): \h — нерозривний пробіл, \N/\n — перенос рядка,
+    //    {\an8}, {\k10} — блоки override. Без цього плеєр показує "\h" як текст.
+    content = content
+      .replace(/\\h/g, ' ')
+      .replace(/\\[Nn]/g, '\n')
+      .replace(/\{[^}]*\}/g, '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n[ \t]+/g, '\n');
 
     return c.text(content, 200, {
       'Content-Type': 'text/vtt; charset=utf-8',
@@ -179,6 +184,8 @@ streamRouter.get('/master.m3u8', async (c) => {
   const rawUrl = query.url || (id && (id.startsWith('http://') || id.startsWith('https://')) ? id : undefined);
   const translation = query.translation;
   const episodeId = query.episodeId;
+  // Клієнт просить злитий майстер для CDN, де всі озвучки ділять одне відео (Fenix)
+  const mergeAudio = query.mergeAudio === '1' || query.mergeAudio === 'true';
 
   // Пряме перенаправлення для субтитрів, якщо запитано через /master.m3u8
   if (rawUrl && (rawUrl.endsWith('.vtt') || rawUrl.endsWith('.srt') || rawUrl.includes('/subtitle/') || rawUrl.includes('/hls/sub/') || rawUrl.includes('/subtitles/') || /\.(vtt|srt)\?/i.test(rawUrl))) {
@@ -306,6 +313,22 @@ streamRouter.get('/master.m3u8', async (c) => {
 
   streamUrl = stripCorsProxy(streamUrl);
 
+  // Злитий майстер (одне відео + усі озвучки як аудіогрупи) — плеєр перемикає
+  // доріжки на місці, без перезавантаження джерела.
+  let preparedManifest: string | undefined;
+  if (mergeAudio) {
+    try {
+      const merged = await buildFenixMergedManifest(c.req.url);
+      if (merged) {
+        preparedManifest = merged.manifest;
+        streamUrl = merged.baseUrl;
+        if (merged.subtitles.length > 0) extractedSubtitles = merged.subtitles;
+      }
+    } catch (err: unknown) {
+      logWarn('stream', `mergeAudio failed: ${(err as Error).message}`);
+    }
+  }
+
   // 3. Select appropriate headers based on target CDN
   const headers: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -357,7 +380,9 @@ streamRouter.get('/master.m3u8', async (c) => {
   try {
     let manifestData: string;
     const proxyOpts = proxyManager.getConfig(cdn || undefined, streamUrl);
-    try {
+    if (preparedManifest) {
+      manifestData = preparedManifest;
+    } else try {
       const res = await axios.get<string>(streamUrl, {
         headers,
         responseType: 'text',
@@ -407,10 +432,10 @@ streamRouter.get('/master.m3u8', async (c) => {
       streamUrl,
       proxyHost,
       {
-        corsProxySegments: isAshdi || isBamboo,
+        corsProxySegments: isAshdi || isBamboo || isFenix,
         // сегменти uakino.ax підписані на IP сервера, тому тягнемо їх самі;
         // Fenix (fmp4) віддає токенізовані сегменти без гарантованого CORS
-        segmentProxyBase: isUakinoAx || isFenix ? `${proxyHost}/segment?url=` : undefined,
+        segmentProxyBase: isUakinoAx ? `${proxyHost}/segment?url=` : undefined,
         subtitles: extractedSubtitles,
       }
     );

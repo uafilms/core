@@ -310,7 +310,9 @@ export async function getAnimeOnStreams(
           lazy: {
             cdn: cdnType,
             type: 'animeon',
-            id: String(ep.id),
+            // Fenix обирає трек за нашим `voice`-параметром у lazyUrl, тож id не ставимо:
+            // оркестратор з id перебудував би URL за cdn/type/id і загубив voice.
+            ...(cdnType === 'fenix' ? {} : { id: String(ep.id) }),
             url: lazyUrl,
             directUrl: `https://animeon.club/api/player/${ep.id}/episode`,
           },

@@ -117,6 +117,11 @@ export function detectCdn(raw: { lazy?: { cdn?: string; type?: string; url?: str
   if (fullText.includes('zetvideo')) {
     return { id: 'zetvideo', name: 'ZetVideo' };
   }
+  // Fenix — власний плеєр animeon.club і mikai.me (embed fenixplay.xyz, медіа media.fenixplay.xyz).
+  // Детектуємо його за URL, щоб однаковий контент різних провайдерів дедуплікувався в один cdn.
+  if (fullText.includes('fenixplay.xyz')) {
+    return { id: 'fenix', name: 'Fenix' };
+  }
 
   // Fallback to provider name if CDN cannot be determined
   const fallback = fallbackProvider.toLowerCase().trim();
