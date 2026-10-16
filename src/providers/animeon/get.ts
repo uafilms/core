@@ -9,7 +9,7 @@ import type {
 import type { ProviderGetOptions } from '../../types/provider.js';
 import { httpRequest } from '../../utils/http.js';
 import { extractSeasonFromTitle, sortSeasons, sortSources } from '../../utils/sort.js';
-import { searchAnimeOn } from './search.js';
+import { fetchAnimeOnItems, mapAnimeOnItem, searchAnimeOn } from './search.js';
 import type { AnimeOnEpisodeItem, AnimeOnTranslation } from './types.js';
 
 interface TranslationsResponse {
@@ -33,6 +33,160 @@ interface EpisodesResponse {
     episode: number;
     poster?: string;
   }>;
+}
+
+type AnimeOnTranslations = NonNullable<TranslationsResponse['translations']>;
+
+const ANIMEON_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
+  'Referer': 'https://animeon.club/',
+};
+
+/**
+ * AnimeON players without a working extractor. 'Fenix' resolves to a fenixplay.xyz
+ * embed that nothing in vods/ can decrypt, so such tasks are skipped instead of
+ * producing dead sources mislabelled as Ashdi.
+ */
+const UNSUPPORTED_PLAYERS = new Set(['fenix']);
+
+/**
+ * AnimeON translation names that do not match the dub they actually host.
+ * 'Далі буде' streams the Amanogawa dub (verified via ashdi vod ids: S1 part 1
+ * episode 1 -> ashdi.vip/vod/147293, which is the first episode of the Amanogawa
+ * playlist in the uakino.app catalog; part 2 episode 1 -> vod/147305 = episode 13).
+ */
+const TRANSLATION_ALIASES: Record<string, string> = {
+  'далі буде': 'Amanogawa',
+};
+
+const TRANSLATIONS_TTL_MS = 10 * 60 * 1000;
+const translationsCache = new Map<string, { at: number; data: AnimeOnTranslations }>();
+
+async function getAnimeOnTranslations(
+  animeId: string,
+  options?: { signal?: AbortSignal; refresh?: boolean }
+): Promise<AnimeOnTranslations> {
+  const cached = translationsCache.get(animeId);
+  if (cached && !options?.refresh && Date.now() - cached.at < TRANSLATIONS_TTL_MS) {
+    return cached.data;
+  }
+
+  const res = await httpRequest<TranslationsResponse>(
+    `https://animeon.club/api/player/${animeId}/translations`,
+    { headers: ANIMEON_HEADERS, signal: options?.signal, timeout: 8000 }
+  );
+
+  const data = res.data?.translations || [];
+  translationsCache.set(animeId, { at: Date.now(), data });
+  return data;
+}
+
+interface TitleParts {
+  base: string;
+  season: number;
+  part: number;
+}
+
+/**
+ * AnimeON splits cours into separate catalog entries, e.g.
+ * "Сім'я шпигуна" (season 1, part 1) and "Сім'я шпигуна - 1 сезон, 2 частина".
+ * Episode numbers restart at 1 in every part, so they must be translated to the
+ * absolute season numbering that TMDB (and our API) uses.
+ */
+function parseTitleParts(title: string): TitleParts {
+  const seasonMatch =
+    title.match(/(\d+)\s*-?\s*(?:й\s*)?(?:сезон|season)\b/i) ||
+    title.match(/(?:сезон|season)\s*(\d+)/i);
+  const partMatch =
+    title.match(/(\d+)\s*-?\s*(?:а\s*)?(?:частина|частину|часть|part)\b/i) ||
+    title.match(/(?:частина|частину|часть|part)\s*(\d+)/i);
+
+  const season = seasonMatch ? parseInt(seasonMatch[1], 10) : 1;
+  const part = partMatch ? parseInt(partMatch[1], 10) : 1;
+
+  const base = title
+    .replace(/[\s,–—-]*\d+\s*-?\s*(?:й\s*)?(?:сезон|season)\b/gi, '')
+    .replace(/[\s,–—-]*(?:\d+\s*-?\s*(?:а\s*)?(?:частина|частину|часть|part)|(?:частина|частину|часть|part)\s*\d+)\b/gi, '')
+    .replace(/[\s,–—:-]+$/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return { base: base || title.trim(), season, part };
+}
+
+function translationVoiceName(name: string): string {
+  return TRANSLATION_ALIASES[name.trim().toLowerCase()] || name;
+}
+
+/** Episode count of one catalog entry, from search metadata or the translations list. */
+async function animeOnEntryLength(
+  animeId: string,
+  fallback: number | null,
+  options?: { signal?: AbortSignal }
+): Promise<number | null> {
+  if (fallback && fallback > 0) return fallback;
+  try {
+    const translations = await getAnimeOnTranslations(animeId, options);
+    let max = 0;
+    for (const t of translations) {
+      for (const p of t.player || []) {
+        if (p.episodesCount && p.episodesCount > max) max = p.episodesCount;
+      }
+    }
+    return max > 0 ? max : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Picks the catalog entry (part/cour) that contains the requested absolute episode
+ * and returns the offset that must be added to AnimeON episode numbers.
+ */
+async function resolveSeasonPart(
+  current: { id: string; title: string },
+  requestedSeason: number,
+  requestedEpisode: number,
+  options?: { signal?: AbortSignal }
+): Promise<{ id: string; title: string; offset: number }> {
+  const fallback = { id: current.id, title: current.title, offset: 0 };
+  if (requestedEpisode <= 0) return fallback;
+
+  const base = parseTitleParts(current.title).base;
+  if (!base) return fallback;
+
+  const items = await fetchAnimeOnItems(base, { signal: options?.signal });
+  if (items.length === 0) return fallback;
+
+  const siblings: Array<{ id: string; title: string; part: number; length: number | null }> = [];
+  for (const item of items) {
+    const mapped = mapAnimeOnItem(item);
+    if (mapped.type === 'movie') continue;
+    const parsed = parseTitleParts(mapped.title);
+    if (parsed.season !== requestedSeason) continue;
+    siblings.push({
+      id: String(item.id),
+      title: mapped.title,
+      part: parsed.part,
+      length: item.episodes ?? item.episodesAired ?? null,
+    });
+  }
+
+  if (siblings.length <= 1) return fallback;
+
+  siblings.sort((a, b) => a.part - b.part || Number(a.id) - Number(b.id));
+
+  let offset = 0;
+  let chosen = siblings[0];
+  for (const candidate of siblings) {
+    const length = await animeOnEntryLength(candidate.id, candidate.length, options);
+    chosen = candidate;
+    if (!length || requestedEpisode <= offset + length) break;
+    offset += length;
+  }
+
+  return { id: chosen.id, title: chosen.title || current.title, offset };
 }
 
 export async function getAnimeOnStreams(
@@ -71,21 +225,30 @@ export async function getAnimeOnStreams(
     return { provider: 'animeon', type: mediaType, seasons: [], sources: [] };
   }
 
-  const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Referer': 'https://animeon.club/',
-  };
+  const headers = ANIMEON_HEADERS;
 
   try {
-    // 1. Fetch available translations and players
-    const transRes = await httpRequest<TranslationsResponse>(
-      `https://animeon.club/api/player/${animeId}/translations`,
-      { headers, signal: options?.signal, timeout: 8000 }
-    );
+    // 0. AnimeON keeps every cours as its own entry with episode numbers restarting at 1;
+    //    pick the part that contains the requested absolute episode and shift accordingly.
+    let episodeOffset = 0;
+    if (mediaType === 'tv' && options?.episode !== undefined) {
+      const requestedSeason = options.season !== undefined && options.season > 0
+        ? options.season
+        : parseTitleParts(title).season;
+      const resolved = await resolveSeasonPart(
+        { id: animeId, title },
+        requestedSeason,
+        options.episode,
+        { signal: options?.signal }
+      );
+      animeId = resolved.id;
+      title = resolved.title || title;
+      episodeOffset = resolved.offset;
+    }
 
-    const rawTranslations = transRes.data?.translations;
-    if (!rawTranslations || rawTranslations.length === 0) {
+    // 1. Fetch available translations and players
+    const rawTranslations = await getAnimeOnTranslations(animeId, { signal: options?.signal });
+    if (rawTranslations.length === 0) {
       return { provider: 'animeon', type: mediaType, seasons: [], sources: [] };
     }
 
@@ -101,6 +264,7 @@ export async function getAnimeOnStreams(
       const transName = t.translation.name;
       const transId = t.translation.id;
       for (const p of t.player || []) {
+        if (UNSUPPORTED_PLAYERS.has((p.name || '').toLowerCase())) continue;
         tasks.push({
           translationName: transName,
           translationId: transId,
@@ -121,16 +285,17 @@ export async function getAnimeOnStreams(
     );
 
     // 4. Group by episode number
-    // Map: episodeNumber -> StreamSource[]
+    // Map: episodeNumber (absolute, within the season) -> StreamSource[]
     const episodesMap = new Map<number, StreamSource[]>();
     let maxEpisode = 0;
 
     for (const res of episodeResults) {
       if (res.status !== 'fulfilled') continue;
       const { task, episodes } = res.value;
+      const voiceName = translationVoiceName(task.translationName);
 
       for (const ep of episodes) {
-        const epNum = ep.episode;
+        const epNum = ep.episode + episodeOffset;
         if (epNum > maxEpisode) maxEpisode = epNum;
 
         const playerLower = task.playerName.toLowerCase();
@@ -139,8 +304,8 @@ export async function getAnimeOnStreams(
 
         const source: StreamSource = {
           quality: '1080p',
-          title: `${task.translationName} (${task.playerName})`,
-          audio: task.translationName,
+          title: `${voiceName} (${task.playerName})`,
+          audio: voiceName,
           url: lazyUrl,
           mime: 'application/x-mpegURL',
           poster: ep.poster || undefined,

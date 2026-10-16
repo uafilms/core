@@ -548,7 +548,14 @@ export const KNOWN_STUDIOS: Record<string, StudioDefinition> = {
 export function cleanStudioName(rawAudio: string): string {
   if (!rawAudio) return 'Озвучення';
 
-  let cleaned = rawAudio.trim().replace(/&#124;/g, '|');
+  let cleaned = rawAudio
+    .trim()
+    .replace(/&#124;/g, '|')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&nbsp;/gi, ' ')
+    .trim();
 
   // Видаляємо обгортку "Ukrainian (...)"
   const ukrParen = cleaned.match(/^Ukrainian\s*\((.*)\)$/i);

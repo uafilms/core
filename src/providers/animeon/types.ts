@@ -9,6 +9,10 @@ export interface AnimeOnSearchItem {
   year?: number;
   imdbId?: string;
   season?: number;
+  episodes?: number;
+  episodesAired?: number;
+  malId?: number;
+  status?: string;
   type?: string | { id?: number; name?: string };
   image?: {
     id?: number;

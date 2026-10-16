@@ -8,7 +8,7 @@ import type {
   Episode,
 } from '../../types/media.js';
 import type { ProviderGetOptions, ProviderSearchOptions } from '../../types/provider.js';
-import { rankSearchResults, sortSeasons, sortSources } from '../../utils/sort.js';
+import { rankSearchResults, sortSeasons } from '../../utils/sort.js';
 
 const BASE_URL = 'https://uakino.best';
 const SEARCH_URL = `${BASE_URL}/engine/lazydev/dle_search/ajax.php`;
@@ -262,7 +262,7 @@ export async function getUakinoWeb(
     return {
       provider: 'uakino',
       type: 'movie',
-      sources: sortSources(sources),
+      sources,
     };
   }
 
@@ -315,7 +315,7 @@ export async function getUakinoWeb(
     for (const [epNum, sources] of epMap.entries()) {
       episodes.push({
         episode: epNum,
-        sources: sortSources(sources),
+        sources,
       });
     }
     if (episodes.length > 0) {

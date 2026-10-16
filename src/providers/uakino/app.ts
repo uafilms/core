@@ -1,6 +1,6 @@
 import type { Episode, ProviderResult, Season, SearchResult, StreamSource } from '../../types/media.js';
 import type { ProviderGetOptions, ProviderSearchOptions } from '../../types/provider.js';
-import { rankSearchResults, sortSeasons, sortSources } from '../../utils/sort.js';
+import { rankSearchResults, sortSeasons } from '../../utils/sort.js';
 import { findById, findByImdbId, searchTitles } from './db.js';
 import type { UakinoDbRow } from './types.js';
 
@@ -247,7 +247,7 @@ export async function getUakinoApp(
     for (const [epNum, sources] of epMap.entries()) {
       episodes.push({
         episode: epNum,
-        sources: sortSources(sources),
+        sources,
       });
     }
     episodes.sort((a, b) => a.episode - b.episode);

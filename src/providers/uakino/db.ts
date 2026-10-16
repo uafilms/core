@@ -110,6 +110,22 @@ function createDatabase(dbPath: string): Database.Database {
   return db;
 }
 
+const MIN_ROWS = 1000;
+
+/** Opens an existing catalog file; returns null when it is missing or too small to be useful. */
+function openExistingDb(dbPath: string): Database.Database | null {
+  if (!fs.existsSync(dbPath)) return null;
+  try {
+    const db = createDatabase(dbPath);
+    const row = db.prepare('SELECT COUNT(*) as count FROM uakino_items').get() as { count: number };
+    if (row.count > MIN_ROWS) return db;
+    db.close();
+  } catch {
+    // Corrupted or incompatible file - fall through to a fresh sync.
+  }
+  return null;
+}
+
 export async function getUakinoDb(forceSync = false): Promise<Database.Database> {
   if (dbInstance && !forceSync) {
     return dbInstance;
@@ -130,11 +146,10 @@ export async function getUakinoDb(forceSync = false): Promise<Database.Database>
     }
 
     if (isFresh) {
-      const db = createDatabase(dbPath);
-      const row = db.prepare('SELECT COUNT(*) as count FROM uakino_items').get() as { count: number };
-      if (row.count > 1000) {
-        dbInstance = db;
-        return db;
+      const fresh = openExistingDb(dbPath);
+      if (fresh) {
+        dbInstance = fresh;
+        return fresh;
       }
     }
 
@@ -145,15 +160,28 @@ export async function getUakinoDb(forceSync = false): Promise<Database.Database>
       key: certs.key,
     });
 
-    const response = await axios.get<UakinoRawItem[]>(`${API_HOST}/api/v1/filter?limit=50000`, {
-      httpsAgent,
-      headers: { 'User-Agent': 'ktor-client' },
-      timeout: 90000,
-    });
+    let items: UakinoRawItem[];
+    try {
+      const response = await axios.get<UakinoRawItem[]>(`${API_HOST}/api/v1/filter?limit=50000`, {
+        httpsAgent,
+        headers: { 'User-Agent': 'ktor-client' },
+        timeout: 90000,
+      });
 
-    const items = response.data;
-    if (!Array.isArray(items)) {
-      throw new Error('[UAKino] Failed to fetch catalog: invalid response');
+      items = response.data;
+      if (!Array.isArray(items)) {
+        throw new Error('[UAKino] Failed to fetch catalog: invalid response');
+      }
+    } catch (error) {
+      // The upstream catalog API is unavailable (403 from Cloudflare, network issues).
+      // The cached catalog is still usable, so serve it instead of failing the provider.
+      const cached = openExistingDb(dbPath);
+      if (cached) {
+        console.warn(`[UAKino] Catalog sync failed (${(error as Error).message}); using cached database`);
+        dbInstance = cached;
+        return cached;
+      }
+      throw error;
     }
 
     const db = createDatabase(dbPath);

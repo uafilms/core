@@ -128,8 +128,26 @@ export class OrchestratorService {
     const seenSubtitleUrls = new Set<string>();
     const claimedCdns = new Set<string>();
 
+    // Deterministic CDN ownership: a CDN is claimed as a whole batch (so every dub of that
+    // CDN stays together) by the first provider in `providers[]` order that delivers it.
+    // Providers run in parallel, so a provider may only claim its sources once every
+    // higher-priority provider (lower index) has finished - otherwise the winner would
+    // depend on who answered first.
+    const barrierPending = targetProviders.map((_, i) => i);
+    const CLAIM_WAIT_MS = 3000;
+    const barrierResolvers: Array<() => void> = [];
+    const barrierGates = targetProviders.map((_, i) => new Promise<void>((resolve) => {
+      barrierResolvers[i] = resolve;
+    }));
+    const markProviderSettled = (index: number) => {
+      for (let j = index + 1; j < targetProviders.length; j += 1) {
+        barrierPending[j] -= 1;
+        if (barrierPending[j] === 0) barrierResolvers[j]();
+      }
+    };
+
     // Run providers in parallel with individual error catching
-    const tasks = targetProviders.map(async (provider) => {
+    const tasks = targetProviders.map(async (provider, providerIndex) => {
       return runWithProvider(provider.name, async () => {
         try {
           const searchOptions = {
@@ -196,8 +214,8 @@ export class OrchestratorService {
             rawSources = ep?.sources || [];
           }
 
-          const providerSources: OmssSource[] = [];
-          const providerSubtitles: OmssSubtitle[] = [];
+          // Group this provider's sources per CDN so a CDN is claimed as a whole
+          const providerGroups = new Map<string, { id: string; name: string; sources: OmssSource[]; subtitles: OmssSubtitle[] }>();
 
         for (const raw of rawSources) {
           let playUrl = raw.url;
@@ -249,16 +267,6 @@ export class OrchestratorService {
 
           const cdn = detectCdn(raw, provider.name);
 
-          // First provider to obtain VOD from this CDN wins
-          if (claimedCdns.has(cdn.id)) {
-            continue;
-          }
-
-          if (seenSourceUrls.has(playUrl)) {
-            continue;
-          }
-          seenSourceUrls.add(playUrl);
-
           const rawAudioName = raw.audio || raw.title || 'Озвучення';
           const studioCleaned = cleanStudioName(rawAudioName);
           const studio = resolveStudioInfo(studioCleaned, raw.poster || undefined);
@@ -284,17 +292,14 @@ export class OrchestratorService {
             ...(platform === 'native' && reqHeaders ? { headers: reqHeaders } : {}),
           };
 
-          sources.push(sourceObj);
-          providerSources.push(sourceObj);
+          const group = providerGroups.get(cdn.id) ?? { id: cdn.id, name: cdn.name, sources: [], subtitles: [] };
+          group.sources.push(sourceObj);
+          providerGroups.set(cdn.id, group);
 
           // Subtitles
           if (raw.subtitles && raw.subtitles.length > 0) {
             for (const sub of raw.subtitles) {
               const subUrl = platform === 'web' ? `${proxyHost}/master.m3u8?url=${encodeURIComponent(sub.url)}` : sub.url;
-              if (seenSubtitleUrls.has(subUrl)) {
-                continue;
-              }
-              seenSubtitleUrls.add(subUrl);
 
               const subObj: OmssSubtitle = {
                 id: randomUUID(),
@@ -306,45 +311,75 @@ export class OrchestratorService {
                   name: cdn.name,
                 },
               };
-              subtitles.push(subObj);
-              providerSubtitles.push(subObj);
+              group.subtitles.push(subObj);
             }
           }
         }
 
-        if (providerSources.length > 0) {
-          // Mark CDNs as claimed by the winning provider
-          for (const s of providerSources) {
-            claimedCdns.add(s.provider.id);
+        if (providerGroups.size > 0) {
+          const hasUnclaimedCdn = Array.from(providerGroups.keys()).some((id) => !claimedCdns.has(id));
+
+          // Wait until every higher-priority provider has finished before claiming CDNs,
+          // so the winning provider never depends on network timing. Streaming callers get
+          // a bounded wait - holding SSE chunks behind one slow provider would defeat the
+          // point of streaming, so after CLAIM_WAIT_MS the claim is taken anyway.
+          if (hasUnclaimedCdn && barrierPending[providerIndex] > 0) {
+            if (onProviderResult) {
+              await Promise.race([
+                barrierGates[providerIndex],
+                new Promise<void>((resolve) => setTimeout(resolve, CLAIM_WAIT_MS)),
+              ]);
+            } else {
+              await barrierGates[providerIndex];
+            }
           }
 
           if (onProviderResult) {
-            // Group sources and subtitles by CDN so SSE sends per-CDN events
-            const cdnGroups = new Map<string, { id: string; name: string; sources: OmssSource[]; subtitles: OmssSubtitle[] }>();
-
-            for (const s of providerSources) {
-              const key = s.provider.id;
-              if (!cdnGroups.has(key)) {
-                cdnGroups.set(key, { id: key, name: s.provider.name, sources: [], subtitles: [] });
+            // Stream the claimed batches right away so SSE clients see them as they land
+            for (const group of providerGroups.values()) {
+              if (claimedCdns.has(group.id)) {
+                continue;
               }
-              cdnGroups.get(key)!.sources.push(s);
-            }
+              claimedCdns.add(group.id);
 
-            for (const sub of providerSubtitles) {
-              const key = sub.provider.id;
-              if (!cdnGroups.has(key)) {
-                cdnGroups.set(key, { id: key, name: sub.provider.name, sources: [], subtitles: [] });
-              }
-              cdnGroups.get(key)!.subtitles.push(sub);
-            }
+              const acceptedSources = group.sources.filter((s) => {
+                if (seenSourceUrls.has(s.url)) return false;
+                seenSourceUrls.add(s.url);
+                return true;
+              });
+              const acceptedSubtitles = group.subtitles.filter((sub) => {
+                if (seenSubtitleUrls.has(sub.url)) return false;
+                seenSubtitleUrls.add(sub.url);
+                return true;
+              });
 
-            for (const group of cdnGroups.values()) {
+              sources.push(...acceptedSources);
+              subtitles.push(...acceptedSubtitles);
+
               onProviderResult({
                 provider: group.id,
                 providerName: group.name,
-                sources: group.sources,
-                subtitles: group.subtitles,
+                sources: acceptedSources,
+                subtitles: acceptedSubtitles,
               });
+            }
+          } else {
+            for (const group of providerGroups.values()) {
+              if (claimedCdns.has(group.id)) {
+                continue;
+              }
+              claimedCdns.add(group.id);
+
+              for (const s of group.sources) {
+                if (seenSourceUrls.has(s.url)) continue;
+                seenSourceUrls.add(s.url);
+                sources.push(s);
+              }
+              for (const sub of group.subtitles) {
+                if (seenSubtitleUrls.has(sub.url)) continue;
+                seenSubtitleUrls.add(sub.url);
+                subtitles.push(sub);
+              }
             }
           }
         }
@@ -355,6 +390,8 @@ export class OrchestratorService {
           source: provider.name,
           severity: 'warning',
         });
+      } finally {
+        markProviderSettled(providerIndex);
       }
       });
     });

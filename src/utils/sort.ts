@@ -65,12 +65,7 @@ export function sortSources(sources: StreamSource[]): StreamSource[] {
  * Сортування епізодів за номером серії
  */
 export function sortEpisodes(episodes: Episode[]): Episode[] {
-  return [...episodes]
-    .sort((a, b) => a.episode - b.episode)
-    .map(ep => ({
-      ...ep,
-      sources: sortSources(ep.sources)
-    }));
+  return [...episodes].sort((a, b) => a.episode - b.episode);
 }
 
 /**
