@@ -9,6 +9,7 @@ import { moonAnimeVod } from './moonanime/main.js';
 import { bunnyVod } from './bunny/main.js';
 import { aniWorldVod } from './aniworld/main.js';
 import { zetvideoVod } from './zetvideo/main.js';
+import { fenixVod } from './fenix/main.js';
 import { uakinoAxVod } from './uakinoax/main.js';
 
 export { tortugaVod } from './tortuga/main.js';
@@ -20,6 +21,7 @@ export { frankoVod, resolveFrankoFile } from './franko/main.js';
 export { bunnyVod } from './bunny/main.js';
 export { aniWorldVod } from './aniworld/main.js';
 export { zetvideoVod } from './zetvideo/main.js';
+export { fenixVod } from './fenix/main.js';
 export { uakinoAxVod, stripUakinoAxIntro } from './uakinoax/main.js';
 export { playUakinoAx, findUakinoAxMovie, uakinoAxVoiceCdnId } from './uakinoax/api.js';
 
@@ -32,6 +34,7 @@ export const vodExtractors: VodExtractor[] = [
   bunnyVod,
   aniWorldVod,
   zetvideoVod,
+  fenixVod,
   uakinoAxVod,
 ];
 
@@ -177,6 +180,11 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
 
   if (url.includes('cdn=bunny') || url.includes('mediadelivery.net') || url.includes('b-cdn.net')) {
     const res = await runWithProvider(bunnyVod.name, () => bunnyVod.extract(url, options));
+    if (res) return res;
+  }
+
+  if (url.includes('cdn=fenix') || url.includes('fenixplay.xyz')) {
+    const res = await runWithProvider(fenixVod.name, () => fenixVod.extract(url, options));
     if (res) return res;
   }
 

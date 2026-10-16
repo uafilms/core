@@ -181,7 +181,7 @@ streamRouter.get('/master.m3u8', async (c) => {
   const episodeId = query.episodeId;
 
   // Пряме перенаправлення для субтитрів, якщо запитано через /master.m3u8
-  if (rawUrl && (rawUrl.endsWith('.vtt') || rawUrl.endsWith('.srt') || rawUrl.includes('/subtitle/') || rawUrl.includes('/hls/sub/'))) {
+  if (rawUrl && (rawUrl.endsWith('.vtt') || rawUrl.endsWith('.srt') || rawUrl.includes('/subtitle/') || rawUrl.includes('/hls/sub/') || rawUrl.includes('/subtitles/') || /\.(vtt|srt)\?/i.test(rawUrl))) {
     return c.redirect(`/subs.vtt?url=${encodeURIComponent(rawUrl)}`);
   }
 
@@ -320,6 +320,7 @@ streamRouter.get('/master.m3u8', async (c) => {
   const isTortuga = streamUrl.includes('tortuga.tw') || streamUrl.includes('tortuga.wtf') || streamUrl.includes('tortuga');
   const isZetvideo = streamUrl.includes('zetvideo.net');
   const isUakinoAx = streamUrl.includes('cdn.uakino.ax');
+  const isFenix = streamUrl.includes('fenixplay.xyz');
 
   if (isAshdi) {
     headers['Origin'] = 'https://ashdi.vip';
@@ -347,6 +348,9 @@ streamRouter.get('/master.m3u8', async (c) => {
   } else if (isZetvideo) {
     headers['Origin'] = 'https://zetvideo.net';
     headers['Referer'] = 'https://uafix.net/';
+  } else if (isFenix) {
+    headers['Referer'] = 'https://fenixplay.xyz/';
+    headers['Origin'] = 'https://fenixplay.xyz';
   }
 
   // 4. Fetch manifest and rewrite
@@ -404,8 +408,9 @@ streamRouter.get('/master.m3u8', async (c) => {
       proxyHost,
       {
         corsProxySegments: isAshdi || isBamboo,
-        // сегменти uakino.ax підписані на IP сервера, тому тягнемо їх самі
-        segmentProxyBase: isUakinoAx ? `${proxyHost}/segment?url=` : undefined,
+        // сегменти uakino.ax підписані на IP сервера, тому тягнемо їх самі;
+        // Fenix (fmp4) віддає токенізовані сегменти без гарантованого CORS
+        segmentProxyBase: isUakinoAx || isFenix ? `${proxyHost}/segment?url=` : undefined,
         subtitles: extractedSubtitles,
       }
     );

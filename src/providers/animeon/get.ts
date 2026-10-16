@@ -44,13 +44,6 @@ const ANIMEON_HEADERS = {
 };
 
 /**
- * AnimeON players without a working extractor. 'Fenix' resolves to a fenixplay.xyz
- * embed that nothing in vods/ can decrypt, so such tasks are skipped instead of
- * producing dead sources mislabelled as Ashdi.
- */
-const UNSUPPORTED_PLAYERS = new Set(['fenix']);
-
-/**
  * AnimeON translation names that do not match the dub they actually host.
  * 'Далі буде' streams the Amanogawa dub (verified via ashdi vod ids: S1 part 1
  * episode 1 -> ashdi.vip/vod/147293, which is the first episode of the Amanogawa
@@ -264,7 +257,6 @@ export async function getAnimeOnStreams(
       const transName = t.translation.name;
       const transId = t.translation.id;
       for (const p of t.player || []) {
-        if (UNSUPPORTED_PLAYERS.has((p.name || '').toLowerCase())) continue;
         tasks.push({
           translationName: transName,
           translationId: transId,
@@ -299,8 +291,10 @@ export async function getAnimeOnStreams(
         if (epNum > maxEpisode) maxEpisode = epNum;
 
         const playerLower = task.playerName.toLowerCase();
-        const cdnType = playerLower === 'moon' ? 'moonanime' : 'ashdi';
-        const lazyUrl = `/master.m3u8?cdn=${cdnType}&type=animeon&id=${ep.id}`;
+        const cdnType = playerLower === 'moon' ? 'moonanime' : playerLower === 'fenix' ? 'fenix' : 'ashdi';
+        // Fenix віддає один embed на серіал із треками на кожну озвучку — голос треба передати явно.
+        const voiceQuery = cdnType === 'fenix' ? `&voice=${encodeURIComponent(voiceName)}` : '';
+        const lazyUrl = `/master.m3u8?cdn=${cdnType}&type=animeon&id=${ep.id}${voiceQuery}`;
 
         const source: StreamSource = {
           quality: '1080p',

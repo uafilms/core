@@ -149,6 +149,43 @@ export function parseMasterPlaylist(
         newLines.push(trimmed);
         nextIsSegmentUrl = true;
         nextIsStreamUrl = false;
+      } else if (trimmed.startsWith('#EXT-X-MEDIA')) {
+        // URI атрибут резолвиться відносно URL плейлиста, а наш плейлист віддається
+        // з власного хоста — тому відносні URI (як-от аудіо-дорожки Fenix) треба
+        // переписати на проксі, інакше плеєр стукає в наш /anime/...
+        const mediaUriMatch = trimmed.match(/URI="([^"]+)"/i);
+        if (mediaUriMatch && !mediaUriMatch[1].startsWith(`${proxyHost}/`)) {
+          try {
+            const mediaUrl = new URL(mediaUriMatch[1], cleanBaseUrl).href;
+            const rewritten = /\.(vtt|srt)(\?|$)/i.test(mediaUrl)
+              ? `${proxyHost}/subs.m3u8?url=${encodeURIComponent(mediaUrl)}`
+              : `${proxyHost}/master.m3u8?url=${encodeURIComponent(mediaUrl)}`;
+            newLines.push(trimmed.replace(mediaUriMatch[1], rewritten));
+          } catch {
+            newLines.push(trimmed);
+          }
+        } else {
+          newLines.push(trimmed);
+        }
+      } else if (trimmed.startsWith('#EXT-X-MAP')) {
+        // fmp4 init-сегмент (наприклад Fenix): URI теж мусить іти через наш проксі,
+        // інакше браузер тягне його прямо з чужого origin без CORS.
+        const mapUriMatch = trimmed.match(/URI="([^"]+)"/i);
+        if (mapUriMatch) {
+          try {
+            const mapUrl = new URL(mapUriMatch[1], cleanBaseUrl).href;
+            const rewritten = segmentProxyBase
+              ? `${segmentProxyBase}${encodeURIComponent(mapUrl)}`
+              : corsProxySegments
+                ? `${CORS_PROXY}${mapUrl}`
+                : mapUrl;
+            newLines.push(trimmed.replace(mapUriMatch[1], rewritten));
+          } catch {
+            newLines.push(trimmed);
+          }
+        } else {
+          newLines.push(trimmed);
+        }
       } else {
         newLines.push(trimmed);
       }

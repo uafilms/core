@@ -17,6 +17,7 @@ const CDN_DISPLAY_NAMES: Record<string, string> = {
   bunnycdn: 'BunnyCDN',
   aniworld: 'AniWorld',
   zetvideo: 'ZetVideo',
+  fenix: 'Fenix',
   'uakino-ax': 'UaKinoAX',
 };
 
