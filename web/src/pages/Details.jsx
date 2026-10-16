@@ -58,6 +58,23 @@ const Details = () => {
   // Preferred provider & voice preferences for seamless episode switching
   const selectedCdnRef = useRef(localStorage.getItem('uafilms_pref_provider') || null);
   const selectedVoiceRef = useRef(localStorage.getItem('uafilms_pref_voice') || null);
+  // Якщо користувач сам перемкнув джерело — авто-підбір більше його не чіпає
+  const userPickedSourceRef = useRef(false);
+  // Голос, який просить перемкнути користувач, коли відео спільне (Fenix)
+  const [desiredAudioLabel, setDesiredAudioLabel] = useState(null);
+  // Скільки нативних доріжок у плеєра — якщо >1, голос перемикаємо без reload
+  const nativeAudioCountRef = useRef(0);
+
+  // Чи це те саме відео, лише інша озвучка (Fenix: cdn/type/id ті самі, voice різний)
+  const sharedVideoKey = (source) => {
+    if (!source?.url) return null;
+    try {
+      const parsed = new URL(source.url, window.location.origin);
+      return [parsed.searchParams.get('cdn'), parsed.searchParams.get('type'), parsed.searchParams.get('id')].join('|');
+    } catch {
+      return null;
+    }
+  };
 
   const savePreferences = (providerId, voiceName) => {
     if (providerId) {
@@ -79,6 +96,18 @@ const Details = () => {
     ).trim();
   };
 
+  // Наскільки джерело відповідає збереженим преференціям: 2 — і провайдер, і
+  // голос, 1 — щось одне, 0 — нічого.
+  const sourcePreferenceScore = (src) => {
+    if (!src) return -1;
+    const prefProvider = selectedCdnRef.current;
+    const prefVoice = selectedVoiceRef.current?.toLowerCase();
+    let score = 0;
+    if (prefProvider && src?.provider?.id === prefProvider) score += 1;
+    if (prefVoice && getSourceVoice(src).toLowerCase() === prefVoice) score += 1;
+    return score;
+  };
+
   const findBestSource = useCallback((candidateSources) => {
     if (!candidateSources || candidateSources.length === 0) return null;
 
@@ -93,7 +122,14 @@ const Details = () => {
       if (match) return match;
     }
 
-    // Level 2: exact voice in any provider
+    // Level 2: exact provider (any voice) — провайдер важливіший за голос,
+    // інакше ashdi-чанк, що приходить першим, перебиває вибір користувача
+    if (prefProvider) {
+      const match = candidateSources.find((s) => s?.provider?.id === prefProvider);
+      if (match) return match;
+    }
+
+    // Level 3: exact voice in any provider
     if (prefVoice) {
       const match = candidateSources.find(
         (s) => getSourceVoice(s).toLowerCase() === prefVoice
@@ -101,15 +137,19 @@ const Details = () => {
       if (match) return match;
     }
 
-    // Level 3: exact provider (first available track)
-    if (prefProvider) {
-      const match = candidateSources.find((s) => s?.provider?.id === prefProvider);
-      if (match) return match;
-    }
-
     // Level 4: fallback to first source
     return candidateSources[0];
   }, []);
+
+  // Апгрейд до кращого джерела, коли черговий SSE-чанк приніс бажаний
+  // провайдер/голос. Ручний вибір користувача не чіпаємо.
+  const preferBetterSource = (current, candidate) => {
+    if (!candidate) return current;
+    if (!current) return candidate;
+    if (userPickedSourceRef.current) return current;
+    if (current.id === candidate.id || current.url === candidate.url) return current;
+    return sourcePreferenceScore(candidate) > sourcePreferenceScore(current) ? candidate : current;
+  };
 
   // Calculate available seasons and episodes dynamically
   const availableSeasons = useMemo(() => {
@@ -262,6 +302,7 @@ const Details = () => {
     setLoadingSources(true);
     setSources([]);
     setSelectedSource(null);
+    userPickedSourceRef.current = false;
 
     const targetId = data.imdbId || id;
     const subpath = type === 'movie'
@@ -307,11 +348,9 @@ const Details = () => {
                 const newSources = chunk.sources.filter((s) => !existingIds.has(s.id || s.url));
                 const updated = sortWithAshdiFirst([...prev, ...newSources]);
 
-                // Auto-select preferred source/voice if nothing selected yet or upgrade
-                setSelectedSource((cur) => {
-                  if (cur) return cur;
-                  return findBestSource(updated) || updated[0];
-                });
+                // Auto-select preferred source/voice, allowing later upgrade to it
+                const best = findBestSource(updated) || updated[0];
+                setSelectedSource((cur) => preferBetterSource(cur, best));
                 return updated;
               });
             }
@@ -343,7 +382,8 @@ const Details = () => {
             const list = sortWithAshdiFirst(res.data?.sources || []);
             setSources(list);
             if (list.length > 0) {
-              setSelectedSource((cur) => cur || findBestSource(list) || list[0]);
+              const best = findBestSource(list) || list[0];
+              setSelectedSource((cur) => preferBetterSource(cur, best));
             }
           })
           .finally(() => {
@@ -595,15 +635,42 @@ const Details = () => {
           {selectedSource ? (
             <VideoPlayer
               key={type === 'tv' ? `${data?.id || id}_s${season}_e${episode}` : `${data?.id || id}`}
-              src={selectedSource.url}
+              src={
+                selectedSource.sharedVideo
+                  ? `${selectedSource.url}${selectedSource.url.includes('?') ? '&' : '?'}mergeAudio=1`
+                  : selectedSource.url
+              }
               type={selectedSource.type || 'application/x-mpegURL'}
               poster={playerPoster || data?.posterUrl || data?.backdropUrl || ''}
               title={data?.title || initialMovie?.title || initialMovie?.name || ''}
               sources={sources}
               selectedSource={selectedSource}
               onSourceChange={(src) => {
+                userPickedSourceRef.current = true;
+                const label = getSourceVoice(src);
+                // Спільне відео (Fenix): лише перемикаємо доріжку — плеєр не перезавантажується
+                const sameVideo =
+                  src?.sharedVideo &&
+                  selectedSource?.sharedVideo &&
+                  sharedVideoKey(src) &&
+                  sharedVideoKey(src) === sharedVideoKey(selectedSource);
+                if (sameVideo && nativeAudioCountRef.current > 1) {
+                  savePreferences(src?.provider?.id, label);
+                  setDesiredAudioLabel(label);
+                  return;
+                }
+                setDesiredAudioLabel(null);
                 setSelectedSource(src);
-                savePreferences(src?.provider?.id, getSourceVoice(src));
+                savePreferences(src?.provider?.id, label);
+              }}
+              desiredAudioLabel={desiredAudioLabel}
+              onNativeAudioTracksChange={(count) => {
+                nativeAudioCountRef.current = count;
+              }}
+              onAudioTrackChange={(label) => {
+                // Нативне перемикання доріжки в межах одного джерела (Fenix):
+                // запам'ятовуємо голос, щоб наступна серія відкрилась із ним.
+                savePreferences(selectedSource?.provider?.id, label);
               }}
               autoPlay={autoPlayNext}
               hasNextEpisode={Boolean(nextEpisodeInfo)}

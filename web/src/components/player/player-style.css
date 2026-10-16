@@ -235,6 +235,22 @@
   pointer-events: auto;
 }
 
+/* === SUBTITLES === */
+/* Панель керування (16px знизу + 54px висоти) перекриває субтитри, тож коли
+   вона видима — піднімаємо доріжку над нею. Коли панель зникає, субтитри
+   повертаються вниз, але не одразу, а після того як вона повністю згасне
+   (transition-delay = тривалість fade-out панелі). */
+.video-js .vjs-text-track-display {
+  bottom: 30px !important;
+  transition: bottom 0.3s cubic-bezier(0.2, 0, 0, 1) 0.3s;
+}
+
+.video-js.vjs-user-active .vjs-text-track-display,
+.video-js.vjs-paused.vjs-has-started .vjs-text-track-display {
+  bottom: 86px !important;
+  transition: bottom 0.22s cubic-bezier(0.2, 0, 0, 1) 0s;
+}
+
 /* Control buttons inside bar */
 .video-js .vjs-control-bar .vjs-button {
   width: 40px !important;

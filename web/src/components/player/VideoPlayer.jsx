@@ -8,6 +8,38 @@ import 'videojs-mobile-ui/dist/videojs-mobile-ui.css';
 import './player-style.css';
 import { saveWatchProgress, removeWatchProgress, getLocalWatchProgress, flushWatchProgress } from '../../utils/sync.js';
 
+// Родини кодеків для перемикача "Кодек". Деякі CDN (напр. Fenix) віддають в одному
+// мастері і H.264, і HEVC — тоді має сенс дати вибір, в інших випадках вкладка не показується.
+// Порядок = пріоритет Auto-вибору: кращий стиск/менше трафіку — вище.
+const CODEC_FAMILIES = [
+  { id: 'av01', label: 'AV1', pattern: /^av01/i },
+  { id: 'vp09', label: 'VP9', pattern: /^vp09/i },
+  { id: 'hevc', label: 'HEVC', pattern: /^(hvc1|hev1)/i },
+  { id: 'avc', label: 'H.264', pattern: /^(avc1|avc3)/i },
+];
+
+const codecPriorityOf = (id) => {
+  const index = CODEC_FAMILIES.findIndex((family) => family.id === id);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+};
+
+const codecFamilyOf = (codecs) => {
+  if (!codecs || typeof codecs !== 'string') return null;
+  const parts = codecs.split(',').map((part) => part.trim()).filter(Boolean);
+  return CODEC_FAMILIES.find((family) => parts.some((part) => family.pattern.test(part))) || null;
+};
+
+const isCodecSupported = (codecs) => {
+  if (!codecs || typeof MediaSource === 'undefined' || typeof MediaSource.isTypeSupported !== 'function') {
+    return true;
+  }
+  try {
+    return MediaSource.isTypeSupported(`video/mp4; codecs="${codecs}"`);
+  } catch {
+    return true;
+  }
+};
+
 export default function VideoPlayer({
   src,
   type = 'application/x-mpegURL',
@@ -17,6 +49,13 @@ export default function VideoPlayer({
   sources = [],
   selectedSource = null,
   onSourceChange = null,
+  onAudioTrackChange = null,
+  // Голос, який треба увімкнути нативно (Fenix: одне відео, кілька доріжок).
+  // Не змінює джерело, тож плеєр не перезавантажується.
+  desiredAudioLabel = null,
+  // Скільки нативних доріжок зараз у плеєрі — батько вирішує, чи можна
+  // перемикати голос без зміни джерела.
+  onNativeAudioTracksChange = null,
   autoPlay = false,
   hasNextEpisode = false,
   nextEpisodeLabel = '',
@@ -41,13 +80,21 @@ export default function VideoPlayer({
   hasNextEpisodeRef.current = hasNextEpisode;
   onNextEpisodeRef.current = onNextEpisode;
 
-  const [activeMenu, setActiveMenu] = useState(null); // null | 'main' | 'quality' | 'audio' | 'speed' | 'subs'
+  const [activeMenu, setActiveMenu] = useState(null); // null | 'main' | 'quality' | 'codec' | 'audio' | 'speed' | 'subs'
   const activeMenuRef = useRef(null);
   const [renderedMenu, setRenderedMenu] = useState(null);
+  const renderedMenuRef = useRef(null);
   const [isClosing, setIsClosing] = useState(false);
   const [navDirection, setNavDirection] = useState('forward'); // 'forward' | 'back'
   const [qualities, setQualities] = useState([]);
   const [selectedQuality, setSelectedQuality] = useState(-1); // -1 = Auto
+  // Нативні аудіодоріжки джерела (напр. Fenix: одне відео + кілька озвучок)
+  const [nativeAudioTracks, setNativeAudioTracks] = useState([]);
+  const [codecOptions, setCodecOptions] = useState([]); // [{ id, label, maxHeight, supported }]
+  const [selectedCodec, setSelectedCodec] = useState(null); // null = Auto (найкращий підтримуваний)
+  const [autoCodec, setAutoCodec] = useState(null); // id родини, яку Auto обрав за пріоритетом
+  const selectedCodecRef = useRef(null);
+  const selectedQualityRef = useRef(-1);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [textTracksList, setTextTracksList] = useState([]);
   const [selectedTrackIndex, setSelectedTrackIndex] = useState(-1); // -1 = Off
@@ -56,6 +103,8 @@ export default function VideoPlayer({
   const openTimeRef = useRef(0);
   const sourcesRef = useRef(sources);
   const selectedSourceRef = useRef(selectedSource);
+  selectedCodecRef.current = selectedCodec;
+  selectedQualityRef.current = selectedQuality;
   const onSourceChangeRef = useRef(onSourceChange);
   const metaRef = useRef({ title, poster, mediaType, tmdbId, season, episode });
 
@@ -350,6 +399,7 @@ export default function VideoPlayer({
       controls: true,
       fill: true,
       fluid: false,
+      inactivityTimeout: 1500,
       playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
       poster: poster || undefined,
       controlBar: {
@@ -393,6 +443,35 @@ export default function VideoPlayer({
       player.src({ src, type: mimeType });
     }
 
+    // Джерела, де всі озвучки ділять одне відео (Fenix/mergeAudio), приходять
+    // одним майстром із кількома аудіогрупами — перемикаємо доріжки нативно.
+    const syncNativeAudioTracks = () => {
+      try {
+        const list = player.audioTracks?.();
+        if (!list) return;
+        const tracks = [];
+        for (let i = 0; i < list.length; i++) {
+          const track = list[i];
+          tracks.push({
+            label: track.label || track.language || `Доріжка ${i + 1}`,
+            language: track.language || '',
+            enabled: track.enabled !== false,
+          });
+        }
+        setNativeAudioTracks(tracks);
+      } catch {
+        // audioTracks недоступні — лишаємось на перемиканні джерел
+      }
+    };
+
+    player.on('loadedmetadata', syncNativeAudioTracks);
+    player.on('loadedplaylist', syncNativeAudioTracks);
+    const audioTrackList = player.audioTracks?.();
+    if (audioTrackList?.addEventListener) {
+      audioTrackList.addEventListener('addtrack', syncNativeAudioTracks);
+      audioTrackList.addEventListener('change', syncNativeAudioTracks);
+    }
+
     // Attach Hotkeys
     if (typeof player.hotkeys === 'function') {
       player.hotkeys({
@@ -409,6 +488,15 @@ export default function VideoPlayer({
         fullscreen: { enterOnRotate: true, lockOnRotate: true },
       });
     }
+
+    // Курсор пішов з плеєра — ховаємо панель одразу, не чекаючи inactivityTimeout.
+    // Поки відкрите меню налаштувань, панель не чіпаємо (нею керує окремий ефект).
+    const playerEl = player.el();
+    const onPlayerMouseLeave = () => {
+      if (renderedMenuRef.current) return;
+      if (!player.paused()) player.userActive(false);
+    };
+    playerEl?.addEventListener('mouseleave', onPlayerMouseLeave);
 
     // Patch VHS VTTSegmentLoader time mapping: prevent negative PTS offset from causing cues to rush ahead
     const patchVttTimeMapping = () => {
@@ -528,8 +616,10 @@ export default function VideoPlayer({
       const updateQl = () => {
         const seen = new Set();
         const list = [];
+        const families = new Map();
         for (let i = 0; i < ql.length; i++) {
           const level = ql[i];
+          const levelCodecs = level.playlist?.attributes?.CODECS || '';
           const rawHeight = level.height || (level.playlist?.attributes?.RESOLUTION?.height) || 0;
           const height = rawHeight > 0 ? snapHeight(rawHeight) : 0;
           const label = height > 0 ? `${height}p` : `Рівень ${i + 1}`;
@@ -537,9 +627,46 @@ export default function VideoPlayer({
             seen.add(label);
             list.push({ index: i, height, label, bitrate: level.bitrate });
           }
+
+          const family = codecFamilyOf(levelCodecs);
+          if (family) {
+            const prev = families.get(family.id) || {
+              id: family.id,
+              label: family.label,
+              maxHeight: 0,
+              supported: false,
+            };
+            if (height > prev.maxHeight) prev.maxHeight = height;
+            prev.supported = prev.supported || isCodecSupported(levelCodecs);
+            families.set(family.id, prev);
+          }
         }
         list.sort((a, b) => b.height - a.height);
         setQualities(list);
+
+        const options = Array.from(families.values());
+        options.sort((a, b) => codecPriorityOf(a.id) - codecPriorityOf(b.id));
+        // Вкладку "Кодек" показуємо лише коли джерело справді має кілька кодеків
+        setCodecOptions(options.length > 1 ? options : []);
+
+        // Auto віддає перевагу найкращому підтримуваному кодеку (AV1 > VP9 > HEVC > H.264)
+        const preferred = options.find((option) => option.supported) || null;
+        setAutoCodec(preferred ? preferred.id : null);
+
+        // Якщо кодеків кілька — лишаємо увімкненими лише рівні обраного кодеку
+        // (явний вибір або Auto), щоб автіякість не стрибала на гірший/недоступний кодек
+        if (options.length > 1 && selectedQualityRef.current === -1) {
+          const activeCodec = selectedCodecRef.current || (preferred ? preferred.id : null);
+          for (let i = 0; i < ql.length; i++) {
+            const levelCodecs = ql[i].playlist?.attributes?.CODECS || '';
+            const levelFamily = codecFamilyOf(levelCodecs);
+            if (activeCodec) {
+              ql[i].enabled = !!levelFamily && levelFamily.id === activeCodec;
+            } else {
+              ql[i].enabled = true;
+            }
+          }
+        }
       };
 
       ql.on('addqualitylevel', updateQl);
@@ -742,7 +869,16 @@ export default function VideoPlayer({
 
       if (shouldResumePlayRef.current) {
         shouldResumePlayRef.current = false;
-        player.play().catch(() => {});
+        const startPlayback = () => {
+          const promise = player.play();
+          if (promise && typeof promise.catch === 'function') {
+            promise.catch(() => {
+              // Браузер міг відмовити до готовності даних — пробуємо ще раз
+              player.one('canplay', () => player.play().catch(() => {}));
+            });
+          }
+        };
+        startPlayback();
       }
     };
 
@@ -832,6 +968,7 @@ export default function VideoPlayer({
       if (closeSkipTimeoutRef.current) clearTimeout(closeSkipTimeoutRef.current);
       if (skipNoticeTimeoutRef.current) clearTimeout(skipNoticeTimeoutRef.current);
       if (nextCountdownTimerRef.current) clearInterval(nextCountdownTimerRef.current);
+      playerEl?.removeEventListener('mouseleave', onPlayerMouseLeave);
       saveProgress(true);
       flushWatchProgress();
       setPlayerContainerEl(null);
@@ -902,6 +1039,11 @@ export default function VideoPlayer({
     };
   }, []);
 
+  // Актуальний стан меню для обробників поза React (mouseleave плеєра)
+  useEffect(() => {
+    renderedMenuRef.current = renderedMenu;
+  }, [renderedMenu]);
+
   // Keep controls and player active while settings menu is open
   useEffect(() => {
     if (!renderedMenu || !playerRef.current) return;
@@ -919,11 +1061,18 @@ export default function VideoPlayer({
     const player = playerRef.current;
     if (!player || !src) return;
 
+    // Джерело змінилось — старі нативні доріжки вже неактуальні
+    setNativeAudioTracks([]);
+
     // Preserve playback position and playing state across src changes
     const curTime = player.currentTime();
+    const wasPlaying = !player.paused();
     if (typeof curTime === 'number' && curTime > 0) {
       restoreTimeRef.current = curTime;
       shouldResumePlayRef.current = !player.paused();
+    } else if (wasPlaying) {
+      // Навіть без таймстампа не даємо плеєру стати на паузу після зміни джерела
+      shouldResumePlayRef.current = true;
     }
 
     const mimeType = (type === 'hls' || src.includes('.m3u8') || src.includes('/master.m3u8'))
@@ -935,10 +1084,41 @@ export default function VideoPlayer({
       type: mimeType,
     });
 
+    // VHS сам почне відтворення, щойно джерело буде готове — без ручного Play
+    player.autoplay(wasPlaying ? 'any' : false);
+
     if (poster) {
       player.poster(poster);
     }
   }, [src, type, poster]);
+
+  // Повідомляємо батька, скільки нативних доріжок має поточне джерело
+  useEffect(() => {
+    if (onNativeAudioTracksChange) {
+      onNativeAudioTracksChange(nativeAudioTracks.length);
+    }
+  }, [nativeAudioTracks.length, onNativeAudioTracksChange]);
+
+  // Батько попросив увімкнути конкретний голос — робимо це нативно, без reload
+  useEffect(() => {
+    if (!desiredAudioLabel) return;
+    const player = playerRef.current;
+    const list = player?.audioTracks?.();
+    if (!list || list.length < 2) return;
+
+    const normalize = (value) => (value || '').trim().toLowerCase();
+    const wanted = normalize(desiredAudioLabel);
+
+    for (let i = 0; i < list.length; i++) {
+      if (normalize(list[i].label) !== wanted || list[i].enabled) continue;
+
+      for (let j = 0; j < list.length; j++) {
+        list[j].enabled = j === i;
+      }
+      setNativeAudioTracks((prev) => prev.map((track, index) => ({ ...track, enabled: index === i })));
+      break;
+    }
+  }, [desiredAudioLabel, nativeAudioTracks]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -952,17 +1132,54 @@ export default function VideoPlayer({
     const player = playerRef.current;
     if (!player || !player.qualityLevels) return;
     const ql = player.qualityLevels();
+    const preferred = selectedCodec || autoCodec;
+    const enableForCodec = (level) => {
+      const levelFamily = codecFamilyOf(level.playlist?.attributes?.CODECS || '');
+      if (preferred) return !!levelFamily && levelFamily.id === preferred;
+      return true;
+    };
 
     if (targetIndex === -1) {
       for (let i = 0; i < ql.length; i++) {
-        ql[i].enabled = true;
+        ql[i].enabled = enableForCodec(ql[i]);
       }
     } else {
       for (let i = 0; i < ql.length; i++) {
         ql[i].enabled = i === targetIndex;
       }
+      // Обрана якість з іншого кодека — знімаємо фільтр, щоб не суперечити вибору
+      if (selectedCodec) {
+        const levelFamily = codecFamilyOf(ql[targetIndex]?.playlist?.attributes?.CODECS || '');
+        if (!levelFamily || levelFamily.id !== selectedCodec) {
+          setSelectedCodec(null);
+        }
+      }
     }
     setSelectedQuality(targetIndex);
+    closeMenu();
+  };
+
+  // Handle Codec selection: Auto — найкращий підтримуваний за пріоритетом, інакше лише обрана родина
+  const applyCodec = (option) => {
+    const player = playerRef.current;
+    if (!player || !player.qualityLevels) return;
+    const ql = player.qualityLevels();
+    const target = option?.id || null;
+    const preferred = target || autoCodec;
+
+    for (let i = 0; i < ql.length; i++) {
+      const levelFamily = codecFamilyOf(ql[i].playlist?.attributes?.CODECS || '');
+      if (preferred) {
+        ql[i].enabled = !!levelFamily && levelFamily.id === preferred;
+      } else {
+        ql[i].enabled = true;
+      }
+    }
+
+    if (target && selectedQuality !== -1) {
+      setSelectedQuality(-1); // Auto-якість усередині обраного кодека
+    }
+    setSelectedCodec(target);
     closeMenu();
   };
 
@@ -991,6 +1208,26 @@ export default function VideoPlayer({
     }
     closeMenu();
   };
+
+  // Перемикання нативної аудіодоріжки без перезавантаження джерела
+  const selectNativeAudioTrack = (index, { silent = false } = {}) => {
+    const player = playerRef.current;
+    const list = player?.audioTracks?.();
+    if (!list) return;
+
+    for (let i = 0; i < list.length; i++) {
+      list[i].enabled = i === index;
+    }
+    setNativeAudioTracks((prev) => prev.map((track, i) => ({ ...track, enabled: i === index })));
+
+    const label = list[index]?.label || list[index]?.language;
+    if (label && onAudioTrackChange) {
+      onAudioTrackChange(label);
+    }
+    if (!silent) closeMenu();
+  };
+
+  const activeNativeAudioLabel = nativeAudioTracks.find((track) => track.enabled)?.label || null;
 
   // Підрахунок доступних озвучок для поточного провайдера
   const currentProviderId = selectedSource?.provider?.id;
@@ -1197,7 +1434,23 @@ export default function VideoPlayer({
                 </div>
               </div>
 
-              {uniqueAudioCount > 1 && (
+              {codecOptions.length > 1 && (
+                <div className="vjs-settings-item" onClick={() => switchMenu('codec', 'forward')}>
+                  <div className="vjs-settings-label">
+                    <i className="material-symbols-rounded">memory</i>
+                    <span>Кодек</span>
+                  </div>
+                  <div className="vjs-settings-val">
+                    {selectedCodec
+                      ? codecOptions.find((option) => option.id === selectedCodec)?.label || 'Auto'
+                      : autoCodec
+                        ? `Auto · ${codecOptions.find((option) => option.id === autoCodec)?.label || ''}`.trim()
+                        : 'Auto'}
+                  </div>
+                </div>
+              )}
+
+              {(uniqueAudioCount > 1 || nativeAudioTracks.length > 1) && (
                 <div className="vjs-settings-item" onClick={() => switchMenu('audio', 'forward')}>
                   <div className="vjs-settings-label">
                     <i className="material-symbols-rounded">mic</i>
@@ -1213,7 +1466,7 @@ export default function VideoPlayer({
                       />
                     )}
                     <span style={{ maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {selectedSource?.studio?.name || selectedSource?.audioTracks?.[0] || 'За замовчуванням'}
+                      {activeNativeAudioLabel || selectedSource?.studio?.name || selectedSource?.audioTracks?.[0] || 'За замовчуванням'}
                     </span>
                   </div>
                 </div>
@@ -1250,7 +1503,24 @@ export default function VideoPlayer({
                 <span>Озвучка</span>
               </div>
               <div className="vjs-submenu-scroll">
-                {(() => {
+                {nativeAudioTracks.length > 1 ? (
+                  nativeAudioTracks.map((track, trackIndex) => (
+                    <div
+                      key={`${track.label}-${trackIndex}`}
+                      className={`vjs-submenu-option vjs-audio-option ${track.enabled ? 'selected' : ''}`}
+                      onClick={() => selectNativeAudioTrack(trackIndex)}
+                    >
+                      <div className="vjs-audio-text-group">
+                        <span className="vjs-audio-title">{track.label}</span>
+                        {track.language && (
+                          <span className="vjs-audio-sub">
+                            <span className="vjs-audio-badge">{track.language.toUpperCase()}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (() => {
                   const currentProviderId = selectedSource?.provider?.id;
                   const allSources = sources && sources.length > 0 ? sources : [selectedSource].filter(Boolean);
                   // Filter sources strictly to the currently selected provider/CDN
@@ -1283,6 +1553,16 @@ export default function VideoPlayer({
                         key={srcOption.id || srcOption.url}
                         className={`vjs-submenu-option vjs-audio-option ${isSelected ? 'selected' : ''}`}
                         onClick={() => {
+                          // Fenix: одне відео + кілька доріжок — перемикаємо нативно,
+                          // без перезавантаження джерела (лише якщо доріжка вже доступна)
+                          const voiceLabel = (srcOption.studio?.name || srcOption.audioTracks?.[0] || '').trim().toLowerCase();
+                          const nativeIndex = nativeAudioTracks.findIndex(
+                            (track) => (track.label || '').trim().toLowerCase() === voiceLabel
+                          );
+                          if (srcOption.sharedVideo && nativeAudioTracks.length > 1 && nativeIndex >= 0) {
+                            selectNativeAudioTrack(nativeIndex);
+                            return;
+                          }
                           if (onSourceChange) {
                             onSourceChange(srcOption);
                           }
@@ -1362,6 +1642,37 @@ export default function VideoPlayer({
                     onClick={() => setQuality(q.index)}
                   >
                     {q.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {renderedMenu === 'codec' && (
+            <div className={`vjs-menu-page ${navDirection === 'back' ? 'vjs-page-back' : ''}`}>
+              <div className="vjs-submenu-header" onClick={() => switchMenu('main', 'back')}>
+                <i className="material-symbols-rounded">arrow_back</i>
+                <span>Кодек відео</span>
+              </div>
+              <div className="vjs-submenu-scroll">
+                <div
+                  className={`vjs-submenu-option ${selectedCodec === null ? 'selected' : ''}`}
+                  onClick={() => applyCodec(null)}
+                >
+                  {autoCodec
+                    ? `Auto · ${codecOptions.find((option) => option.id === autoCodec)?.label || ''}`.trim()
+                    : 'Auto'}
+                </div>
+                {codecOptions.map((option) => (
+                  <div
+                    key={option.id}
+                    className={`vjs-submenu-option ${selectedCodec === option.id ? 'selected' : ''}`}
+                    style={option.supported ? undefined : { opacity: 0.45, pointerEvents: 'none' }}
+                    onClick={() => option.supported && applyCodec(option)}
+                  >
+                    {option.label}
+                    {option.maxHeight > 0 ? ` · ${option.maxHeight}p` : ''}
+                    {option.supported ? '' : ' (не підтримується)'}
                   </div>
                 ))}
               </div>
