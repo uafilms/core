@@ -6,6 +6,7 @@ export { EneyidaProvider, eneyidaProvider } from './eneyida/main.js';
 export { WormholeProvider, wormholeProvider } from './wormhole/main.js';
 export { BambooUaProvider, bambooUaProvider } from './bambooua/main.js';
 export { AnimeOnProvider, animeOnProvider } from './animeon/main.js';
+export { AniHubProvider, anihubProvider, anihub } from './anihub/main.js';
 export { FrankoProvider, frankoProvider } from './franko/main.js';
 export { AniWorldProvider, aniWorldProvider } from './aniworld/main.js';
 export { UaflixProvider, uaflixProvider } from './uaflix/main.js';
@@ -20,6 +21,7 @@ import { eneyidaProvider } from './eneyida/main.js';
 import { wormholeProvider } from './wormhole/main.js';
 import { bambooUaProvider } from './bambooua/main.js';
 import { animeOnProvider } from './animeon/main.js';
+import { anihubProvider } from './anihub/main.js';
 import { aniWorldProvider } from './aniworld/main.js';
 import { uaflixProvider } from './uaflix/main.js';
 import { mikaiProvider } from './mikai/main.js';
@@ -34,6 +36,9 @@ export const providers: Provider[] = [
   eneyidaProvider,
   wormholeProvider,
   bambooUaProvider,
+  // AniHub (anihub.in.ua) стоїть попереду AnimeOn: він власник Fenix CDN,
+  // тому його fenix-джерело (одне відео + audioTracks) виграє за бар'єром claimedCdns.
+  anihubProvider,
   animeOnProvider,
   // Franko disabled: franko.uacdn.online gated POST /api/player/files behind Cloudflare
   // Turnstile and answers 403 "captcha failed" without a token. The provider is still
