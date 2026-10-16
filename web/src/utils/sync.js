@@ -1,4 +1,5 @@
 import axios from '../api/axios.js';
+import { queueProgressUpdate, queueProgressDelete, flushProgressQueue } from './progressSocket.js';
 
 let progressSyncDebounceTimer = null;
 let pendingProgressUpdates = new Map();
@@ -6,9 +7,10 @@ let lastProgressServerSyncTime = 0;
 const SERVER_SYNC_INTERVAL_MS = 20000; // 20s (in 10-30s range to prevent spam)
 
 /**
- * Flush all pending progress updates to cloud immediately
+ * Flush all pending progress updates to the progress socket immediately.
+ * Якщо сокет зараз закритий, оновлення лишаються в його черзі й підуть після перепідключення.
  */
-export async function flushWatchProgress() {
+export function flushWatchProgress() {
   if (progressSyncDebounceTimer) {
     clearTimeout(progressSyncDebounceTimer);
     progressSyncDebounceTimer = null;
@@ -26,28 +28,10 @@ export async function flushWatchProgress() {
   pendingProgressUpdates.clear();
   lastProgressServerSyncTime = Date.now();
 
-  const apiBase = import.meta.env?.VITE_API_BASE_URL || '/api';
-
   for (const [mId, prog] of toSend) {
-    const payload = { mediaId: mId, ...prog };
-    try {
-      if (typeof fetch !== 'undefined') {
-        fetch(`${apiBase}/auth/sync/progress`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-          keepalive: true,
-        }).catch(() => {});
-      } else {
-        await axios.post('/auth/sync/progress', payload);
-      }
-    } catch (err) {
-      console.warn('Watch progress sync failed:', err);
-    }
+    queueProgressUpdate(mId, prog);
   }
+  flushProgressQueue();
 }
 
 /**
@@ -420,6 +404,7 @@ export function saveWatchProgress(mediaId, data, options = {}) {
   }
 
   // Periodic auto-sync during playback: every 20s (10-30s range to prevent spam)
+  // Той самий інтервал лишається для кадрів у сокет — частіше немає сенсу.
   const now = Date.now();
   if (now - lastProgressServerSyncTime >= SERVER_SYNC_INTERVAL_MS) {
     flushWatchProgress();
@@ -452,26 +437,6 @@ export async function removeWatchProgress(mediaIdOrIds) {
 
   const token = localStorage.getItem('uafilms_auth_token');
   if (token) {
-    const apiBase = import.meta.env?.VITE_API_BASE_URL || '/api';
-    for (const mId of ids) {
-      try {
-        const payload = { mediaId: mId, deleted: true };
-        if (typeof fetch !== 'undefined') {
-          fetch(`${apiBase}/auth/sync/progress`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify(payload),
-            keepalive: true,
-          }).catch(() => {});
-        } else {
-          await axios.post('/auth/sync/progress', payload);
-        }
-      } catch (err) {
-        console.warn('Watch progress delete sync failed:', err);
-      }
-    }
+    queueProgressDelete(ids);
   }
 }

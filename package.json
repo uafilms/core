@@ -35,11 +35,13 @@
     "hono": "^4.13.8",
     "https-proxy-agent": "^9.1.0",
     "socks-proxy-agent": "^10.1.0",
-    "webcrack": "^2.16.0"
+    "webcrack": "^2.16.0",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.2",
+    "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

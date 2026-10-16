@@ -10,6 +10,7 @@ import { streamRouter } from './stream/master.js';
 import { catalogRouter } from './catalog/routes.js';
 import { authRouter } from './auth/routes.js';
 import { apiKeyMiddleware } from './auth/middleware.js';
+import { registerWsRoutes, wsServer } from './ws/index.js';
 import { isTurnstileEnabled, getTurnstileSiteKey } from './services/turnstile.js';
 import { formatHttpLog, log } from '../utils/logger.js';
 
@@ -89,6 +90,9 @@ app.route('/api', streamRouter);
 app.route('/api/auth', authRouter);
 app.route('/auth', authRouter);
 
+// WebSocket-канал для живої синхронізації прогресу перегляду
+registerWsRoutes(app);
+
 // SPA fallback for frontend client routing
 if (hasWebDist) {
   app.get('*', (c, next) => {
@@ -133,6 +137,7 @@ export function startServer(port = 3000) {
   return serve({
     fetch: app.fetch,
     port,
+    websocket: { server: wsServer },
   }, (info) => {
     log('uafilms', `listening on http://localhost:${info.port}`);
   });

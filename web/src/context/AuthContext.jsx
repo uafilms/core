@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axios from '../api/axios.js';
 import { syncWithCloud } from '../utils/sync.js';
+import { connectProgressSocket, disconnectProgressSocket } from '../utils/progressSocket.js';
 
 const AuthContext = createContext(null);
 
@@ -51,6 +52,15 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     fetchCurrentUser(token);
   }, [token, fetchCurrentUser]);
+
+  // Тримаємо сокет прогресу прив'язаним до сесії: є токен — канал відкритий і сам перепідключається.
+  useEffect(() => {
+    if (token) {
+      connectProgressSocket();
+    } else {
+      disconnectProgressSocket();
+    }
+  }, [token]);
 
   // Auto-sync on window focus, tab visibility or returning online
   useEffect(() => {
