@@ -4,6 +4,8 @@ export interface Subtitle {
   lang: string;
   label: string;
   url: string;
+  /** Формат доріжки: ass — стилізовані субтитри (рендерить плеєр через libass), vtt — нативні браузерні треки. */
+  format?: 'vtt' | 'srt' | 'ass';
 }
 
 export interface LazyStream {
@@ -29,6 +31,12 @@ export interface StreamSource {
    * тож плеєр може перемикати аудіодоріжки нативно (без перезавантаження джерела).
    */
   sharedVideo?: boolean;
+  /**
+   * Повний список озвучок, доступних у цьому джерелі (HLS audio renditions).
+   * Використовується CDN зі спільним відео (Fenix): в OMSS-відповідь джерело
+   * потрапляє одним записом, а клієнт бачить усі доріжки в audioTracks.
+   */
+  audioTracks?: string[];
 }
 
 export interface MediaItem {

@@ -1,6 +1,7 @@
 import type { StreamSource, Subtitle } from '../../types/media.js';
 import type { VodExtractionOptions, VodExtractionResult, VodExtractor } from '../../types/vod.js';
 import { httpRequest } from '../../utils/http.js';
+import { sortAudioTrackLabels } from '../../utils/sort.js';
 
 const FENIX_EMBED_ORIGIN = 'https://fenixplay.xyz';
 const ANIMEON_PLAYER_API = 'https://animeon.club/api/player';
@@ -29,6 +30,7 @@ interface FenixSubtitle {
   language?: string;
   kind?: string;
   url?: string;
+  styled_url?: string;
   voice_studio_id?: number | string;
   voice_studio_name?: string;
 }
@@ -223,6 +225,21 @@ function pickSubtitles(episode: FenixEpisode, track: FenixTrack | null, token: s
   const seen = new Set<string>();
   const subtitles: Subtitle[] = [];
   for (const sub of ordered) {
+    // Стилізована версія (ASS) йде першою: плеєр рендерить її через libass,
+    // а VTT лишається як запасний варіант, якщо стилізовані не заведуться.
+    if (sub.styled_url) {
+      const styledUrl = withToken(sub.styled_url, token);
+      if (!seen.has(styledUrl)) {
+        seen.add(styledUrl);
+        subtitles.push({
+          lang: sub.language || 'uk',
+          label: sub.label || 'Субтитри',
+          url: styledUrl,
+          format: 'ass',
+        });
+      }
+    }
+
     const url = withToken(sub.url as string, token);
     if (seen.has(url)) continue;
     seen.add(url);
@@ -230,6 +247,7 @@ function pickSubtitles(episode: FenixEpisode, track: FenixTrack | null, token: s
       lang: sub.language || 'uk',
       label: sub.label || 'Субтитри',
       url,
+      format: 'vtt',
     });
   }
   return subtitles;
@@ -352,10 +370,18 @@ export async function buildFenixMergedManifest(url: string, options: VodExtracti
   const tracks = (ctx.episode.tracks || []).filter((track) => track.track_type !== 'sub' && (track.hls_url || track.cast_avc_url));
   if (tracks.length === 0) return null;
 
-  const wanted = ctx.voice ? normalizeVoice(ctx.voice) : '';
-  const defaultTrack = (wanted && tracks.find((track) => track.label && normalizeVoice(track.label) === wanted)) || tracks[0];
+  // Стабільний порядок озвучок у плеєрі: дубляжі за вагою студії, «Оригінал» — ближче
+  // до кінця. Fenix віддає треки у власному (довільному) порядку.
+  const labelOrder = sortAudioTrackLabels(tracks.map((track) => track.label || ''));
+  const orderedTracks = [...tracks].sort(
+    (a, b) => labelOrder.indexOf(a.label || '') - labelOrder.indexOf(b.label || ''),
+  );
 
-  const mediaLines = tracks.map((track) => {
+  const wanted = ctx.voice ? normalizeVoice(ctx.voice) : '';
+  const defaultTrack =
+    (wanted && orderedTracks.find((track) => track.label && normalizeVoice(track.label) === wanted)) || orderedTracks[0];
+
+  const mediaLines = orderedTracks.map((track) => {
     const uri = audioPlaylistUrl(track, ctx.token);
     const label = (track.label || 'Audio').replace(/"/g, '\\"');
     const attrs = [

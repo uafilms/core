@@ -51,6 +51,23 @@ export function getDubWeight(title?: string): number {
 }
 
 /**
+ * Сортування назв аудіодоріжок (озвучок) для HLS-груп і API:
+ * спершу українські дубляжі за вагою студії, «Оригінал» та англійська — нижче,
+ * субтитри — в самому кінці; однакові ваги — за абеткою.
+ */
+export function sortAudioTrackLabels(labels: string[]): string[] {
+  // «Оригінал» — завжди в самий низ: це не дубляж, а мовна доріжка без озвучки.
+  const isOriginal = (label: string) => /оригінал|original/i.test(label);
+  return [...labels].sort((a, b) => {
+    const originalDiff = Number(isOriginal(a)) - Number(isOriginal(b));
+    if (originalDiff !== 0) return originalDiff;
+    const diff = getDubWeight(b) - getDubWeight(a);
+    if (diff !== 0) return diff;
+    return a.localeCompare(b, 'uk');
+  });
+}
+
+/**
  * Сортування джерел: спочатку за типом озвучки, потім за якістю
  */
 export function sortSources(sources: StreamSource[]): StreamSource[] {

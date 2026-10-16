@@ -8,7 +8,7 @@ import type {
 } from '../../types/media.js';
 import type { ProviderGetOptions } from '../../types/provider.js';
 import { httpRequest } from '../../utils/http.js';
-import { extractSeasonFromTitle, sortSeasons, sortSources } from '../../utils/sort.js';
+import { extractSeasonFromTitle, sortAudioTrackLabels, sortSeasons, sortSources } from '../../utils/sort.js';
 import { fetchAnimeOnItems, mapAnimeOnItem, searchAnimeOn } from './search.js';
 import type { AnimeOnEpisodeItem, AnimeOnTranslation } from './types.js';
 
@@ -182,6 +182,37 @@ async function resolveSeasonPart(
   return { id: chosen.id, title: chosen.title || current.title, offset };
 }
 
+/**
+ * Fenix віддає одне спільне відео на всі озвучки, тому замість N майже однакових
+ * джерел лишаємо одне: майстер злитий (`mergeAudio=1`) містить усі озвучки як HLS
+ * audio renditions, а їхні назви перелічуємо в `audioTracks` (OMSS).
+ */
+function ensureMergeAudio(url: string): string {
+  if (/[?&]mergeAudio=/.test(url)) return url.replace(/([?&]mergeAudio=)(0|false)/i, '$11');
+  return `${url}${url.includes('?') ? '&' : '?'}mergeAudio=1`;
+}
+
+function mergeFenixSources(sources: StreamSource[]): StreamSource | null {
+  const tracks: string[] = [];
+  for (const source of sources) {
+    const label = source.audio || source.title;
+    if (label && !tracks.includes(label)) tracks.push(label);
+  }
+
+  const primary = sources[0];
+  if (!primary) return null;
+  if (tracks.length < 2) return primary;
+
+  const url = ensureMergeAudio(primary.url);
+  return {
+    ...primary,
+    url,
+    audioTracks: sortAudioTrackLabels(tracks),
+    sharedVideo: true,
+    lazy: primary.lazy ? { ...primary.lazy, url: ensureMergeAudio(primary.lazy.url) } : primary.lazy,
+  };
+}
+
 export async function getAnimeOnStreams(
   target: SearchResult | string,
   options?: ProviderGetOptions
@@ -279,6 +310,9 @@ export async function getAnimeOnStreams(
     // 4. Group by episode number
     // Map: episodeNumber (absolute, within the season) -> StreamSource[]
     const episodesMap = new Map<number, StreamSource[]>();
+    // Fenix: один embed на серіал, окремий трек на кожну озвучку і спільне відео —
+    // збираємо тут, щоб потім згорнути в одне джерело з audioTracks.
+    const fenixMap = new Map<number, StreamSource[]>();
     let maxEpisode = 0;
 
     for (const res of episodeResults) {
@@ -318,10 +352,25 @@ export async function getAnimeOnStreams(
           },
         };
 
-        const existing = episodesMap.get(epNum) || [];
-        existing.push(source);
-        episodesMap.set(epNum, existing);
+        if (cdnType === 'fenix') {
+          const existing = fenixMap.get(epNum) || [];
+          existing.push(source);
+          fenixMap.set(epNum, existing);
+        } else {
+          const existing = episodesMap.get(epNum) || [];
+          existing.push(source);
+          episodesMap.set(epNum, existing);
+        }
       }
+    }
+
+    // Згортаємо озвучки Fenix: одне джерело на епізод з усіма доріжками в audioTracks.
+    for (const [epNum, sources] of fenixMap.entries()) {
+      const merged = mergeFenixSources(sources);
+      if (!merged) continue;
+      const existing = episodesMap.get(epNum) || [];
+      existing.push(merged);
+      episodesMap.set(epNum, existing);
     }
 
     // Check if it's a single movie or series

@@ -22,6 +22,8 @@ interface OrchestratorOptions {
     providerName?: string;
     sources: OmssSource[];
     subtitles: OmssSubtitle[];
+    /** true = прибрати у клієнта джерела цього провайдера (CDN витіснив вищий пріоритет) */
+    removed?: boolean;
   }) => void;
 }
 
@@ -127,24 +129,13 @@ export class OrchestratorService {
     const seenSourceUrls = new Set<string>();
     const seenSubtitleUrls = new Set<string>();
     const claimedCdns = new Set<string>();
-
-    // Deterministic CDN ownership: a CDN is claimed as a whole batch (so every dub of that
-    // CDN stays together) by the first provider in `providers[]` order that delivers it.
-    // Providers run in parallel, so a provider may only claim its sources once every
-    // higher-priority provider (lower index) has finished - otherwise the winner would
-    // depend on who answered first.
-    const barrierPending = targetProviders.map((_, i) => i);
-    const CLAIM_WAIT_MS = 3000;
-    const barrierResolvers: Array<() => void> = [];
-    const barrierGates = targetProviders.map((_, i) => new Promise<void>((resolve) => {
-      barrierResolvers[i] = resolve;
-    }));
-    const markProviderSettled = (index: number) => {
-      for (let j = index + 1; j < targetProviders.length; j += 1) {
-        barrierPending[j] -= 1;
-        if (barrierPending[j] === 0) barrierResolvers[j]();
-      }
-    };
+    // cdn.id → індекс провайдера, який зараз володіє джерелами цього CDN.
+    // Пріоритет = порядок у providers[]; провайдер з меншим індексом витісняє
+    // уже віддані джерела провайдера з більшим індексом (див. нижче).
+    const claimedCdnOwner = new Map<string, number>();
+    // CDN-и, які вже поїхали стримінговому клієнту: повторно (і з подією removed)
+    // їх не надсилаємо — клієнт лишається з тим провайдером, що завершився першим.
+    const emittedCdns = new Set<string>();
 
     // Run providers in parallel with individual error catching
     const tasks = targetProviders.map(async (provider, providerIndex) => {
@@ -273,7 +264,7 @@ export class OrchestratorService {
           if (studio.logoUrl && studio.logoUrl.startsWith('/logos/')) {
             studio.logoUrl = `${proxyHost}${studio.logoUrl}`;
           }
-          const audioTracks = [studio.name];
+          const audioTracks = raw.audioTracks?.length ? raw.audioTracks : [studio.name];
           const lang = detectAudioLang(rawAudioName, meta.originalLanguage);
 
           const sourceObj: OmssSource = {
@@ -300,13 +291,23 @@ export class OrchestratorService {
           // Subtitles
           if (raw.subtitles && raw.subtitles.length > 0) {
             for (const sub of raw.subtitles) {
-              const subUrl = platform === 'web' ? `${proxyHost}/master.m3u8?url=${encodeURIComponent(sub.url)}` : sub.url;
+              const subFormat: OmssSubtitle['format'] = sub.format === 'ass' || /\.ass(\?|$)/i.test(sub.url)
+                ? 'ass'
+                : sub.url.endsWith('.srt')
+                  ? 'srt'
+                  : 'vtt';
+
+              // ASS рендерить libass на канвасі (плеєр тягне файл окремо),
+              // VTT/SRT їдуть через HLS як звичайні текст-треки.
+              const subUrl = platform === 'web'
+                ? `${proxyHost}/${subFormat === 'ass' ? 'subs.ass' : 'master.m3u8'}?url=${encodeURIComponent(sub.url)}`
+                : sub.url;
 
               const subObj: OmssSubtitle = {
                 id: randomUUID(),
                 url: subUrl,
                 label: sub.label || 'Ukrainian',
-                format: sub.url.endsWith('.srt') ? 'srt' : 'vtt',
+                format: subFormat,
                 provider: {
                   id: cdn.id,
                   name: cdn.name,
@@ -317,70 +318,69 @@ export class OrchestratorService {
           }
         }
 
-        if (providerGroups.size > 0) {
-          const hasUnclaimedCdn = Array.from(providerGroups.keys()).some((id) => !claimedCdns.has(id));
-
-          // Wait until every higher-priority provider has finished before claiming CDNs,
-          // so the winning provider never depends on network timing. Streaming callers get
-          // a bounded wait - holding SSE chunks behind one slow provider would defeat the
-          // point of streaming, so after CLAIM_WAIT_MS the claim is taken anyway.
-          if (hasUnclaimedCdn && barrierPending[providerIndex] > 0) {
-            if (onProviderResult) {
-              await Promise.race([
-                barrierGates[providerIndex],
-                new Promise<void>((resolve) => setTimeout(resolve, CLAIM_WAIT_MS)),
-              ]);
-            } else {
-              await barrierGates[providerIndex];
+        // Видаляє раніше віддані джерела/саби цього CDN (коли його витісняє
+        // провайдер з вищим пріоритетом) і звільняє їхні url для нового власника.
+        const dropProviderSources = (cdnId: string) => {
+          for (let i = sources.length - 1; i >= 0; i -= 1) {
+            if (sources[i].provider.id === cdnId) {
+              seenSourceUrls.delete(sources[i].url);
+              sources.splice(i, 1);
             }
           }
+          for (let i = subtitles.length - 1; i >= 0; i -= 1) {
+            if (subtitles[i].provider.id === cdnId) {
+              seenSubtitleUrls.delete(subtitles[i].url);
+              subtitles.splice(i, 1);
+            }
+          }
+        };
 
-          if (onProviderResult) {
-            // Stream the claimed batches right away so SSE clients see them as they land
-            for (const group of providerGroups.values()) {
-              if (claimedCdns.has(group.id)) {
-                continue;
-              }
-              claimedCdns.add(group.id);
+        if (providerGroups.size > 0) {
+          // Клеймимо CDN-и одразу, щоб SSE стрімив джерела в міру готовності провайдерів.
+          // Для фінального JSON/кешу пріоритет з providers[] зберігаємо витісненням:
+          // пізніший провайдер з меншим індексом перебирає cdn.id собі. Стримінговому
+          // клієнту при цьому нічого не пересилаємо — CDN, який уже поїхав у чанку,
+          // лишається за тим провайдером, який завершився першим (без подій removed).
+          for (const group of providerGroups.values()) {
+            const owner = claimedCdnOwner.get(group.id);
+            if (owner !== undefined && owner <= providerIndex) {
+              continue;
+            }
 
-              const acceptedSources = group.sources.filter((s) => {
-                if (seenSourceUrls.has(s.url)) return false;
-                seenSourceUrls.add(s.url);
-                return true;
-              });
-              const acceptedSubtitles = group.subtitles.filter((sub) => {
-                if (seenSubtitleUrls.has(sub.url)) return false;
-                seenSubtitleUrls.add(sub.url);
-                return true;
-              });
+            const alreadyEmitted = emittedCdns.has(group.id);
 
-              sources.push(...acceptedSources);
-              subtitles.push(...acceptedSubtitles);
+            if (owner !== undefined && owner > providerIndex) {
+              claimedCdns.delete(group.id);
+              dropProviderSources(group.id);
+            }
 
+            claimedCdns.add(group.id);
+            claimedCdnOwner.set(group.id, providerIndex);
+
+            const acceptedSources = group.sources.filter((s) => {
+              if (seenSourceUrls.has(s.url)) return false;
+              seenSourceUrls.add(s.url);
+              return true;
+            });
+            const acceptedSubtitles = group.subtitles.filter((sub) => {
+              if (seenSubtitleUrls.has(sub.url)) return false;
+              seenSubtitleUrls.add(sub.url);
+              return true;
+            });
+
+            if (acceptedSources.length === 0 && acceptedSubtitles.length === 0) continue;
+
+            sources.push(...acceptedSources);
+            subtitles.push(...acceptedSubtitles);
+
+            if (onProviderResult && !alreadyEmitted) {
+              emittedCdns.add(group.id);
               onProviderResult({
                 provider: group.id,
                 providerName: group.name,
                 sources: acceptedSources,
                 subtitles: acceptedSubtitles,
               });
-            }
-          } else {
-            for (const group of providerGroups.values()) {
-              if (claimedCdns.has(group.id)) {
-                continue;
-              }
-              claimedCdns.add(group.id);
-
-              for (const s of group.sources) {
-                if (seenSourceUrls.has(s.url)) continue;
-                seenSourceUrls.add(s.url);
-                sources.push(s);
-              }
-              for (const sub of group.subtitles) {
-                if (seenSubtitleUrls.has(sub.url)) continue;
-                seenSubtitleUrls.add(sub.url);
-                subtitles.push(sub);
-              }
             }
           }
         }
@@ -391,8 +391,6 @@ export class OrchestratorService {
           source: provider.name,
           severity: 'warning',
         });
-      } finally {
-        markProviderSettled(providerIndex);
       }
       });
     });

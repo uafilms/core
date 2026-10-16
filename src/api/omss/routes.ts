@@ -105,7 +105,7 @@ omssRouter.get('/v1/movies/:id', async (c) => {
                 // ignore
               }
             }
-            if (filteredSources.length > 0) {
+            if (chunk.removed || filteredSources.length > 0) {
               await stream.writeSSE({
                 event: 'provider',
                 data: JSON.stringify({
@@ -113,6 +113,7 @@ omssRouter.get('/v1/movies/:id', async (c) => {
                   name: chunk.providerName,
                   sources: filteredSources,
                   subtitles: chunk.subtitles,
+                  ...(chunk.removed ? { removed: true } : {}),
                 }),
               });
             }
@@ -260,7 +261,7 @@ omssRouter.get('/v1/tv/:id/seasons/:s/episodes/:e', async (c) => {
                 // ignore
               }
             }
-            if (filteredSources.length > 0) {
+            if (chunk.removed || filteredSources.length > 0) {
               await stream.writeSSE({
                 event: 'provider',
                 data: JSON.stringify({
@@ -268,6 +269,7 @@ omssRouter.get('/v1/tv/:id/seasons/:s/episodes/:e', async (c) => {
                   name: chunk.providerName,
                   sources: filteredSources,
                   subtitles: chunk.subtitles,
+                  ...(chunk.removed ? { removed: true } : {}),
                 }),
               });
             }

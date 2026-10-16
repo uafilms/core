@@ -56,7 +56,7 @@ export interface OmssSubtitle {
   id: string;
   url: string;
   label: string;
-  format: 'vtt' | 'srt';
+  format: 'vtt' | 'srt' | 'ass';
   provider: {
     id: string;
     name: string;

@@ -134,6 +134,56 @@ streamRouter.get('/subs.vtt', async (c) => {
   }
 });
 
+// Роут для віддачі стилізованих ASS-субтитрів (Fenix styled_url).
+// Рендерить не плеєр, а libass/JASSUB на канвасі, тому це не VTT і через
+// EXT-X-MEDIA такий файл не проксіюється — плеєр тягне його окремо.
+streamRouter.get('/subs.ass', async (c) => {
+  const query = c.req.query();
+  const cdn = query.cdn;
+  const targetUrl = query.url;
+
+  if (!targetUrl) {
+    return c.text('', 404, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    });
+  }
+
+  try {
+    const subUrl = stripCorsProxy(targetUrl);
+    const subHeaders: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+    };
+    if (subUrl.includes('fenixplay.xyz')) {
+      subHeaders['Referer'] = 'https://fenixplay.xyz/';
+      subHeaders['Origin'] = 'https://fenixplay.xyz';
+    }
+
+    const proxyOpts = proxyManager.getConfig(cdn || undefined, subUrl);
+    const res = await axios.get<string>(subUrl, {
+      headers: subHeaders,
+      responseType: 'text',
+      timeout: 15000,
+      ...proxyOpts,
+    });
+
+    const content = typeof res.data === 'string' ? res.data : String(res.data ?? '');
+
+    return c.text(content, 200, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=86400',
+    });
+  } catch (err: unknown) {
+    logWarn('stream', `ass subtitle proxy error: ${(err as Error).message}`);
+    return c.text('', 502, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    });
+  }
+});
+
 // Проксі сегментів для CDN з підписами, прив'язаними до IP (uakino.ax).
 // Браузер не може тягнути такі сегменти напряму — токен виданий на IP сервера.
 streamRouter.get('/segment', async (c) => {
@@ -436,7 +486,7 @@ streamRouter.get('/master.m3u8', async (c) => {
         // сегменти uakino.ax підписані на IP сервера, тому тягнемо їх самі;
         // Fenix (fmp4) віддає токенізовані сегменти без гарантованого CORS
         segmentProxyBase: isUakinoAx ? `${proxyHost}/segment?url=` : undefined,
-        subtitles: extractedSubtitles,
+        subtitles: extractedSubtitles.filter((sub) => sub.format !== 'ass'),
       }
     );
 
