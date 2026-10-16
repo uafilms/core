@@ -9,6 +9,7 @@ import { moonAnimeVod } from './moonanime/main.js';
 import { bunnyVod } from './bunny/main.js';
 import { aniWorldVod } from './aniworld/main.js';
 import { zetvideoVod } from './zetvideo/main.js';
+import { uakinoAxVod } from './uakinoax/main.js';
 
 export { tortugaVod } from './tortuga/main.js';
 export { ashdiVod } from './ashdi/main.js';
@@ -19,6 +20,8 @@ export { frankoVod, resolveFrankoFile } from './franko/main.js';
 export { bunnyVod } from './bunny/main.js';
 export { aniWorldVod } from './aniworld/main.js';
 export { zetvideoVod } from './zetvideo/main.js';
+export { uakinoAxVod, stripUakinoAxIntro } from './uakinoax/main.js';
+export { playUakinoAx, findUakinoAxMovie, uakinoAxVoiceCdnId } from './uakinoax/api.js';
 
 export const vodExtractors: VodExtractor[] = [
   tortugaVod,
@@ -29,6 +32,7 @@ export const vodExtractors: VodExtractor[] = [
   bunnyVod,
   aniWorldVod,
   zetvideoVod,
+  uakinoAxVod,
 ];
 
 /**

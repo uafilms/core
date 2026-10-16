@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import axios from 'axios';
-import { extractVod } from '../../vods/index.js';
+import { extractVod, stripUakinoAxIntro } from '../../vods/index.js';
 import { parseMasterPlaylist, stripCorsProxy } from '../../utils/m3u8.js';
 import { logWarn, logError } from '../../utils/logger.js';
 import { m3u8PlaylistCache } from '../services/cache.js';
@@ -129,6 +129,48 @@ streamRouter.get('/subs.vtt', async (c) => {
   }
 });
 
+// Проксі сегментів для CDN з підписами, прив'язаними до IP (uakino.ax).
+// Браузер не може тягнути такі сегменти напряму — токен виданий на IP сервера.
+streamRouter.get('/segment', async (c) => {
+  const target = stripCorsProxy(c.req.query('url') || '');
+  if (!target || !/^https?:\/\//i.test(target)) {
+    return c.text('Bad url', 400, { 'Access-Control-Allow-Origin': '*' });
+  }
+
+  try {
+    const range = c.req.header('range');
+    const res = await axios.get<ArrayBuffer>(target, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        ...(range ? { Range: range } : {}),
+      },
+      responseType: 'arraybuffer',
+      timeout: 20000,
+      validateStatus: () => true,
+    });
+
+    if (res.status >= 400) {
+      logWarn('stream', `segment fetch failed ${res.status}: ${target.slice(0, 120)}`);
+      return c.text(`Segment upstream error ${res.status}`, 502, { 'Access-Control-Allow-Origin': '*' });
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': (res.headers['content-type'] as string) || 'video/mp2t',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=3600',
+    };
+    if (res.headers['content-range']) headers['Content-Range'] = String(res.headers['content-range']);
+    if (res.headers['accept-ranges']) headers['Accept-Ranges'] = String(res.headers['accept-ranges']);
+    if (res.headers['content-length']) headers['Content-Length'] = String(res.headers['content-length']);
+
+    return c.body(res.data as ArrayBuffer, res.status as 200 | 206, headers);
+  } catch (err: unknown) {
+    logWarn('stream', `segment proxy error: ${(err as Error).message}`);
+    return c.text('Segment fetch error', 502, { 'Access-Control-Allow-Origin': '*' });
+  }
+});
+
 streamRouter.get('/master.m3u8', async (c) => {
   const query = c.req.query();
   const cdn = query.cdn;
@@ -139,7 +181,7 @@ streamRouter.get('/master.m3u8', async (c) => {
   const episodeId = query.episodeId;
 
   // Пряме перенаправлення для субтитрів, якщо запитано через /master.m3u8
-  if (rawUrl && (rawUrl.endsWith('.vtt') || rawUrl.endsWith('.srt') || rawUrl.includes('/subtitle/'))) {
+  if (rawUrl && (rawUrl.endsWith('.vtt') || rawUrl.endsWith('.srt') || rawUrl.includes('/subtitle/') || rawUrl.includes('/hls/sub/'))) {
     return c.redirect(`/subs.vtt?url=${encodeURIComponent(rawUrl)}`);
   }
 
@@ -277,6 +319,7 @@ streamRouter.get('/master.m3u8', async (c) => {
   const isFranko = streamUrl.includes('factorios.live') || streamUrl.includes('uacdn.online');
   const isTortuga = streamUrl.includes('tortuga.tw') || streamUrl.includes('tortuga.wtf') || streamUrl.includes('tortuga');
   const isZetvideo = streamUrl.includes('zetvideo.net');
+  const isUakinoAx = streamUrl.includes('cdn.uakino.ax');
 
   if (isAshdi) {
     headers['Origin'] = 'https://ashdi.vip';
@@ -354,10 +397,18 @@ streamRouter.get('/master.m3u8', async (c) => {
       });
     }
 
-    const modifiedM3u8 = parseMasterPlaylist(manifestData, streamUrl, proxyHost, {
-      corsProxySegments: isAshdi || isBamboo,
-      subtitles: extractedSubtitles,
-    });
+    const modifiedM3u8 = parseMasterPlaylist(
+      // uakino.ax вклеює власне інтро на початок медіа-плейлиста — вирізаємо його
+      isUakinoAx && !isMaster ? stripUakinoAxIntro(manifestData) : manifestData,
+      streamUrl,
+      proxyHost,
+      {
+        corsProxySegments: isAshdi || isBamboo,
+        // сегменти uakino.ax підписані на IP сервера, тому тягнемо їх самі
+        segmentProxyBase: isUakinoAx ? `${proxyHost}/segment?url=` : undefined,
+        subtitles: extractedSubtitles,
+      }
+    );
 
     if (!isMaster) {
       m3u8PlaylistCache.set(cacheKey, modifiedM3u8, 60 * 60 * 1000);

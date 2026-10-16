@@ -13,6 +13,12 @@ export function stripCorsProxy(url: string): string {
 
 export interface ParsePlaylistOptions {
   corsProxySegments?: boolean;
+  /**
+   * Переписує посилання на сегменти у `${segmentProxyBase}${encodeURIComponent(url)}`.
+   * Потрібно для CDN, які прив'язують підписані посилання до IP запитувача
+   * (uakino.ax): тягнути сегменти має наш проксі, а не браузер.
+   */
+  segmentProxyBase?: string;
   subtitles?: Subtitle[];
 }
 
@@ -81,7 +87,7 @@ export function parseMasterPlaylist(
   proxyHost: string,
   options: ParsePlaylistOptions = {}
 ): string {
-  const { corsProxySegments = false, subtitles = [] } = options;
+  const { corsProxySegments = false, segmentProxyBase, subtitles = [] } = options;
   const lines = content.split('\n');
   const newLines: string[] = [];
 
@@ -162,7 +168,9 @@ export function parseMasterPlaylist(
         currentStreamHeight = undefined;
       } else if (nextIsSegmentUrl) {
         const isMooncdn = /mooncdn\.(online|net)|moonanime\.art/i.test(absoluteUrl);
-        if (corsProxySegments && !isMooncdn && !absoluteUrl.startsWith(CORS_PROXY)) {
+        if (segmentProxyBase) {
+          newLines.push(`${segmentProxyBase}${encodeURIComponent(absoluteUrl)}`);
+        } else if (corsProxySegments && !isMooncdn && !absoluteUrl.startsWith(CORS_PROXY)) {
           newLines.push(`${CORS_PROXY}${absoluteUrl}`);
         } else {
           newLines.push(absoluteUrl);

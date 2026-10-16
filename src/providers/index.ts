@@ -10,6 +10,7 @@ export { FrankoProvider, frankoProvider } from './franko/main.js';
 export { AniWorldProvider, aniWorldProvider } from './aniworld/main.js';
 export { UaflixProvider, uaflixProvider } from './uaflix/main.js';
 export { MikaiProvider, mikaiProvider } from './mikai/main.js';
+export { UaKinoAXProvider, uakinoAxProvider, uakinoAx } from './uakino-ax/main.js';
 
 import { uakinoProvider } from './uakino/main.js';
 import { kinoukrProvider } from './kinoukr/main.js';
@@ -22,6 +23,7 @@ import { animeOnProvider } from './animeon/main.js';
 import { aniWorldProvider } from './aniworld/main.js';
 import { uaflixProvider } from './uaflix/main.js';
 import { mikaiProvider } from './mikai/main.js';
+import { uakinoAxProvider } from './uakino-ax/main.js';
 import type { Provider } from '../types/provider.js';
 
 export const providers: Provider[] = [
@@ -39,4 +41,5 @@ export const providers: Provider[] = [
   aniWorldProvider,
   uaflixProvider,
   mikaiProvider,
+  uakinoAxProvider,
 ];

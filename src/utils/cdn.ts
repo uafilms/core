@@ -17,12 +17,18 @@ const CDN_DISPLAY_NAMES: Record<string, string> = {
   bunnycdn: 'BunnyCDN',
   aniworld: 'AniWorld',
   zetvideo: 'ZetVideo',
+  'uakino-ax': 'UaKinoAX',
 };
 
 export function normalizeCdnName(cdnId: string): string {
   const cleanId = cdnId.toLowerCase().trim();
   if (CDN_DISPLAY_NAMES[cleanId]) {
     return CDN_DISPLAY_NAMES[cleanId];
+  }
+
+  // Дубляжі uakino.ax ідуть з id вигляду uakino-ax-<voice>
+  if (cleanId.startsWith('uakino-ax')) {
+    return 'UaKinoAX';
   }
 
   return cleanId.charAt(0).toUpperCase() + cleanId.slice(1);
