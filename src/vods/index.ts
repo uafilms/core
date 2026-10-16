@@ -6,7 +6,6 @@ import { ashdiVod } from './ashdi/main.js';
 import { hdvbVod } from './hdvb/main.js';
 import { bambooVod } from './bamboo/main.js';
 import { moonAnimeVod } from './moonanime/main.js';
-import { frankoVod } from './franko/main.js';
 import { bunnyVod } from './bunny/main.js';
 import { aniWorldVod } from './aniworld/main.js';
 import { zetvideoVod } from './zetvideo/main.js';
@@ -27,7 +26,6 @@ export const vodExtractors: VodExtractor[] = [
   hdvbVod,
   bambooVod,
   moonAnimeVod,
-  frankoVod,
   bunnyVod,
   aniWorldVod,
   zetvideoVod,
@@ -178,15 +176,10 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
     if (res) return res;
   }
 
-  if (
-    url.includes('cdn=franko') ||
-    url.includes('franko') ||
-    url.includes('factorios.live') ||
-    url.includes('uacdn.online')
-  ) {
-    const res = await runWithProvider(frankoVod.name, () => frankoVod.extract(url, options));
-    if (res) return res;
-  }
+  // Franko disabled: upstream (franko.uacdn.online) now requires a Cloudflare
+  // Turnstile token on POST /api/player/files and returns 403 "captcha failed" without it.
+  // The extractor stays in ./franko/main.ts; re-add `frankoVod` to vodExtractors
+  // (and this detection branch) to re-enable it.
 
   if (
     url.includes('cdn=moonanime') ||

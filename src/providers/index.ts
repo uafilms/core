@@ -19,7 +19,6 @@ import { eneyidaProvider } from './eneyida/main.js';
 import { wormholeProvider } from './wormhole/main.js';
 import { bambooUaProvider } from './bambooua/main.js';
 import { animeOnProvider } from './animeon/main.js';
-import { frankoProvider } from './franko/main.js';
 import { aniWorldProvider } from './aniworld/main.js';
 import { uaflixProvider } from './uaflix/main.js';
 import { mikaiProvider } from './mikai/main.js';
@@ -34,7 +33,9 @@ export const providers: Provider[] = [
   wormholeProvider,
   bambooUaProvider,
   animeOnProvider,
-  frankoProvider,
+  // Franko disabled: franko.uacdn.online gated POST /api/player/files behind Cloudflare
+  // Turnstile and answers 403 "captcha failed" without a token. The provider is still
+  // exported above; re-add `frankoProvider` here to re-enable it.
   aniWorldProvider,
   uaflixProvider,
   mikaiProvider,
