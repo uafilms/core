@@ -6,9 +6,10 @@ export interface IntroDbTimestamp {
   end_ms: number | null;
 }
 
+// TheIntroDB API v4 response. TVDB is the identity: the body is keyed by tvdb_id,
+// and tmdb_id/imdb_id are no longer echoed back. Segment arrays keep the v3 shape.
 export interface TheIntroDbResponse {
-  tmdb_id?: number;
-  imdb_id?: string;
+  tvdb_id?: number;
   type?: 'movie' | 'tv';
   season?: number;
   episode?: number;
@@ -38,7 +39,7 @@ export interface GetSegmentsParams {
 const segmentsCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
 
 export class TheIntroDbService {
-  private static readonly BASE_URL = 'https://api.theintrodb.org/v3/media';
+  private static readonly BASE_URL = 'https://api.theintrodb.org/v4/media';
 
   public static async getSegments(params: GetSegmentsParams): Promise<MediaSegment[]> {
     const { tmdbId, imdbId, type, season, episode, durationMs } = params;
@@ -95,7 +96,9 @@ export class TheIntroDbService {
       });
 
       const data = response.data;
-      if (!data) {
+      // /media can answer with the release-version list or the per-episode count
+      // fallback instead of the grouped timestamps; neither carries segments.
+      if (!data || Array.isArray((data as { versions?: unknown }).versions) || Array.isArray((data as { episodes?: unknown }).episodes)) {
         segmentsCache.set(cacheKey, [], 60 * 60 * 1000);
         return [];
       }
