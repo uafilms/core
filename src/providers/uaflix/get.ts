@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio';
 import { httpRequest, getHtml } from '../../utils/http.js';
-import { extractVod } from '../../vods/index.js';
+import { extractVod } from '../cdn/index.js';
 import { searchUaflix } from './search.js';
 import { sortSeasons, sortSources } from '../../utils/sort.js';
 import type {

@@ -9,7 +9,7 @@ import type {
 import type { ProviderGetOptions, ProviderSearchOptions } from '../../types/provider.js';
 import { httpRequest } from '../../utils/http.js';
 import { rankSearchResults, sortSeasons, sortSources } from '../../utils/sort.js';
-import { ashdiVod } from '../../vods/index.js';
+import { ashdiVod } from '../cdn/index.js';
 import { logWarn } from '../../utils/logger.js';
 
 const BASE_URL = 'https://kinoukr.tv';

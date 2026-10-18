@@ -34,7 +34,7 @@ Metadata: `src/api/services/tmdb.ts` uses `TMDB_TOKEN` when set, otherwise falls
 ### Adding a provider or VOD extractor
 
 - Provider: `src/providers/<name>/{main,search,get}.ts` implementing `Provider` (`search` + `get`). Must be exported and added to the `providers[]` array in `src/providers/index.ts`. `OrchestratorService` runs all providers in parallel, dedupes by detected CDN (first provider wins a CDN), and rewrites URLs to the local proxy for `platform=web`.
-- VOD extractor: `src/vods/<name>/main.ts` implementing `VodExtractor.extract()`. Register in `src/vods/index.ts` exports and `vodExtractors[]`, and add a URL-detection branch in `extractVod()` (a `cdn=` query param short-circuits directly to the matching extractor). CDNs needing special request headers also need a branch in `src/api/stream/master.ts`.
+- VOD extractor: `src/providers/cdn/<name>/` implementing `VodExtractor.extract()`. Files are split by role: `main.ts` (extractor class + re-exports, always present), `config.ts` (hosts, headers, timeouts, regexes), `extract.ts` (payload/HTML → streams parsing), `decrypt.ts` (only for real decoding), plus per-CDN extras (`api.ts`, `types.ts`, `manifest.ts`, `playlist.ts`). Shared helpers live in `src/providers/cdn/shared/` (`playerjs/` for Playerjs parsing, `animeon.ts`, `codec.ts`, `lazy.ts`). Register new extractors in `src/providers/cdn/index.ts` exports and `vodExtractors[]`, and add a URL-detection branch in `extractVod()` (a `cdn=` query param short-circuits directly to the matching extractor). The `name` of an extractor is part of the `cdn=` URL contract — do not rename it. CDNs needing special request headers also need a branch in `src/api/stream/master.ts`.
 
 ### Runtime data
 

@@ -1,6 +1,6 @@
 import type { ProviderResult, SearchResult } from '../../types/media.js';
 import type { ProviderGetOptions } from '../../types/provider.js';
-import { findUakinoAxMovie } from '../../vods/uakinoax/api.js';
+import { findUakinoAxMovie } from '../cdn/uakinoax/api.js';
 import { searchUakinoAx } from './search.js';
 import { getUakinoAxLampa } from './lampa.js';
 import { getUakinoAxWeb } from './web.js';

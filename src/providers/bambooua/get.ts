@@ -1,7 +1,7 @@
 import type { ProviderResult, SearchResult, StreamSource, Season, MediaType } from '../../types/media.js';
 import type { ProviderGetOptions } from '../../types/provider.js';
 import { httpRequest } from '../../utils/http.js';
-import { bambooVod } from '../../vods/bamboo/main.js';
+import { bambooVod } from '../cdn/bamboo/main.js';
 import { searchBamboo } from './search.js';
 
 const BAMBOO_URL = 'https://bambooua.com';

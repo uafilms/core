@@ -1,6 +1,6 @@
 import type { Episode, ProviderResult, Season, SearchResult, StreamSource } from '../../types/media.js';
 import type { ProviderGetOptions, ProviderSearchOptions } from '../../types/provider.js';
-import { ashdiVod } from '../../vods/index.js';
+import { ashdiVod } from '../cdn/index.js';
 import { logWarn } from '../../utils/logger.js';
 import { rankSearchResults, sortSeasons, sortSources } from '../../utils/sort.js';
 import { findByImdbId, findBySlug, searchKinoUkrDbRows } from './db.js';
