@@ -5,6 +5,7 @@
 import type { Subtitle } from '../../../types/media.js';
 import type { VodExtractionOptions } from '../../../types/vod.js';
 import { httpRequest } from '../../../utils/http.js';
+import { buildLazyMasterUrl } from '../shared/lazy.js';
 import {
   FENIX_ANIMEON_PLAYER_API,
   FENIX_ANIMEON_REFERER,
@@ -111,6 +112,33 @@ export function extractJsonAssignment(html: string, marker: string): unknown | n
 export function withToken(url: string, token: string): string {
   if (!token || /[?&]token=/.test(url)) return url;
   return `${url}${url.includes('?') ? '&' : '?'}token=${token}`;
+}
+
+/**
+ * Лінк на наш проксі для embed-сторінки: замість повного URL передаємо
+ * `type=embed` + `id` (хвіст після /embed/), решта — як було.
+ */
+export function buildFenixLazyUrl(
+  embedUrl: string,
+  params: { episode?: number; voice?: string } = {},
+): string {
+  const embed = embedUrl.match(/\/embed\/(.+)$/i);
+  if (embed) {
+    return buildLazyMasterUrl('fenix', {
+      type: 'embed',
+      id: embed[1],
+      ep: params.episode,
+      voice: params.voice,
+      mergeAudio: 1,
+    });
+  }
+
+  return buildLazyMasterUrl('fenix', {
+    url: embedUrl,
+    ep: params.episode,
+    voice: params.voice,
+    mergeAudio: 1,
+  });
 }
 
 export function normalizeVoice(value: string): string {
@@ -280,6 +308,7 @@ export function parseFenixUrl(url: string): FenixInput | null {
 
     if (innerUrl) target = decodeURIComponent(innerUrl);
     else if (type === 'animeon' && animeOnId) return { target: `animeon:${animeOnId}`, voice, episodeNumber };
+    else if (type === 'embed' && animeOnId) target = `${FENIX_EMBED_ORIGIN}/embed/${animeOnId}`;
 
     // Епізод може бути закодований лише в embed-URL від animeon API (?ep=N)
     if (episodeNumber === undefined) {

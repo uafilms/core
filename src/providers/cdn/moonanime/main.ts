@@ -1,7 +1,7 @@
 import type { VodExtractor, VodExtractionOptions, VodExtractionResult } from '../../../types/vod.js';
 import { httpRequest } from '../../../utils/http.js';
 import { fetchAnimeonEpisodeVideoUrl } from '../shared/animeon.js';
-import { MOON_FETCH_TIMEOUT, MOON_HEADERS, MOON_VOD_BASE } from './config.js';
+import { MOON_FETCH_TIMEOUT, MOON_HEADERS, MOON_ORIGIN, MOON_VOD_BASE } from './config.js';
 import { buildMoonAnimeSource, decryptMoonAnimeIframe, parseMoonAnimeQualities } from './extract.js';
 
 export class MoonAnimeVodExtractor implements VodExtractor {
@@ -24,6 +24,13 @@ export class MoonAnimeVodExtractor implements VodExtractor {
             }
           }
           return null;
+        }
+
+        if (u.searchParams.get('type') === 'iframe') {
+          const slug = u.searchParams.get('id');
+          if (!slug) return null;
+          const suffix = slug.includes('?') || slug.endsWith('/') ? slug : `${slug}/`;
+          return this.extract(`${MOON_ORIGIN}/iframe/${suffix}`, options);
         }
 
         const inner = u.searchParams.get('url') || u.searchParams.get('id');

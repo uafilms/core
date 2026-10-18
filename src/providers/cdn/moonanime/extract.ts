@@ -17,6 +17,20 @@ export function moonStreamHeaders(): Record<string, string> {
   };
 }
 
+/**
+ * Лінк на наш проксі для iframe/vod-сторінки: замість повного URL передаємо лише
+ * `type` + `id`, щоб посилання було коротшим (проксі сам збере його назад).
+ */
+export function buildMoonAnimeLazyUrl(target: string): string {
+  const iframe = target.match(/\/iframe\/(.+)$/i);
+  if (iframe) return buildLazyMasterUrl('moonanime', { type: 'iframe', id: iframe[1] });
+
+  const vod = target.match(/\/vod\/([^?#]+)/i);
+  if (vod) return buildLazyMasterUrl('moonanime', { type: 'vod', id: vod[1] });
+
+  return buildLazyMasterUrl('moonanime', { url: target });
+}
+
 export function buildMoonAnimeSource(
   file: string,
   poster?: string,
