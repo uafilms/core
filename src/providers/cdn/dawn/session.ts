@@ -17,7 +17,7 @@ interface DawnChallengeResponse {
 
 interface DawnSessionResponse {
   ok: boolean;
-  result: { session: string; expiresAt: number; expiresIn?: number };
+  result: { session: string; expiresAt?: string | number; expiresIn?: number };
 }
 
 interface DawnSession {
@@ -26,17 +26,33 @@ interface DawnSession {
   expiresAt: number;
 }
 
-let cached: DawnSession | null = null;
-
-/** Повертає активну сесію dawn, за потреби проходячи challenge + proof-of-work. */
-export async function getDawnSession(signal?: AbortSignal): Promise<DawnSession> {
-  if (cached && cached.expiresAt - DAWN_SESSION_MARGIN_MS > Date.now()) {
-    return cached;
+/**
+ * API віддає expiresAt рядком ISO 8601, тож без розбору дати порівняння з
+ * Date.now() давало NaN і handshake виконувався на кожен запит.
+ */
+function resolveSessionExpiry(expiresAt: string | number | undefined, expiresIn?: number): number {
+  if (typeof expiresAt === 'string') {
+    const parsed = Date.parse(expiresAt);
+    if (Number.isFinite(parsed)) return parsed;
   }
+  if (typeof expiresAt === 'number' && Number.isFinite(expiresAt)) {
+    return expiresAt < 1e12 ? expiresAt * 1000 : expiresAt;
+  }
+  return Date.now() + (expiresIn ?? 1800) * 1000;
+}
 
+let cached: DawnSession | null = null;
+let pendingHandshake: Promise<DawnSession> | null = null;
+
+/**
+ * Виконує challenge + proof-of-work. Довільний signal сюди не передається:
+ * сесія спільна на процес, тож скасування одного виклику не повинно зривати
+ * handshake для всіх інших.
+ */
+async function performHandshake(): Promise<DawnSession> {
   const challengeRes = await httpRequest<DawnChallengeResponse>(
     `${DAWN_API_ORIGIN}/player/dawn/challenge`,
-    { headers: DAWN_HEADERS, timeout: DAWN_CHALLENGE_TIMEOUT, signal }
+    { headers: DAWN_HEADERS, timeout: DAWN_CHALLENGE_TIMEOUT }
   );
   const challenge = challengeRes.data?.result;
   if (!challenge?.challenge) throw new Error('dawn challenge unavailable');
@@ -50,7 +66,6 @@ export async function getDawnSession(signal?: AbortSignal): Promise<DawnSession>
       headers: { ...DAWN_HEADERS, 'Content-Type': 'application/json' },
       data: { challenge: challenge.challenge, nonce },
       timeout: DAWN_SESSION_TIMEOUT,
-      signal,
     }
   );
   const issued = sessionRes.data?.result;
@@ -59,9 +74,28 @@ export async function getDawnSession(signal?: AbortSignal): Promise<DawnSession>
   cached = {
     session: issued.session,
     key: deriveDawnSessionKey(issued.session),
-    expiresAt: issued.expiresAt || Date.now() + (issued.expiresIn ?? 1800) * 1000,
+    expiresAt: resolveSessionExpiry(issued.expiresAt, issued.expiresIn),
   };
   return cached;
+}
+
+/**
+ * Повертає активну сесію dawn. Handshake виконується лише тоді, коли сесія
+ * справді знадобилась і вже протермінована; паралельні виклики чекають на
+ * спільну спробу, а не роблять власний handshake.
+ */
+export async function getDawnSession(): Promise<DawnSession> {
+  if (cached && cached.expiresAt - DAWN_SESSION_MARGIN_MS > Date.now()) {
+    return cached;
+  }
+
+  if (!pendingHandshake) {
+    pendingHandshake = performHandshake().finally(() => {
+      pendingHandshake = null;
+    });
+  }
+
+  return pendingHandshake;
 }
 
 export function invalidateDawnSession(session?: string): void {
@@ -71,7 +105,7 @@ export function invalidateDawnSession(session?: string): void {
 /** Підписані запити dawn: конверт { n, d } і одна повторна спроба з новою сесією. */
 export async function dawnRequest<T>(path: string, signal?: AbortSignal): Promise<T> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const current = await getDawnSession(signal);
+    const current = await getDawnSession();
     try {
       const res = await httpRequest<{ ok: boolean; result: { n: string; d: string } }>(
         `${DAWN_API_ORIGIN}${path}`,
