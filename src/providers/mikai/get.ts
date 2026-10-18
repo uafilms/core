@@ -1,6 +1,8 @@
 import { httpRequest } from '../../utils/http.js';
 import { extractVod } from '../cdn/index.js';
 import { searchMikai } from './search.js';
+import { getMikaiDawnFallback } from './dawn.js';
+import { getMikaiTrackTitle } from './labels.js';
 import { sortSeasons, sortSources } from '../../utils/sort.js';
 import type {
   ProviderResult,
@@ -73,7 +75,12 @@ export async function getMikai(
 
     const player = response.data?.result;
     if (!player || !player.releases || player.releases.length === 0) {
-      return null;
+      return getMikaiDawnFallback(player?.anime?.ids?.mikai ? String(player.anime.ids.mikai) : animeRef, {
+        season: meta?.season,
+        episode: meta?.episode,
+        isMovie: meta?.type === 'movie',
+        signal: options?.signal,
+      });
     }
 
     const releases: MikaiRelease[] = player.releases;
@@ -85,16 +92,9 @@ export async function getMikai(
     const episodeSourcesMap = new Map<number, StreamSource[]>();
     const movieSources: StreamSource[] = [];
 
-    // Helper to format track / release title
-    const getTrackTitle = (rel: MikaiRelease): string => {
-      const teamNames = rel.teams?.map((t) => t.name).join(', ') || 'Озвучення';
-      const kindLabel = rel.kind === 'sub' ? ' (Субтитри)' : '';
-      return `${teamNames}${kindLabel}`;
-    };
-
     // Iterate through releases and extract playable streams
     for (const rel of releases) {
-      const trackTitle = getTrackTitle(rel);
+      const trackTitle = getMikaiTrackTitle(rel);
       const teamWithAvatar = rel.teams?.find((t) => t.avatar?.medium?.webp || t.avatar?.small?.webp);
       const teamLogo = teamWithAvatar?.avatar;
       const logoUrl = teamLogo?.medium?.webp || teamLogo?.small?.webp || teamLogo?.medium?.jpg;
@@ -187,6 +187,25 @@ export async function getMikai(
     }
 
     playerCache.set(animeRef, { result, timestamp: Date.now() });
+
+    // Fallback на Dawn, якщо публічний player API не дав жодного джерела
+    const hasSources = result.type === 'movie'
+      ? (result.sources?.length ?? 0) > 0
+      : (result.seasons ?? []).some((season) => season.episodes.some((ep) => ep.sources.length > 0));
+
+    if (!hasSources) {
+      const dawnResult = await getMikaiDawnFallback(String(player.anime?.ids?.mikai ?? animeRef), {
+        season: targetSeason,
+        episode: targetEpisode,
+        isMovie,
+        signal: options?.signal,
+      });
+      if (dawnResult) {
+        playerCache.set(animeRef, { result: dawnResult, timestamp: Date.now() });
+        return dawnResult;
+      }
+    }
+
     return result;
   } catch {
     return null;

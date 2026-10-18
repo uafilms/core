@@ -2,6 +2,14 @@ import type { Subtitle } from '../types/media.js';
 
 const CORS_PROXY = 'https://cors.bwa.workers.dev/';
 
+/**
+ * Cloudflare віддає сегменти moonanime лише з домену .xyz: .online відповідає
+ * bot challenge (403 "Just a moment..."), .net більше не резолвиться.
+ */
+export function normalizeMoonCdnHost(url: string): string {
+  return url.replace(/mooncdn\.online/i, 'mooncdn.xyz');
+}
+
 export function stripCorsProxy(url: string): string {
   const prefix = CORS_PROXY.replace(/\/+$/, '/');
   let current = url;
@@ -193,7 +201,7 @@ export function parseMasterPlaylist(
     }
 
     try {
-      const absoluteUrl = new URL(trimmed, cleanBaseUrl).href;
+      const absoluteUrl = normalizeMoonCdnHost(new URL(trimmed, cleanBaseUrl).href);
 
       if (nextIsStreamUrl) {
         let streamTargetUrl = absoluteUrl;
@@ -204,7 +212,7 @@ export function parseMasterPlaylist(
         nextIsStreamUrl = false;
         currentStreamHeight = undefined;
       } else if (nextIsSegmentUrl) {
-        const isMooncdn = /mooncdn\.(online|net)|moonanime\.art/i.test(absoluteUrl);
+        const isMooncdn = /mooncdn\.(online|xyz)|moonanime\.art/i.test(absoluteUrl);
         if (segmentProxyBase) {
           newLines.push(`${segmentProxyBase}${encodeURIComponent(absoluteUrl)}`);
         } else if (corsProxySegments && !isMooncdn && !absoluteUrl.startsWith(CORS_PROXY)) {
@@ -221,7 +229,7 @@ export function parseMasterPlaylist(
         if (looksLikePlaylist) {
           newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(absoluteUrl)}`);
         } else {
-          const isMooncdn = /mooncdn\.(online|net)|moonanime\.art/i.test(absoluteUrl);
+          const isMooncdn = /mooncdn\.(online|xyz)|moonanime\.art/i.test(absoluteUrl);
           if (corsProxySegments && !isMooncdn && !absoluteUrl.startsWith(CORS_PROXY)) {
             newLines.push(`${CORS_PROXY}${absoluteUrl}`);
           } else {
