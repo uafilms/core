@@ -10,6 +10,7 @@ import { bunnyVod } from './bunny/main.js';
 import { aniWorldVod } from './aniworld/main.js';
 import { zetvideoVod } from './zetvideo/main.js';
 import { fenixVod } from './fenix/main.js';
+import { dawnVod } from './dawn/main.js';
 import { uakinoAxVod } from './uakinoax/main.js';
 
 export { tortugaVod } from './tortuga/main.js';
@@ -22,6 +23,7 @@ export { bunnyVod } from './bunny/main.js';
 export { aniWorldVod } from './aniworld/main.js';
 export { zetvideoVod } from './zetvideo/main.js';
 export { fenixVod, buildFenixMergedManifest } from './fenix/main.js';
+export { dawnVod } from './dawn/main.js';
 export { uakinoAxVod, stripUakinoAxIntro } from './uakinoax/main.js';
 export { playUakinoAx, findUakinoAxMovie, uakinoAxVoiceCdnId } from './uakinoax/api.js';
 
@@ -35,6 +37,7 @@ export const vodExtractors: VodExtractor[] = [
   aniWorldVod,
   zetvideoVod,
   fenixVod,
+  dawnVod,
   uakinoAxVod,
 ];
 
@@ -50,6 +53,14 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
       const parsed = new URL(url.startsWith('http') ? url : `http://localhost${url}`);
       const explicitCdn = parsed.searchParams.get('cdn');
       const explicitType = parsed.searchParams.get('type')?.toLowerCase();
+
+      // Dawn віддається як cdn=moonanime&type=dawn (рестрім тієї ж бібліотеки),
+      // тому за самим cdn його не знайти — потрібна явна гілка.
+      if (explicitType === 'dawn') {
+        const res = await runWithProvider(dawnVod.name, () => dawnVod.extract(url, options));
+        if (res) return res;
+        return null;
+      }
 
       // Якщо cdn задано явно (і це не animeon), спершу даємо шанс самому екстрактору:
       // fenix/ashdi самі вміють розкривати type=animeon і зберігають додаткові параметри
@@ -176,6 +187,12 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
 
   if (url.includes('cdn=fenix') || url.includes('fenixplay.xyz')) {
     const res = await runWithProvider(fenixVod.name, () => fenixVod.extract(url, options));
+    if (res) return res;
+  }
+
+  // Dawn — приватний CDN mikai.me поверх тієї ж бібліотеки, що й moonanime
+  if (url.includes('cdn=dawn') || url.includes('type=dawn')) {
+    const res = await runWithProvider(dawnVod.name, () => dawnVod.extract(url, options));
     if (res) return res;
   }
 

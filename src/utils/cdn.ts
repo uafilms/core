@@ -10,6 +10,8 @@ const CDN_DISPLAY_NAMES: Record<string, string> = {
   hdvbua: 'HDVBua',
   moonanime: 'MoonAnime',
   moon: 'MoonAnime',
+  // Dawn — приватний CDN mikai.me з тією ж бібліотекою, тому показується як MoonAnime
+  dawn: 'MoonAnime',
   franko: 'Franko',
   bamboo: 'BambooUA',
   bambooua: 'BambooUA',
@@ -38,10 +40,10 @@ export function normalizeCdnName(cdnId: string): string {
 export function detectCdn(raw: { lazy?: { cdn?: string; type?: string; url?: string }; url?: string }, fallbackProvider = 'unknown'): CdnInfo {
   // 1. Check known CDN keywords in raw.lazy.type first
   const lazyType = raw.lazy?.type?.toLowerCase().trim();
-  const knownTypes = ['moon', 'moonanime', 'ashdi', 'tortuga', 'hdvb', 'hdvbua', 'franko', 'bamboo', 'bambooua', 'bunny', 'aniworld', 'zetvideo'];
+  const knownTypes = ['moon', 'moonanime', 'dawn', 'ashdi', 'tortuga', 'hdvb', 'hdvbua', 'franko', 'bamboo', 'bambooua', 'bunny', 'aniworld', 'zetvideo'];
   if (lazyType && knownTypes.includes(lazyType)) {
     return {
-      id: lazyType === 'moon' ? 'moonanime' : lazyType === 'bambooua' ? 'bamboo' : lazyType === 'hdvbua' ? 'hdvb' : lazyType,
+      id: lazyType === 'moon' || lazyType === 'dawn' ? 'moonanime' : lazyType === 'bambooua' ? 'bamboo' : lazyType === 'hdvbua' ? 'hdvb' : lazyType,
       name: normalizeCdnName(lazyType),
     };
   }
@@ -50,7 +52,7 @@ export function detectCdn(raw: { lazy?: { cdn?: string; type?: string; url?: str
   const lazyCdn = raw.lazy?.cdn?.toLowerCase().trim();
   if (lazyCdn && lazyCdn !== 'unknown' && lazyCdn !== 'animeon') {
     return {
-      id: lazyCdn === 'bambooua' ? 'bamboo' : lazyCdn === 'moon' ? 'moonanime' : lazyCdn === 'hdvbua' ? 'hdvb' : lazyCdn,
+      id: lazyCdn === 'bambooua' ? 'bamboo' : lazyCdn === 'moon' || lazyCdn === 'dawn' ? 'moonanime' : lazyCdn === 'hdvbua' ? 'hdvb' : lazyCdn,
       name: normalizeCdnName(lazyCdn),
     };
   }
@@ -63,7 +65,7 @@ export function detectCdn(raw: { lazy?: { cdn?: string; type?: string; url?: str
       if (cdnParamMatch) {
         const cdnVal = decodeURIComponent(cdnParamMatch[1]).toLowerCase().trim();
         if (cdnVal && cdnVal !== 'unknown' && cdnVal !== 'animeon') {
-          const mappedId = cdnVal === 'bambooua' ? 'bamboo' : cdnVal === 'moon' ? 'moonanime' : cdnVal === 'hdvbua' ? 'hdvb' : cdnVal;
+          const mappedId = cdnVal === 'bambooua' ? 'bamboo' : cdnVal === 'moon' || cdnVal === 'dawn' ? 'moonanime' : cdnVal === 'hdvbua' ? 'hdvb' : cdnVal;
           return {
             id: mappedId,
             name: normalizeCdnName(cdnVal),
