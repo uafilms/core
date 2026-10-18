@@ -1,5 +1,5 @@
 import { httpRequest } from '../../utils/http.js';
-import { ashdiVod } from '../../vods/ashdi/main.js';
+import { ashdiVod } from '../cdn/ashdi/main.js';
 import type { ProviderGetOptions, ProviderResult, StreamSource, Season, LazyStream } from '../../types/index.js';
 
 const WORMHOLE_BASE = 'https://wh.lme.isroot.in';

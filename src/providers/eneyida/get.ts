@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio';
 import { httpRequest } from '../../utils/http.js';
-import { hdvbVod } from '../../vods/hdvb/main.js';
+import { hdvbVod } from '../cdn/hdvb/main.js';
 import type { ProviderResult, SearchResult, StreamSource } from '../../types/media.js';
 import type { ProviderGetOptions } from '../../types/provider.js';
 import { searchEneyida } from './search.js';

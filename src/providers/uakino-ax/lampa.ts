@@ -6,18 +6,18 @@ import {
   uakinoAxVoiceCdnId,
   type UakinoAxEpisodeEntry,
   type UakinoAxPlayResponse,
-} from '../../vods/uakinoax/api.js';
-import { mapUakinoAxSubtitles } from '../../vods/uakinoax/main.js';
+} from '../cdn/uakinoax/api.js';
+import { mapUakinoAxSubtitles } from '../cdn/uakinoax/main.js';
+import { buildLazyMasterUrl } from '../cdn/shared/lazy.js';
 import { fetchMovieMeta, posterUrl } from './common.js';
 
 function buildLazyUrl(movieId: string, voice: string, season?: number, episode?: number): string {
-  const params = new URLSearchParams();
-  params.set('cdn', 'uakino-ax');
-  params.set('type', 'vod');
-  params.set('id', movieId);
-  if (voice) params.set('translation', voice);
-  if (season && episode) params.set('episodeId', `s${season}e${episode}`);
-  return `/master.m3u8?${params.toString()}`;
+  return buildLazyMasterUrl('uakino-ax', {
+    type: 'vod',
+    id: movieId,
+    translation: voice,
+    episodeId: season && episode ? `s${season}e${episode}` : undefined,
+  });
 }
 
 function buildSource(

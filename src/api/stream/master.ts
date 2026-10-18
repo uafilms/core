@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import axios from 'axios';
-import { extractVod, stripUakinoAxIntro, buildFenixMergedManifest } from '../../vods/index.js';
+import { extractVod, stripUakinoAxIntro, buildFenixMergedManifest } from '../../providers/cdn/index.js';
 import { parseMasterPlaylist, stripCorsProxy } from '../../utils/m3u8.js';
 import { logWarn, logError } from '../../utils/logger.js';
 import { m3u8PlaylistCache } from '../services/cache.js';

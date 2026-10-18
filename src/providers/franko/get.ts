@@ -2,7 +2,7 @@ import * as cheerio from 'cheerio';
 import type { MediaType, ProviderResult, SearchResult } from '../../types/media.js';
 import type { ProviderGetOptions } from '../../types/provider.js';
 import { httpRequest } from '../../utils/http.js';
-import { frankoVod } from '../../vods/franko/main.js';
+import { frankoVod } from '../cdn/franko/main.js';
 import { searchFranko } from './search.js';
 
 export async function getFrankoStreams(

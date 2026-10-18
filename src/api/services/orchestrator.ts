@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { MediaMetadata, MediaType, StreamSource } from '../../types/media.js';
 import type { OmssSource, OmssSubtitle, OmssDiagnostic, PlatformType, OmssQuality, OmssVideoType } from '../types.js';
 import { providers } from '../../providers/index.js';
-import { extractVod } from '../../vods/index.js';
+import { extractVod } from '../../providers/cdn/index.js';
 import { detectCdn } from '../../utils/cdn.js';
 import { isSearchResultMatch, rankSearchResults } from '../../utils/sort.js';
 import { cleanStudioName, detectAudioLang, resolveStudioInfo } from '../../utils/studio.js';

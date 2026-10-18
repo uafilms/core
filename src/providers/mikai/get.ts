@@ -1,5 +1,5 @@
 import { httpRequest } from '../../utils/http.js';
-import { extractVod } from '../../vods/index.js';
+import { extractVod } from '../cdn/index.js';
 import { searchMikai } from './search.js';
 import { sortSeasons, sortSources } from '../../utils/sort.js';
 import type {

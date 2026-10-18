@@ -2,7 +2,7 @@ import type { ProviderGetOptions } from '../../types/provider.js';
 import type { Episode, ProviderResult, SearchResult, Season, StreamSource } from '../../types/media.js';
 import { httpRequest } from '../../utils/http.js';
 import { extractSeasonFromTitle } from '../../utils/sort.js';
-import { aniWorldVod } from '../../vods/aniworld/main.js';
+import { aniWorldVod } from '../cdn/aniworld/main.js';
 import type { AniWorldDetail } from './types.js';
 
 export async function getAniWorld(

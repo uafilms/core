@@ -1,6 +1,6 @@
 import type { MediaType, ProviderResult } from '../../types/media.js';
 import type { ProviderGetOptions } from '../../types/provider.js';
-import { extractVod } from '../../vods/index.js';
+import { extractVod } from '../cdn/index.js';
 import { BASE_URL, fetchEpisodesMeta, fetchMovieMeta, posterUrl } from './common.js';
 
 /**
