@@ -8,6 +8,8 @@ import {
   searchAniHubAnime,
 } from './common.js';
 import type { AniHubAnimeShort, AniHubEpisodeSources, AniHubStudio, AniHubStudioEpisode } from './types.js';
+import { buildFenixLazyUrl } from '../cdn/fenix/extract.js';
+import { buildMoonAnimeLazyUrl } from '../cdn/moonanime/extract.js';
 
 /** «Сім'я шпигуна: Сезон 3» → 3; якщо маркера немає — 1 (базовий сезон). */
 function seasonFromTitle(title?: string): number | null {
@@ -161,7 +163,7 @@ function moonAnimeSources(data: AniHubEpisodeSources, episode: number): StreamSo
     const target = item?.iframe_url || item?.vod_url;
     if (!target) continue;
 
-    const lazyUrl = `/master.m3u8?cdn=moonanime&url=${encodeURIComponent(target)}`;
+    const lazyUrl = buildMoonAnimeLazyUrl(target);
     sources.push({
       title: studio.studio_name || studio.display_name || 'MoonAnime',
       audio: studio.studio_name || undefined,
@@ -194,7 +196,7 @@ function fenixSource(data: AniHubEpisodeSources, episode: number): StreamSource 
   if (!embed) return null;
 
   const voice = primary.studio_name || labels[0] || 'Fenix';
-  const lazyUrl = `/master.m3u8?cdn=fenix&url=${encodeURIComponent(embed)}&ep=${episode}&voice=${encodeURIComponent(voice)}&mergeAudio=1`;
+  const lazyUrl = buildFenixLazyUrl(embed, { episode, voice });
 
   return {
     title: voice,
