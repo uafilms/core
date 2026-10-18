@@ -482,9 +482,12 @@ streamRouter.get('/master.m3u8', async (c) => {
       streamUrl,
       proxyHost,
       {
-        corsProxySegments: isAshdi || isBamboo || isFenix,
-        // сегменти uakino.ax підписані на IP сервера, тому тягнемо їх самі;
-        // Fenix (fmp4) віддає токенізовані сегменти без гарантованого CORS
+        // CORS-проксі потрібен лише ashdi: його сегменти віддаються з жорстким
+        // Access-Control-Allow-Origin: https://ashdi.vip і вимагають Referer.
+        // Решта CDN (moonanime, dawn, zetvideo, hdvb, fenix, bamboo) мають
+        // дозвільний CORS, тому браузер тягне їхні сегменти напряму.
+        corsProxySegments: isAshdi,
+        // сегменти uakino.ax підписані на IP сервера, тому тягнемо їх самі
         segmentProxyBase: isUakinoAx ? `${proxyHost}/segment?url=` : undefined,
         subtitles: extractedSubtitles.filter((sub) => sub.format !== 'ass'),
       }
