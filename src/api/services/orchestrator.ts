@@ -265,6 +265,17 @@ export class OrchestratorService {
             studio.logoUrl = `${proxyHost}${studio.logoUrl}`;
           }
           const audioTracks = raw.audioTracks?.length ? raw.audioTracks : [studio.name];
+          // Для злитих (Fenix) джерел уся озвучка лежить в одному `studio`, тому
+          // зіставляємо логотип з кожною доріжкою окремо.
+          const audioTrackStudios = raw.audioTracks?.length
+            ? raw.audioTracks.map((label) => {
+                const info = resolveStudioInfo(cleanStudioName(label));
+                if (info.logoUrl && info.logoUrl.startsWith('/logos/')) {
+                  info.logoUrl = `${proxyHost}${info.logoUrl}`;
+                }
+                return info;
+              })
+            : [];
           const lang = detectAudioLang(rawAudioName, meta.originalLanguage);
 
           const sourceObj: OmssSource = {
@@ -274,6 +285,7 @@ export class OrchestratorService {
             type: inferType(raw.url, raw.mime),
             quality: normalizeQuality(raw.quality),
             audioTracks,
+            ...(audioTrackStudios.length ? { audioTrackStudios } : {}),
             lang,
             studio,
             provider: {

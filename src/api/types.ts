@@ -38,6 +38,11 @@ export interface OmssSource {
   type: OmssVideoType;
   quality: OmssQuality;
   audioTracks: string[];
+  /**
+   * Студії для кожної озвучки з `audioTracks` (той самий порядок). Потрібно для
+   * shared-video джерел, де кілька озвучок ідуть однією доріжкою і мають власні логотипи.
+   */
+  audioTrackStudios?: OmssStudioInfo[];
   lang?: string;
   studio?: OmssStudioInfo;
   provider: {
