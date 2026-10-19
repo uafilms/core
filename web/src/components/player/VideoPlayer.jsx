@@ -49,6 +49,20 @@ const isCodecSupported = (codecs) => {
 const GENERIC_AUDIO_LABEL_RE = /^(default|undefined|null|audio|unknown|невідомо|доріжка\s*\d+)$/i;
 const isGenericAudioLabel = (label) => !label || GENERIC_AUDIO_LABEL_RE.test(String(label).trim());
 
+// HLS-лейбли Fenix і назви студій з бекенду пишуться по-різному ('НЛО TV' / 'НЛО-ТВ'),
+// тому ключ для пошуку логотипа зводимо до одного вигляду: латиниця → кирилиця,
+// нижній регістр, без розділових знаків.
+const STUDIO_LABEL_HOMOGLYPHS = {
+  a: 'а', c: 'с', e: 'е', h: 'н', i: 'і', k: 'к', m: 'м',
+  o: 'о', p: 'р', s: 'с', t: 'т', v: 'в', x: 'х', y: 'у',
+};
+const normalizeStudioLabel = (label) =>
+  String(label || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[acehikmopstvxy]/g, (char) => STUDIO_LABEL_HOMOGLYPHS[char] || char)
+    .replace(/[\s\-_.,:]+/g, '');
+
 
 export default function VideoPlayer({
   src,
@@ -1353,7 +1367,7 @@ export default function VideoPlayer({
     const list = player?.audioTracks?.();
     if (!list || list.length < 2) return;
 
-    const normalize = (value) => (value || '').trim().toLowerCase();
+    const normalize = normalizeStudioLabel;
     const wanted = normalize(desiredAudioLabel);
 
     for (let i = 0; i < list.length; i++) {
@@ -1497,10 +1511,13 @@ export default function VideoPlayer({
   };
 
   const activeNativeAudioLabel = nativeAudioTracks.find((track) => track.enabled)?.label || null;
+  const meaningfulNativeAudioLabel = activeNativeAudioLabel && !isGenericAudioLabel(activeNativeAudioLabel)
+    ? activeNativeAudioLabel
+    : null;
   // VHS для аудіогруп інколи віддає технічний label ('default'), тому в налаштуваннях
   // показуємо його лише коли він осмислений, інакше — студію/список озвучок джерела.
   const displayAudioLabel =
-    (activeNativeAudioLabel && !isGenericAudioLabel(activeNativeAudioLabel) ? activeNativeAudioLabel : null) ||
+    meaningfulNativeAudioLabel ||
     selectedSource?.studio?.name ||
     (selectedSource?.audioTracks || []).find((label) => !isGenericAudioLabel(label)) ||
     'За замовчуванням';
@@ -1517,15 +1534,25 @@ export default function VideoPlayer({
   ).size;
 
   // Логотипи студій за назвою озвучки — щоб нативні доріжки (Fenix) теж мали іконки,
-  // як у списку джерел.
+  // як у списку джерел. Для злитих джерел логотипи лежать у `audioTrackStudios`.
   const studioLogoByLabel = new Map();
+  const rememberStudioLogo = (label, logo) => {
+    const key = normalizeStudioLabel(label);
+    if (key && logo && !studioLogoByLabel.has(key)) studioLogoByLabel.set(key, logo);
+  };
   for (const source of allSources) {
-    const name = source.studio?.name?.trim().toLowerCase();
-    const logo = source.studio?.logoUrl;
-    if (name && logo && !studioLogoByLabel.has(name)) studioLogoByLabel.set(name, logo);
+    rememberStudioLogo(source.studio?.name, source.studio?.logoUrl);
+    const trackStudios = source.audioTrackStudios || [];
+    (source.audioTracks || []).forEach((label, index) => {
+      rememberStudioLogo(label, trackStudios[index]?.logoUrl);
+    });
   }
+  // Активна нативна доріжка може не збігатися зі студією джерела, тому логотип
+  // самої студії показуємо лише коли нативна доріжка не вибрана.
   const displayAudioLogo =
-    studioLogoByLabel.get(displayAudioLabel.trim().toLowerCase()) || selectedSource?.studio?.logoUrl || null;
+    studioLogoByLabel.get(normalizeStudioLabel(displayAudioLabel)) ||
+    (meaningfulNativeAudioLabel ? null : selectedSource?.studio?.logoUrl) ||
+    null;
 
   return (
     <div className="player-wrapper">
@@ -1800,10 +1827,10 @@ export default function VideoPlayer({
                       className={`vjs-submenu-option vjs-audio-option ${track.enabled ? 'selected' : ''}`}
                       onClick={() => selectNativeAudioTrack(trackIndex)}
                     >
-                      {studioLogoByLabel.get((track.label || '').trim().toLowerCase()) && (
+                      {studioLogoByLabel.get(normalizeStudioLabel(track.label)) && (
                         <div className="vjs-studio-logo-wrapper">
                           <img
-                            src={studioLogoByLabel.get((track.label || '').trim().toLowerCase())}
+                            src={studioLogoByLabel.get(normalizeStudioLabel(track.label))}
                             alt=""
                             className="vjs-studio-logo"
                             loading="lazy"
@@ -1856,9 +1883,9 @@ export default function VideoPlayer({
                         onClick={() => {
                           // Fenix: одне відео + кілька доріжок — перемикаємо нативно,
                           // без перезавантаження джерела (лише якщо доріжка вже доступна)
-                          const voiceLabel = (srcOption.studio?.name || srcOption.audioTracks?.[0] || '').trim().toLowerCase();
+                          const voiceLabel = normalizeStudioLabel(srcOption.studio?.name || srcOption.audioTracks?.[0]);
                           const nativeIndex = nativeAudioTracks.findIndex(
-                            (track) => (track.label || '').trim().toLowerCase() === voiceLabel
+                            (track) => normalizeStudioLabel(track.label) === voiceLabel
                           );
                           if (srcOption.sharedVideo && nativeAudioTracks.length > 1 && nativeIndex >= 0) {
                             selectNativeAudioTrack(nativeIndex);
