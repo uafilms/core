@@ -775,15 +775,26 @@ export default function VideoPlayer({
     // Bind quality levels
     if (player.qualityLevels) {
       const ql = player.qualityLevels();
-      const snapHeight = (h) => {
-        if (h >= 2000) return 2160;
-        if (h >= 1440) return 1440;
-        if (h >= 900) return 1080;
-        if (h >= 630) return 720;
-        if (h >= 450) return 480;
-        if (h >= 270) return 360;
-        if (h >= 180) return 240;
-        return h;
+      const snapHeight = (height, width = 0) => {
+        // Scope-відео (2.39:1) має висоту 1606/802 замість 2160/1080, тому
+        // орієнтуємось на ширину кадру, а не на висоту.
+        if (width > 0) {
+          if (width >= 3800) return 2160;
+          if (width >= 2500) return 1440;
+          if (width >= 1900) return 1080;
+          if (width >= 1200) return 720;
+          if (width >= 700) return 480;
+          if (width >= 600) return 360;
+          if (width >= 400) return 240;
+        }
+        if (height >= 2000) return 2160;
+        if (height >= 1440) return 1440;
+        if (height >= 900) return 1080;
+        if (height >= 630) return 720;
+        if (height >= 450) return 480;
+        if (height >= 270) return 360;
+        if (height >= 180) return 240;
+        return height;
       };
       const updateQl = () => {
         const seen = new Set();
@@ -793,7 +804,8 @@ export default function VideoPlayer({
           const level = ql[i];
           const levelCodecs = level.playlist?.attributes?.CODECS || '';
           const rawHeight = level.height || (level.playlist?.attributes?.RESOLUTION?.height) || 0;
-          const height = rawHeight > 0 ? snapHeight(rawHeight) : 0;
+          const rawWidth = level.width || (level.playlist?.attributes?.RESOLUTION?.width) || 0;
+          const height = rawHeight > 0 || rawWidth > 0 ? snapHeight(rawHeight, rawWidth) : 0;
           const label = height > 0 ? `${height}p` : `Рівень ${i + 1}`;
           if (!seen.has(label)) {
             seen.add(label);
