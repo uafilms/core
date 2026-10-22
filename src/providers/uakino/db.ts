@@ -4,31 +4,10 @@ import https from 'https';
 import axios from 'axios';
 import Database from 'better-sqlite3';
 import type { UakinoDbRow, UakinoParsedXfields, UakinoRawItem } from './types.js';
+import { getUakinoCertificates } from './certs.js';
 
 const API_HOST = 'https://api.uakino.app';
 const DB_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-function findCertFiles(): { cert: Buffer; key: Buffer } {
-  const possibleDirs = [
-    path.resolve(process.cwd(), 'certs/uakino'),
-    path.resolve(process.cwd(), 'core/certs/uakino'),
-    path.resolve(__dirname, '../../../certs/uakino'),
-    path.resolve(__dirname, '../../../../backend/providers/uakino-app.certs'),
-  ];
-
-  for (const dir of possibleDirs) {
-    const certPath = path.join(dir, 'cert.pem');
-    const keyPath = path.join(dir, 'cert.key');
-    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-      return {
-        cert: fs.readFileSync(certPath),
-        key: fs.readFileSync(keyPath),
-      };
-    }
-  }
-
-  throw new Error('[UAKino] SSL client certificates not found in certs/uakino');
-}
 
 function getDbPath(): string {
   const cacheDir = path.resolve(process.cwd(), 'cache');
@@ -153,14 +132,14 @@ export async function getUakinoDb(forceSync = false): Promise<Database.Database>
       }
     }
 
-    // Sync database from UAKino REST API
-    const certs = findCertFiles();
-    const httpsAgent = new https.Agent({
+    // Sync database from UAKino REST API with dynamic certificates
+    let certs = await getUakinoCertificates();
+    let httpsAgent = new https.Agent({
       cert: certs.cert,
       key: certs.key,
     });
 
-    let items: UakinoRawItem[];
+    let items: UakinoRawItem[] = [];
     try {
       const response = await axios.get<UakinoRawItem[]>(`${API_HOST}/api/v1/filter?limit=50000`, {
         httpsAgent,
@@ -173,15 +152,37 @@ export async function getUakinoDb(forceSync = false): Promise<Database.Database>
         throw new Error('[UAKino] Failed to fetch catalog: invalid response');
       }
     } catch (error) {
-      // The upstream catalog API is unavailable (403 from Cloudflare, network issues).
-      // The cached catalog is still usable, so serve it instead of failing the provider.
-      const cached = openExistingDb(dbPath);
-      if (cached) {
-        console.warn(`[UAKino] Catalog sync failed (${(error as Error).message}); using cached database`);
-        dbInstance = cached;
-        return cached;
+      // If 403 Forbidden, certs might have expired or rotated -> re-download APK and retry!
+      if (axios.isAxiosError(error) && error.response?.status === 403) {
+        console.warn('[UAKino] Received 403 from API. Downloading fresh APK to update certificates...');
+        try {
+          certs = await getUakinoCertificates(true);
+          httpsAgent = new https.Agent({
+            cert: certs.cert,
+            key: certs.key,
+          });
+
+          const retryResponse = await axios.get<UakinoRawItem[]>(`${API_HOST}/api/v1/filter?limit=50000`, {
+            httpsAgent,
+            headers: { 'User-Agent': 'ktor-client' },
+            timeout: 90000,
+          });
+          items = retryResponse.data;
+        } catch (retryError) {
+          console.warn(`[UAKino] Retry with freshly downloaded certificates failed: ${(retryError as Error).message}`);
+        }
       }
-      throw error;
+
+      if (!items || !items.length) {
+        // Fallback to cached database if network or API failed
+        const cached = openExistingDb(dbPath);
+        if (cached) {
+          console.warn(`[UAKino] Catalog sync failed (${(error as Error).message}); using cached database`);
+          dbInstance = cached;
+          return cached;
+        }
+        throw error;
+      }
     }
 
     const db = createDatabase(dbPath);
