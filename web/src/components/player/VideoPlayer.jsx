@@ -37,11 +37,24 @@ const isCodecSupported = (codecs) => {
   if (!codecs || typeof MediaSource === 'undefined' || typeof MediaSource.isTypeSupported !== 'function') {
     return true;
   }
+  const cleanCodecs = codecs.split(',')[0].trim();
   try {
-    return MediaSource.isTypeSupported(`video/mp4; codecs="${codecs}"`);
+    if (MediaSource.isTypeSupported(`video/mp4; codecs="${codecs}"`)) return true;
+    if (MediaSource.isTypeSupported(`video/mp4; codecs="${cleanCodecs}"`)) return true;
+    if (/^(hvc1|hev1)/i.test(cleanCodecs)) {
+      if (MediaSource.isTypeSupported('video/mp4; codecs="hvc1"')) return true;
+      if (MediaSource.isTypeSupported('video/mp4; codecs="hev1"')) return true;
+      if (MediaSource.isTypeSupported('video/mp4; codecs="hvc1.1.6.L93.B0"')) return true;
+    }
   } catch {
     return true;
   }
+  // На десктопі/SmartTV HEVC зазвичай декодується системою (ffmpeg/vaapi/d3d11va),
+  // навіть якщо браузер консервативно повертає false на isTypeSupported.
+  if (/^(hvc1|hev1)/i.test(cleanCodecs)) {
+    return true;
+  }
+  return false;
 };
 
 // Деякі джерела (зокрема HLS-групи Fenix через VHS) віддають технічний label
@@ -582,9 +595,11 @@ export default function VideoPlayer({
           // Плеєр часто менший за відео: не обмежуємо рендицію розміром елемента,
           // інакше VHS тримає 480p навіть із швидким інтернетом.
           limitRenditionByPlayerDimensions: false,
-          // Стартова оцінка швидкості з Network Information API та з попередніх сесій
           useNetworkInformationApi: true,
-          useBandwidthFromLocalStorage: true,
+          // Не зберігаємо низький бітрейт у localStorage, щоб не застрягати на 480p між сесіями
+          useBandwidthFromLocalStorage: false,
+          // Стартовий орієнтир 25 Mbps, щоб плеєр одразу вмикав максимальну якість (1080p)
+          bandwidth: 25000000,
         },
         nativeVideoTracks: false,
         nativeAudioTracks: false,
@@ -847,19 +862,20 @@ export default function VideoPlayer({
         // Вкладку "Кодек" показуємо лише коли джерело справді має кілька кодеків
         setCodecOptions(options.length > 1 ? options : []);
 
-        // Auto віддає перевагу найкращому підтримуваному кодеку (AV1 > VP9 > HEVC > H.264)
-        const preferred = options.find((option) => option.supported) || null;
+        // Auto віддає перевагу найкращому кодеку за пріоритетом (AV1 > VP9 > HEVC > H.264)
+        const preferred = options.find((option) => option.supported) || options[0] || null;
         setAutoCodec(preferred ? preferred.id : null);
 
-        // Якщо кодеків кілька — лишаємо увімкненими лише рівні обраного кодеку
-        // (явний вибір або Auto), щоб автіякість не стрибала на гірший/недоступний кодек
-        if (options.length > 1 && selectedQualityRef.current === -1) {
-          const activeCodec = selectedCodecRef.current || (preferred ? preferred.id : null);
+        // Фільтруємо за кодеком лише якщо користувач ЯВНО обрав кодек у меню.
+        // За замовчуванням (Auto) тримаємо увімкненими всі рівні (і 1080p HEVC, і 480p AVC),
+        // щоб не блокувати 1080p.
+        if (selectedQualityRef.current === -1) {
+          const explicitCodec = selectedCodecRef.current;
           for (let i = 0; i < ql.length; i++) {
             const levelCodecs = ql[i].playlist?.attributes?.CODECS || '';
             const levelFamily = codecFamilyOf(levelCodecs);
-            if (activeCodec) {
-              ql[i].enabled = !!levelFamily && levelFamily.id === activeCodec;
+            if (explicitCodec) {
+              ql[i].enabled = !!levelFamily && levelFamily.id === explicitCodec;
             } else {
               ql[i].enabled = true;
             }
@@ -1393,16 +1409,16 @@ export default function VideoPlayer({
     const player = playerRef.current;
     if (!player || !player.qualityLevels) return;
     const ql = player.qualityLevels();
-    const preferred = selectedCodec || autoCodec;
-    const enableForCodec = (level) => {
-      const levelFamily = codecFamilyOf(level.playlist?.attributes?.CODECS || '');
-      if (preferred) return !!levelFamily && levelFamily.id === preferred;
-      return true;
-    };
+    const explicitCodec = selectedCodec;
 
     if (targetIndex === -1) {
       for (let i = 0; i < ql.length; i++) {
-        ql[i].enabled = enableForCodec(ql[i]);
+        if (explicitCodec) {
+          const levelFamily = codecFamilyOf(ql[i].playlist?.attributes?.CODECS || '');
+          ql[i].enabled = !!levelFamily && levelFamily.id === explicitCodec;
+        } else {
+          ql[i].enabled = true;
+        }
       }
     } else {
       for (let i = 0; i < ql.length; i++) {
