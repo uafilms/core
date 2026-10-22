@@ -72,6 +72,84 @@ function extractPlayerTabs($: cheerio.CheerioAPI): PlayerTab[] {
   return tabs;
 }
 
+function buildLazyStreamFromTab(iframeSrc: string, tabLabel: string, referer: string): StreamSource {
+  const cleanSrc = iframeSrc.startsWith('//') ? `https:${iframeSrc}` : iframeSrc;
+
+  // Ashdi
+  const ashdiMatch = cleanSrc.match(/(?:ashdi\.(?:vip|me)|0yql3tj|oyql3tj)\/(vod|embed|serial)\/([a-zA-Z0-9_-]+)/i);
+  if (ashdiMatch) {
+    const type = ashdiMatch[1].toLowerCase() as 'vod' | 'embed' | 'serial';
+    const id = ashdiMatch[2];
+    const lazyUrl = `/master.m3u8?cdn=ashdi&type=${type}&id=${id}`;
+    return {
+      title: tabLabel && tabLabel !== 'Плеєр 1' && tabLabel !== 'Дивитись онлайн' ? tabLabel : 'Ashdi',
+      url: lazyUrl,
+      mime: 'application/x-mpegURL',
+      lazy: {
+        cdn: 'ashdi',
+        type,
+        id,
+        url: lazyUrl,
+        directUrl: cleanSrc,
+      },
+      headers: { Referer: referer },
+    };
+  }
+
+  // ZetVideo
+  const zetMatch = cleanSrc.match(/zetvideo\.net\/(vod|embed|serial)\/([a-zA-Z0-9_-]+)/i);
+  if (zetMatch) {
+    const type = zetMatch[1].toLowerCase() as 'vod' | 'embed' | 'serial';
+    const id = zetMatch[2];
+    const lazyUrl = `/master.m3u8?cdn=zetvideo&type=${type}&id=${id}`;
+    return {
+      title: tabLabel && tabLabel !== 'Плеєр 1' && tabLabel !== 'Дивитись онлайн' ? tabLabel : 'ZetVideo',
+      url: lazyUrl,
+      mime: 'application/x-mpegURL',
+      lazy: {
+        cdn: 'zetvideo',
+        type,
+        id,
+        url: lazyUrl,
+        directUrl: cleanSrc,
+      },
+      headers: { Referer: referer },
+    };
+  }
+
+  // HDVB
+  if (cleanSrc.includes('hdvb') || cleanSrc.includes('vidcache')) {
+    const lazyUrl = `/master.m3u8?cdn=hdvb&url=${encodeURIComponent(cleanSrc)}`;
+    return {
+      title: tabLabel && tabLabel !== 'Плеєр 1' && tabLabel !== 'Дивитись онлайн' ? tabLabel : 'HDVB',
+      url: lazyUrl,
+      mime: 'application/x-mpegURL',
+      lazy: {
+        cdn: 'hdvb',
+        type: 'vod',
+        url: cleanSrc,
+        directUrl: cleanSrc,
+      },
+      headers: { Referer: referer },
+    };
+  }
+
+  // Generic iframe
+  const lazyUrl = `/master.m3u8?url=${encodeURIComponent(cleanSrc)}`;
+  return {
+    title: tabLabel || 'Плеєр',
+    url: lazyUrl,
+    mime: 'application/x-mpegURL',
+    lazy: {
+      cdn: 'unknown',
+      type: 'embed',
+      url: lazyUrl,
+      directUrl: cleanSrc,
+    },
+    headers: { Referer: referer },
+  };
+}
+
 function extractEpisodeLinks($: cheerio.CheerioAPI, pageUrl: string): EpisodeLink[] {
   const seen = new Set<string>();
   const epLinks: EpisodeLink[] = [];
@@ -220,21 +298,9 @@ export async function getUaflix(
       // If probe did not return full serial, episodes are individual VOD pages (e.g. venzdej with zetvideo /vod/)
       // If specific season & episode requested by orchestrator:
       if (targetSeason !== undefined && targetEpisode !== undefined) {
-        const epSources: StreamSource[] = [];
-        for (const tab of probeTabs) {
-          const res = await extractVod(tab.iframeSrc, {
-            referer: probeLink.url,
-            signal: options?.signal,
-          });
-          if (res?.sources) {
-            for (const s of res.sources) {
-              epSources.push({
-                ...s,
-                title: tab.label !== 'Плеєр 1' && tab.label !== 'Дивитись онлайн' ? `${tab.label} (${s.title})` : s.title,
-              });
-            }
-          }
-        }
+        const epSources: StreamSource[] = probeTabs
+          .filter(tab => !tab.iframeSrc.includes('tortuga'))
+          .map(tab => buildLazyStreamFromTab(tab.iframeSrc, tab.label, probeLink.url));
 
         // Build season array with all known episodes, placing extracted sources in the target episode
         const seasonsMap = new Map<number, Episode[]>();
@@ -277,22 +343,9 @@ export async function getUaflix(
 
           const $ep = cheerio.load(html);
           const tabs = extractPlayerTabs($ep);
-          const epSources: StreamSource[] = [];
-
-          for (const tab of tabs) {
-            const res = await extractVod(tab.iframeSrc, {
-              referer: link.url,
-              signal: options?.signal,
-            });
-            if (res?.sources) {
-              for (const s of res.sources) {
-                epSources.push({
-                  ...s,
-                  title: tab.label !== 'Плеєр 1' && tab.label !== 'Дивитись онлайн' ? `${tab.label} (${s.title})` : s.title,
-                });
-              }
-            }
-          }
+          const epSources: StreamSource[] = tabs
+            .filter(tab => !tab.iframeSrc.includes('tortuga'))
+            .map(tab => buildLazyStreamFromTab(tab.iframeSrc, tab.label, link.url));
 
           return { season: link.season, episode: link.episode, sources: sortSources(epSources) };
         } catch {
@@ -335,49 +388,21 @@ export async function getUaflix(
         continue;
       }
 
-      // If tab iframe is a direct VOD (e.g. zetvideo.net/vod/123 or ashdi.vip/vod/123), create lazy stream directly without pre-fetching
-      const vodMatch = tab.iframeSrc.match(/(?:(zetvideo)\.net|(ashdi)\.vip)\/(vod)\/([a-zA-Z0-9_-]+)/i);
-      if (vodMatch) {
-        const cdnName = (vodMatch[1] || vodMatch[2]).toLowerCase();
-        const type = vodMatch[3].toLowerCase() as 'vod';
-        const id = vodMatch[4];
-        allSources.push({
-          title: tab.label !== 'Плеєр 1' && tab.label !== 'Дивитись онлайн' ? tab.label : (cdnName === 'zetvideo' ? 'ZetVideo' : cdnName === 'ashdi' ? 'Ashdi' : 'Tortuga'),
-          url: `/master.m3u8?cdn=${cdnName}&type=${type}&id=${id}`,
-          lazy: {
-            cdn: cdnName,
-            type,
-            id,
-            url: `/master.m3u8?cdn=${cdnName}&type=${type}&id=${id}`,
-            directUrl: tab.iframeSrc,
-          },
-          headers: {
-            Referer: pageUrl,
-          },
+      // If tab iframe is a full serial playlist (e.g. ashdi.vip/serial/... or zetvideo.net/serial/...)
+      if (tab.iframeSrc.includes('/serial/')) {
+        const vodResult = await extractVod(tab.iframeSrc, {
+          referer: pageUrl,
+          signal: options?.signal,
         });
-        continue;
-      }
 
-      const vodResult = await extractVod(tab.iframeSrc, {
-        referer: pageUrl,
-        signal: options?.signal,
-      });
-
-      if (!vodResult) continue;
-
-      if (vodResult.seasons && vodResult.seasons.length > 0) {
-        discoveredSeasons = vodResult.seasons;
-        break;
-      }
-
-      if (vodResult.sources && vodResult.sources.length > 0) {
-        for (const s of vodResult.sources) {
-          allSources.push({
-            ...s,
-            title: tab.label !== 'Плеєр 1' && tab.label !== 'Дивитись онлайн' ? `${tab.label} (${s.title})` : s.title,
-          });
+        if (vodResult?.seasons && vodResult.seasons.length > 0) {
+          discoveredSeasons = vodResult.seasons;
+          break;
         }
       }
+
+      // All other tabs (direct VODs, embed iframes) become lazy streams directly
+      allSources.push(buildLazyStreamFromTab(tab.iframeSrc, tab.label, pageUrl));
     }
 
     if (discoveredSeasons && discoveredSeasons.length > 0) {

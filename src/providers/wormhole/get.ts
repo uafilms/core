@@ -49,7 +49,32 @@ export async function get(
     const endpointType = isSerial ? 'serial' : 'vod';
     const vodId = idMatch ? idMatch[2] : '';
 
-    // Extract actual streams/seasons from Ashdi
+    // Для фільмів повертаємо lazy stream без зайвого запиту до Ashdi
+    if (!isSerial) {
+      const lazyUrl = vodId
+        ? `/master.m3u8?cdn=ashdi&type=vod&id=${vodId}`
+        : `/master.m3u8?cdn=ashdi&url=${encodeURIComponent(ashdiUrl)}`;
+      const lazy: LazyStream = {
+        cdn: 'ashdi',
+        type: 'vod',
+        id: vodId || undefined,
+        url: lazyUrl,
+        directUrl: ashdiUrl,
+      };
+
+      return {
+        provider: 'wormhole',
+        type: 'movie',
+        sources: [{
+          title: 'Ashdi',
+          url: lazy.url,
+          mime: 'application/x-mpegURL',
+          lazy,
+        }],
+      };
+    }
+
+    // Extract actual streams/seasons from Ashdi for serials
     const vodResult = await ashdiVod.extract(ashdiUrl, {
       signal: options?.signal,
       headers: {

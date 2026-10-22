@@ -116,33 +116,33 @@ export async function getMikai(
         for (const src of ep.sources) {
           if (!src.embedUrl) continue;
 
-          try {
-            const vodResult = await extractVod(src.embedUrl, {
-              referer: 'https://mikai.me/',
-              signal: options?.signal,
-            });
+          const embed = src.embedUrl.startsWith('//') ? `https:${src.embedUrl}` : src.embedUrl;
+          const providerName = src.provider || 'Mikai';
+          const lazyUrl = `/master.m3u8?url=${encodeURIComponent(embed)}`;
+          const combinedSource: StreamSource = {
+            title: `${trackTitle} [${providerName}]`,
+            audio: trackTitle,
+            url: lazyUrl,
+            mime: 'application/x-mpegURL',
+            poster: logoUrl,
+            lazy: {
+              cdn: providerName,
+              type: 'embed',
+              url: lazyUrl,
+              directUrl: embed,
+            },
+            headers: {
+              Referer: 'https://mikai.me/',
+            },
+          };
 
-            if (vodResult?.sources && vodResult.sources.length > 0) {
-              for (const s of vodResult.sources) {
-                const combinedSource: StreamSource = {
-                  ...s,
-                  title: `${trackTitle} [${s.title}]`,
-                  audio: trackTitle,
-                  poster: s.poster || logoUrl,
-                };
-
-                if (isMovie) {
-                  movieSources.push(combinedSource);
-                } else {
-                  if (!episodeSourcesMap.has(epNum)) {
-                    episodeSourcesMap.set(epNum, []);
-                  }
-                  episodeSourcesMap.get(epNum)!.push(combinedSource);
-                }
-              }
+          if (isMovie) {
+            movieSources.push(combinedSource);
+          } else {
+            if (!episodeSourcesMap.has(epNum)) {
+              episodeSourcesMap.set(epNum, []);
             }
-          } catch {
-            // ignore extraction errors on individual broken VOD links
+            episodeSourcesMap.get(epNum)!.push(combinedSource);
           }
         }
       }

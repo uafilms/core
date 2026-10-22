@@ -209,18 +209,25 @@ export function scoreSearchResult(
       continue;
     }
 
-    // 2. Префіксний збіг (наприклад, "Посіпаки" і "Посіпаки: Становлення лиходія")
-    if (normCand.startsWith(normQ) || normQ.startsWith(normCand)) {
+    // 2. Префіксний збіг по словах (наприклад, "Посіпаки" і "Посіпаки: Становлення лиходія")
+    const isWordPrefix =
+      normCand.startsWith(normQ + ' ') ||
+      normQ.startsWith(normCand + ' ');
+
+    if (isWordPrefix) {
       const ratio = Math.min(normQ.length, normCand.length) / Math.max(normQ.length, normCand.length);
       bestScore = Math.max(bestScore, 80 + Math.round(ratio * 15));
       continue;
     }
 
-    // 3. Підрядок (якщо рядок достатньо довгий)
-    if (
-      (normCand.includes(normQ) && normQ.length >= 4) ||
-      (normQ.includes(normCand) && normCand.length >= 4)
-    ) {
+    // 3. Підрядок по словах (якщо рядок достатньо довгий)
+    const isWordSubstring =
+      normQ.length >= 4 &&
+      (normCand.includes(' ' + normQ + ' ') ||
+        normCand.endsWith(' ' + normQ) ||
+        normCand.startsWith(normQ + ' '));
+
+    if (isWordSubstring) {
       const ratio = Math.min(normQ.length, normCand.length) / Math.max(normQ.length, normCand.length);
       bestScore = Math.max(bestScore, 65 + Math.round(ratio * 15));
       continue;
@@ -234,7 +241,17 @@ export function scoreSearchResult(
       const tokensToCheck = textQTokens.length > 0 ? textQTokens : qTokens;
 
       const matchedTokens = tokensToCheck.filter(qt =>
-        candTokens.some(ct => ct === qt || (ct.length >= 4 && qt.length >= 4 && (ct.includes(qt) || qt.includes(ct))))
+        candTokens.some(ct => {
+          if (ct === qt) return true;
+          // Дозволяємо підрядок лише якщо довжина відрізняється не більше ніж на 2 літери (наприклад відмінки: "дюна" і "дюни")
+          if (ct.length >= 4 && qt.length >= 4) {
+            const lenDiff = Math.abs(ct.length - qt.length);
+            if (lenDiff <= 2 && (ct.includes(qt) || qt.includes(ct))) {
+              return true;
+            }
+          }
+          return false;
+        })
       );
 
       const matchRatio = matchedTokens.length / tokensToCheck.length;

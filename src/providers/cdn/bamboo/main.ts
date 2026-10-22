@@ -110,6 +110,23 @@ export class BambooVodExtractor implements VodExtractor {
     for (const src of iframes) {
       if (src.includes('ashdi') || src.includes('0yql3tj') || src.includes('oyql3tj')) {
         const fullSrc = src.startsWith('//') ? `https:${src}` : src;
+        const idMatch = fullSrc.match(/\/vod\/([a-zA-Z0-9_-]+)/);
+        if (idMatch) {
+          const id = idMatch[1];
+          return {
+            sources: [{
+              title: 'Ashdi',
+              url: `/master.m3u8?cdn=ashdi&type=vod&id=${id}`,
+              lazy: {
+                cdn: 'ashdi',
+                type: 'vod',
+                id,
+                url: `/master.m3u8?cdn=ashdi&type=vod&id=${id}`,
+                directUrl: fullSrc,
+              },
+            }],
+          };
+        }
         const res = await ashdiVod.extract(fullSrc, {
           ...options,
           referer: pageUrl || BAMBOO_REFERER,

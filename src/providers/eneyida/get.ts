@@ -65,6 +65,35 @@ export async function getEneyida(
     iframeUrl = 'https:' + iframeUrl;
   }
 
+  const cdnType = iframeUrl.includes('/embd/') || iframeUrl.includes('/embed/') ? 'embed' : 'vod';
+  const lazyUrl = `/master.m3u8?cdn=hdvb&url=${encodeURIComponent(iframeUrl)}`;
+
+  const isTv =
+    options?.meta?.type === 'tv' ||
+    options?.season !== undefined ||
+    pageUrl.includes('/serials/') ||
+    /(?:сезон|серія|серіал)/i.test(html) ||
+    /(?:сезон|серія|серіал)/i.test($('h1').text());
+
+  // Для фільмів повертаємо lazy stream без зайвого запиту до HDVB
+  if (!isTv) {
+    return {
+      provider: 'eneyida',
+      type: 'movie',
+      sources: [{
+        title: 'HDVB',
+        url: lazyUrl,
+        mime: 'application/x-mpegURL',
+        lazy: {
+          cdn: 'hdvb',
+          type: cdnType,
+          url: iframeUrl,
+          directUrl: iframeUrl,
+        },
+      }],
+    };
+  }
+
   const extracted = await hdvbVod.extract(iframeUrl, {
     referer: `${BASE_URL}/`,
     signal: options?.signal,
@@ -72,10 +101,7 @@ export async function getEneyida(
 
   if (!extracted) return null;
 
-  const isTv = !!(extracted.seasons && extracted.seasons.length > 0);
-  const cdnType = iframeUrl.includes('/embd/') || iframeUrl.includes('/embed/') ? 'embed' : 'vod';
-
-  if (isTv && extracted.seasons) {
+  if (extracted.seasons && extracted.seasons.length > 0) {
     // Додаємо інформацію про лінивий стрім для серій
     const seasons = extracted.seasons.map(season => ({
       ...season,
@@ -83,10 +109,11 @@ export async function getEneyida(
         ...ep,
         sources: ep.sources.map(src => ({
           ...src,
+          url: `/master.m3u8?cdn=hdvb&url=${encodeURIComponent(src.url)}`,
           lazy: src.lazy || {
             cdn: 'hdvb',
             type: cdnType,
-            url: iframeUrl!,
+            url: src.url,
             directUrl: src.url,
           },
         })),
@@ -103,6 +130,7 @@ export async function getEneyida(
   if (extracted.sources && extracted.sources.length > 0) {
     const sources: StreamSource[] = extracted.sources.map(src => ({
       ...src,
+      url: `/master.m3u8?cdn=hdvb&url=${encodeURIComponent(src.url)}`,
       lazy: src.lazy || {
         cdn: 'hdvb',
         type: cdnType,

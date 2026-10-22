@@ -56,34 +56,20 @@ export async function getAniWorld(
 
   if (isMovie && rawEpisodes.length <= 1) {
     const epId = rawEpisodes[0]?.id || catalogId;
-    let movieSources: StreamSource[] = [];
-
-    // Спробувати розшифрувати джерело через VOD
-    try {
-      const vodRes = await aniWorldVod.extract(`cdn=aniworld&episodeId=${epId}`);
-      if (vodRes && vodRes.sources && vodRes.sources.length > 0) {
-        movieSources = vodRes.sources;
-      }
-    } catch {
-      // fallback на lazy stream
-    }
-
-    if (movieSources.length === 0) {
-      const lazyUrl = `/master.m3u8?cdn=aniworld&episodeId=${epId}`;
-      movieSources = [
-        {
-          title: 'AniWorld UA (ШІ)',
+    const lazyUrl = `/master.m3u8?cdn=aniworld&episodeId=${epId}`;
+    const movieSources: StreamSource[] = [
+      {
+        title: 'AniWorld UA (ШІ)',
+        url: lazyUrl,
+        mime: 'application/x-mpegURL',
+        lazy: {
+          cdn: 'aniworld',
+          type: 'episode',
+          id: String(epId),
           url: lazyUrl,
-          mime: 'application/x-mpegURL',
-          lazy: {
-            cdn: 'aniworld',
-            type: 'episode',
-            id: String(epId),
-            url: lazyUrl,
-          },
         },
-      ];
-    }
+      },
+    ];
 
     return {
       provider: 'aniworld',

@@ -112,10 +112,10 @@ export class OrchestratorService {
       }
     } else {
       // Exclude anime-specific providers if media is definitively not anime
-      const animeSpecificProviders = new Set(['animeon', 'aniworld', 'mikai']);
+      const animeSpecificProviders = new Set(['anihub', 'animeon', 'aniworld', 'mikai']);
       const isAnime = meta.isAnime ?? (
         meta.originalLanguage === 'ja' ||
-        meta.genres?.some(g => g.toLowerCase().includes('аніме'))
+        meta.genres?.some(g => g.toLowerCase().includes('аніме') || g.toLowerCase().includes('anime'))
       );
 
       if (!isAnime) {
@@ -216,22 +216,43 @@ export class OrchestratorService {
           let lazy = raw.lazy;
           if (!lazy) {
             const checkUrl = raw.url;
-            const match = checkUrl.match(/(?:zetvideo\.net|ashdi\.vip)\/(vod|embed|serial)\/([a-zA-Z0-9_-]+)/i);
-            if (match) {
-              const matchedCdn = checkUrl.includes('zetvideo.net') ? 'zetvideo' : 'ashdi';
-              const matchedType = match[1].toLowerCase() as 'vod' | 'embed' | 'serial';
-              const matchedId = match[2];
+            const ashdiMatch = checkUrl.match(/(?:ashdi\.(?:vip|me)|0yql3tj|oyql3tj)\/(vod|embed|serial)\/([a-zA-Z0-9_-]+)/i);
+            const zetMatch = checkUrl.match(/zetvideo\.net\/(vod|embed|serial)\/([a-zA-Z0-9_-]+)/i);
+            const hdvbMatch = checkUrl.match(/(?:hdvb|vidcache)/i);
+
+            if (ashdiMatch) {
+              const matchedType = ashdiMatch[1].toLowerCase() as 'vod' | 'embed' | 'serial';
+              const matchedId = ashdiMatch[2];
               lazy = {
-                cdn: matchedCdn,
+                cdn: 'ashdi',
                 type: matchedType,
                 id: matchedId,
-                url: `/master.m3u8?cdn=${matchedCdn}&type=${matchedType}&id=${matchedId}`,
+                url: `/master.m3u8?cdn=ashdi&type=${matchedType}&id=${matchedId}`,
+                directUrl: checkUrl,
+              };
+            } else if (zetMatch) {
+              const matchedType = zetMatch[1].toLowerCase() as 'vod' | 'embed' | 'serial';
+              const matchedId = zetMatch[2];
+              lazy = {
+                cdn: 'zetvideo',
+                type: matchedType,
+                id: matchedId,
+                url: `/master.m3u8?cdn=zetvideo&type=${matchedType}&id=${matchedId}`,
+                directUrl: checkUrl,
+              };
+            } else if (hdvbMatch) {
+              lazy = {
+                cdn: 'hdvb',
+                type: 'vod',
+                url: `/master.m3u8?cdn=hdvb&url=${encodeURIComponent(checkUrl)}`,
                 directUrl: checkUrl,
               };
             }
           }
 
-          if (platform === 'web') {
+          const isWebLike = platform === 'web' || platform === 'tv';
+
+          if (isWebLike) {
             if (lazy) {
               if (lazy.cdn && lazy.id) {
                 const params = new URLSearchParams();
@@ -250,9 +271,18 @@ export class OrchestratorService {
               playUrl = `${proxyHost}/master.m3u8?url=${encodeURIComponent(raw.url)}`;
             }
           } else {
-            // Native platform: if lazy, try pre-resolving or keeping direct URL
+            // Native platform: if directUrl is an API endpoint, proxy it via master.m3u8
             if (lazy) {
-              playUrl = lazy.directUrl || lazy.url || raw.url;
+              const isApi = lazy.directUrl?.includes('/api/');
+              if (lazy.directUrl && !isApi) {
+                playUrl = lazy.directUrl;
+              } else if (lazy.url && lazy.url.startsWith('/master.m3u8')) {
+                playUrl = `${proxyHost}${lazy.url}`;
+              } else if (lazy.directUrl) {
+                playUrl = `${proxyHost}/master.m3u8?url=${encodeURIComponent(lazy.directUrl)}`;
+              } else {
+                playUrl = lazy.directUrl || lazy.url || raw.url;
+              }
             }
           }
 
