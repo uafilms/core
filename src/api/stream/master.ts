@@ -1,13 +1,102 @@
 import { Hono } from 'hono';
 import axios from 'axios';
 import { extractVod, stripUakinoAxIntro, buildFenixMergedManifest } from '../../providers/cdn/index.js';
-import { parseMasterPlaylist, stripCorsProxy } from '../../utils/m3u8.js';
+import { parseMasterPlaylist, stripCorsProxy, formatSubtitleUri, normalizeSubLang } from '../../utils/m3u8.js';
 import { logWarn, logError } from '../../utils/logger.js';
 import { m3u8PlaylistCache } from '../services/cache.js';
 import { proxyManager } from '../../utils/proxyManager.js';
 import type { Subtitle } from '../../types/media.js';
+import { TmdbService } from '../services/tmdb.js';
+import { OrchestratorService } from '../services/orchestrator.js';
 
 export const streamRouter = new Hono();
+
+// Роут для прямих посилань на відтворення серій у плейлістах Lampa та external плеєрів
+streamRouter.get('/play.m3u8', async (c) => {
+  const query = c.req.query();
+  const id = query.id;
+  const sParam = query.s || '1';
+  const eParam = query.e || '1';
+  const media = (query.type || (query.s ? 'tv' : 'movie')) as 'movie' | 'tv';
+  const provider = query.provider;
+  const voice = query.voice;
+
+  if (!id) {
+    return c.text('Missing id parameter', 400);
+  }
+
+  const host = c.req.header('host') || 'localhost:3000';
+  const proto = c.req.header('x-forwarded-proto') || 'http';
+  const proxyHost = `${proto}://${host}`;
+
+  const season = parseInt(sParam, 10) || 1;
+  const episode = parseInt(eParam, 10) || 1;
+
+  try {
+    const meta = await TmdbService.getMetadata(id, media);
+    if (!meta) {
+      return c.text('Media metadata not found', 404);
+    }
+
+    const result = await OrchestratorService.resolveSources({
+      meta,
+      type: media,
+      season,
+      episode,
+      platform: 'web',
+      proxyHost,
+      providerId: undefined,
+    });
+
+    if (!result.sources || result.sources.length === 0) {
+      return c.text('No sources found for this episode', 404);
+    }
+
+    let matchedSources = result.sources;
+    if (provider) {
+      const cleanProv = provider.replace(/^★\s*/, '').toLowerCase().trim();
+      const byProv = matchedSources.filter((s) => {
+        const pName = (s.provider?.name || '').toLowerCase().trim();
+        const pId = (s.provider?.id || '').toLowerCase().trim();
+        return pName === cleanProv || pId === cleanProv || pName.includes(cleanProv) || cleanProv.includes(pName);
+      });
+      if (byProv.length > 0) {
+        matchedSources = byProv;
+      }
+    }
+
+    let targetSource = matchedSources[0];
+    if (voice) {
+      const cleanWanted = voice.toLowerCase().trim();
+      const matched = matchedSources.find((s) => {
+        const v = (
+          s.studio?.name ||
+          (s.audioTracks && s.audioTracks[0]) ||
+          (s as any).audio ||
+          (s as any).title ||
+          ''
+        )
+          .toLowerCase()
+          .trim();
+        return v === cleanWanted || v.includes(cleanWanted) || cleanWanted.includes(v);
+      });
+      if (matched) {
+        targetSource = matched;
+      }
+    }
+
+    let targetUrl = targetSource.url;
+    if (voice && targetSource.sharedVideo && !targetUrl.includes('voice=')) {
+      targetUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}voice=${encodeURIComponent(voice)}&mergeAudio=1`;
+    }
+
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Cache-Control', 'public, max-age=300');
+    return c.redirect(targetUrl, 302);
+  } catch (err: unknown) {
+    return c.text(`Play error: ${(err as Error).message}`, 500);
+  }
+});
 
 // HLS Media Playlist для субтитрів (/subs.m3u8)
 streamRouter.get('/subs.m3u8', async (c) => {
@@ -194,12 +283,22 @@ streamRouter.get('/segment', async (c) => {
 
   try {
     const range = c.req.header('range');
+    const reqHeaders: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+      ...(range ? { Range: range } : {}),
+    };
+
+    if (target.includes('fenixplay.xyz') || target.includes('fanixplay.xyz')) {
+      reqHeaders['Origin'] = 'https://fenixplay.xyz';
+      reqHeaders['Referer'] = 'https://fenixplay.xyz/';
+    } else if (target.includes('ashdi.vip')) {
+      reqHeaders['Origin'] = 'https://ashdi.vip';
+      reqHeaders['Referer'] = 'https://ashdi.vip/';
+    }
+
     const res = await axios.get<ArrayBuffer>(target, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        ...(range ? { Range: range } : {}),
-      },
+      headers: reqHeaders,
       responseType: 'arraybuffer',
       timeout: 20000,
       validateStatus: () => true,
@@ -211,7 +310,7 @@ streamRouter.get('/segment', async (c) => {
     }
 
     const headers: Record<string, string> = {
-      'Content-Type': (res.headers['content-type'] as string) || 'video/mp2t',
+      'Content-Type': (res.headers['content-type'] as string) || (target.includes('.m4s') || target.includes('.mp4') ? 'video/iso.segment' : 'video/mp2t'),
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'public, max-age=3600',
     };
@@ -275,29 +374,59 @@ streamRouter.get('/master.m3u8', async (c) => {
     return first.url || first.lazy?.url || (typeof first.lazy?.id === 'string' && first.lazy.id.startsWith('http') ? first.lazy.id : undefined);
   };
 
+  const applyExtractedResult = (extracted: any) => {
+    if (!extracted) return;
+    if (typeof extracted === 'string') {
+      streamUrl = pickResolvedStreamUrl(extracted);
+    } else if ('sources' in extracted && Array.isArray(extracted.sources) && extracted.sources.length > 0) {
+      const first = extracted.sources[0];
+      streamUrl = pickResolvedStreamUrl(first);
+      if (first?.subtitles && Array.isArray(first.subtitles)) {
+        extractedSubtitles = first.subtitles;
+      } else if (extracted.subtitles && Array.isArray(extracted.subtitles)) {
+        extractedSubtitles = extracted.subtitles;
+      }
+    } else if (Array.isArray(extracted) && extracted.length > 0) {
+      const first = extracted[0];
+      streamUrl = pickResolvedStreamUrl(first);
+      if (typeof first === 'object' && first?.subtitles && Array.isArray(first.subtitles)) {
+        extractedSubtitles = first.subtitles;
+      }
+    } else if ('seasons' in extracted && Array.isArray(extracted.seasons)) {
+      const reqSeason = parseInt(c.req.query('s') || c.req.query('season') || '1', 10);
+      const reqEpisode = parseInt(c.req.query('e') || c.req.query('episode') || '1', 10);
+      const voice = c.req.query('voice') || c.req.query('translation');
+      const seasonObj = extracted.seasons.find((s: any) => s.season === reqSeason) || extracted.seasons[0];
+      const epObj = seasonObj?.episodes?.find((e: any) => e.episode === reqEpisode) || seasonObj?.episodes?.[0];
+      if (epObj?.sources?.length) {
+        let matchedSource = epObj.sources[0];
+        if (voice) {
+          const found = epObj.sources.find((s: any) =>
+            s.title?.toLowerCase().includes(voice.toLowerCase()) ||
+            s.audio?.toLowerCase().includes(voice.toLowerCase())
+          );
+          if (found) matchedSource = found;
+        }
+        streamUrl = pickResolvedStreamUrl(matchedSource);
+        if (matchedSource?.subtitles && Array.isArray(matchedSource.subtitles)) {
+          extractedSubtitles = matchedSource.subtitles;
+        }
+      }
+    } else if (typeof extracted === 'object' && 'url' in extracted) {
+      streamUrl = pickResolvedStreamUrl(extracted);
+      if (extracted.subtitles && Array.isArray(extracted.subtitles)) {
+        extractedSubtitles = extracted.subtitles;
+      }
+    }
+  };
+
   if (rawUrl) {
     if (rawUrl.includes('.m3u8') && !rawUrl.includes('/master.m3u8')) {
       streamUrl = rawUrl;
     } else {
       try {
         const extracted = await extractVod(rawUrl);
-        if (extracted) {
-          if (typeof extracted === 'string') {
-            streamUrl = pickResolvedStreamUrl(extracted);
-          } else if ('sources' in (extracted as any) && Array.isArray((extracted as any).sources)) {
-            const first = (extracted as any).sources[0];
-            streamUrl = pickResolvedStreamUrl(first);
-            if (first?.subtitles && Array.isArray(first.subtitles)) {
-              extractedSubtitles = first.subtitles;
-            }
-          } else if (Array.isArray(extracted) && extracted.length > 0) {
-            const first = extracted[0];
-            streamUrl = pickResolvedStreamUrl(first);
-            if (typeof first === 'object' && first?.subtitles && Array.isArray(first.subtitles)) {
-              extractedSubtitles = first.subtitles;
-            }
-          }
-        }
+        applyExtractedResult(extracted);
       } catch (err: unknown) {
         logWarn('stream', `extract from rawUrl failed: ${(err as Error).message}`);
       }
@@ -309,29 +438,7 @@ streamRouter.get('/master.m3u8', async (c) => {
     try {
       const fullUrl = c.req.url;
       const extracted = await extractVod(fullUrl);
-
-      if (extracted) {
-        if (typeof extracted === 'string') {
-          streamUrl = pickResolvedStreamUrl(extracted);
-        } else if ('sources' in (extracted as any) && Array.isArray((extracted as any).sources)) {
-          const first = (extracted as any).sources[0];
-          streamUrl = pickResolvedStreamUrl(first);
-          if (first?.subtitles && Array.isArray(first.subtitles)) {
-            extractedSubtitles = first.subtitles;
-          }
-        } else if (Array.isArray(extracted) && extracted.length > 0) {
-          const first = extracted[0];
-          streamUrl = pickResolvedStreamUrl(first);
-          if (typeof first === 'object' && first?.subtitles && Array.isArray(first.subtitles)) {
-            extractedSubtitles = first.subtitles;
-          }
-        } else if (typeof extracted === 'object' && 'url' in (extracted as any)) {
-          streamUrl = pickResolvedStreamUrl(extracted);
-          if ((extracted as any).subtitles && Array.isArray((extracted as any).subtitles)) {
-            extractedSubtitles = (extracted as any).subtitles;
-          }
-        }
-      }
+      applyExtractedResult(extracted);
     } catch (err: unknown) {
       logWarn('stream', `lazy extract failed: ${(err as Error).message}`);
     }
@@ -467,6 +574,26 @@ streamRouter.get('/master.m3u8', async (c) => {
     const cacheKey = `${proxyHost}:${streamUrl}:${extractedSubtitles.length}`;
     // Master playlists are dynamic or short-lived, while child media playlists can be cached briefly
     const isMaster = manifestData.includes('#EXT-X-STREAM-INF');
+
+    // Якщо це одиночний медіа-плейлист, але у нас є субтитри — загортаємо у master playlist для RFC 8216
+    if (!isMaster && extractedSubtitles.length > 0 && !c.req.query('_media')) {
+      const mediaUrl = `${c.req.url}${c.req.url.includes('?') ? '&' : '?'}_media=1`;
+      let masterWrap = '#EXTM3U\n#EXT-X-VERSION:3\n';
+      extractedSubtitles.filter((sub) => sub.format !== 'ass').forEach((sub, idx) => {
+        const subLang = normalizeSubLang(sub.lang);
+        const subLabel = sub.label || `Субтитри ${idx + 1}`;
+        const isDefault = idx === 0 ? 'YES' : 'NO';
+        const subUri = formatSubtitleUri(sub.url, proxyHost, sub.lang || subLang);
+        masterWrap += `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="${subLabel}",DEFAULT=${isDefault},AUTOSELECT=YES,LANGUAGE="${subLang}",URI="${subUri}"\n`;
+      });
+      masterWrap += `#EXT-X-STREAM-INF:BANDWIDTH=3000000,SUBTITLES="subs"\n${mediaUrl}\n`;
+      return c.text(masterWrap, 200, {
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache',
+      });
+    }
+
     const cachedM3u8 = m3u8PlaylistCache.get<string>(cacheKey);
     if (cachedM3u8) {
       return c.text(cachedM3u8, 200, {

@@ -10,6 +10,15 @@ export function normalizeMoonCdnHost(url: string): string {
   return url.replace(/mooncdn\.online/i, 'mooncdn.xyz');
 }
 
+/**
+ * Fenix віддає сегменти безпосередньо з BunnyCDN (media.fanixplay.xyz), де дозволений
+ * повний CORS (access-control-allow-origin: *), тоді як cf-media.fenixplay.xyz блокує
+ * сторонні реферери з 403 Forbidden.
+ */
+export function normalizeFenixCdnHost(url: string): string {
+  return url.replace(/(?:cf-media\.fenixplay\.xyz|media\.fenixplay\.xyz)/gi, 'media.fanixplay.xyz');
+}
+
 export function stripCorsProxy(url: string): string {
   const prefix = CORS_PROXY.replace(/\/+$/, '/');
   let current = url;
@@ -33,7 +42,7 @@ export interface ParsePlaylistOptions {
 /**
  * Нормалізує код мови субтитрів до ISO-639-1
  */
-function normalizeSubLang(lang?: string): string {
+export function normalizeSubLang(lang?: string): string {
   if (!lang) return 'uk';
   const l = lang.toLowerCase();
   if (l === 'ua' || l === 'uk' || l.includes('укр')) return 'uk';
@@ -99,7 +108,7 @@ export function parseMasterPlaylist(
   const lines = content.split('\n');
   const newLines: string[] = [];
 
-  const cleanBaseUrl = stripCorsProxy(baseUrl);
+  const cleanBaseUrl = normalizeFenixCdnHost(stripCorsProxy(baseUrl));
 
   const isMaster = content.includes('#EXT-X-STREAM-INF');
   const subtitleGroupId = 'subs';
@@ -164,7 +173,7 @@ export function parseMasterPlaylist(
         const mediaUriMatch = trimmed.match(/URI="([^"]+)"/i);
         if (mediaUriMatch && !mediaUriMatch[1].startsWith(`${proxyHost}/`)) {
           try {
-            const mediaUrl = new URL(mediaUriMatch[1], cleanBaseUrl).href;
+            const mediaUrl = normalizeFenixCdnHost(new URL(mediaUriMatch[1], cleanBaseUrl).href);
             const rewritten = /\.(vtt|srt)(\?|$)/i.test(mediaUrl)
               ? `${proxyHost}/subs.m3u8?url=${encodeURIComponent(mediaUrl)}`
               : `${proxyHost}/master.m3u8?url=${encodeURIComponent(mediaUrl)}`;
@@ -176,12 +185,12 @@ export function parseMasterPlaylist(
           newLines.push(trimmed);
         }
       } else if (trimmed.startsWith('#EXT-X-MAP')) {
-        // fmp4 init-сегмент (наприклад Fenix): URI теж мусить іти через наш проксі,
+        // fmp4 init-сегмент (наприклад Fenix): URI теж мусить іти через наш проксі або fanixplay,
         // інакше браузер тягне його прямо з чужого origin без CORS.
         const mapUriMatch = trimmed.match(/URI="([^"]+)"/i);
         if (mapUriMatch) {
           try {
-            const mapUrl = new URL(mapUriMatch[1], cleanBaseUrl).href;
+            const mapUrl = normalizeFenixCdnHost(new URL(mapUriMatch[1], cleanBaseUrl).href);
             const rewritten = segmentProxyBase
               ? `${segmentProxyBase}${encodeURIComponent(mapUrl)}`
               : corsProxySegments
@@ -201,7 +210,7 @@ export function parseMasterPlaylist(
     }
 
     try {
-      const absoluteUrl = normalizeMoonCdnHost(new URL(trimmed, cleanBaseUrl).href);
+      const absoluteUrl = normalizeFenixCdnHost(normalizeMoonCdnHost(new URL(trimmed, cleanBaseUrl).href));
 
       if (nextIsStreamUrl) {
         let streamTargetUrl = absoluteUrl;
@@ -230,7 +239,9 @@ export function parseMasterPlaylist(
           newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(absoluteUrl)}`);
         } else {
           const isMooncdn = /mooncdn\.(online|xyz)|moonanime\.art/i.test(absoluteUrl);
-          if (corsProxySegments && !isMooncdn && !absoluteUrl.startsWith(CORS_PROXY)) {
+          if (segmentProxyBase) {
+            newLines.push(`${segmentProxyBase}${encodeURIComponent(absoluteUrl)}`);
+          } else if (corsProxySegments && !isMooncdn && !absoluteUrl.startsWith(CORS_PROXY)) {
             newLines.push(`${CORS_PROXY}${absoluteUrl}`);
           } else {
             newLines.push(absoluteUrl);

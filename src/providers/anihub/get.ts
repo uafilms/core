@@ -177,13 +177,14 @@ function moonAnimeSources(data: AniHubEpisodeSources, episode: number): StreamSo
 }
 
 /**
- * Fenix тримає одне відео на епізод і окремі аудіодоріжки, тому згортаємо всі
- * треки епізоду в ОДНЕ джерело: відео спільне, озвучки — в audioTracks,
- * а плеєр/клієнт перемикає їх нативно на рівні HLS (master&mergeAudio=1).
+ * Fenix тримає одне відео на епізод і окремі аудіодоріжки.
+ * Віддаємо джерело для кожної доступної озвучки (з дефолтним треком voice=...),
+ * але додаємо повний список audioTracks і mergeAudio=1, щоб плеєр міг
+ * перемикати всі доріжки нативно на льоту.
  */
-function fenixSource(data: AniHubEpisodeSources, episode: number): StreamSource | null {
+function fenixSources(data: AniHubEpisodeSources, episode: number): StreamSource[] {
   const tracks = (data.fenix || []).filter((studio) => findEpisode(studio, episode));
-  if (tracks.length === 0) return null;
+  if (tracks.length === 0) return [];
 
   const labels: string[] = [];
   for (const studio of tracks) {
@@ -191,28 +192,35 @@ function fenixSource(data: AniHubEpisodeSources, episode: number): StreamSource 
     if (label && !labels.includes(label)) labels.push(label);
   }
 
-  const primary = tracks[0];
-  const embed = primary.embed_url || data.fenix_embed_url;
-  if (!embed) return null;
+  const allAudioTracks = labels.length > 0 ? sortAudioTrackLabels(labels) : undefined;
+  const sources: StreamSource[] = [];
 
-  const voice = primary.studio_name || labels[0] || 'Fenix';
-  const lazyUrl = buildFenixLazyUrl(embed, { episode, voice });
+  for (const studio of tracks) {
+    const embed = studio.embed_url || data.fenix_embed_url;
+    if (!embed) continue;
+    const voice = studio.studio_name || studio.display_name || 'Fenix';
+    const lazyUrl = buildFenixLazyUrl(embed, { episode, voice });
 
-  return {
-    title: voice,
-    audio: voice,
-    audioTracks: labels.length > 0 ? sortAudioTrackLabels(labels) : undefined,
-    sharedVideo: true,
-    url: lazyUrl,
-    mime: 'application/x-mpegURL',
-    lazy: { cdn: 'fenix', type: 'vod', url: lazyUrl },
-  };
+    sources.push({
+      title: voice,
+      audio: voice,
+      audioTracks: allAudioTracks,
+      sharedVideo: true,
+      url: lazyUrl,
+      mime: 'application/x-mpegURL',
+      lazy: { cdn: 'fenix', type: 'vod', url: lazyUrl },
+    });
+  }
+
+  return sources;
 }
 
 function buildEpisodeSources(data: AniHubEpisodeSources, episode: number): StreamSource[] {
-  const sources = [...ashdiSources(data, episode), ...moonAnimeSources(data, episode)];
-  const fenix = fenixSource(data, episode);
-  if (fenix) sources.push(fenix);
+  const sources = [
+    ...ashdiSources(data, episode),
+    ...moonAnimeSources(data, episode),
+    ...fenixSources(data, episode),
+  ];
   return sortSources(sources);
 }
 

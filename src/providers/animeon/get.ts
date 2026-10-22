@@ -364,13 +364,29 @@ export async function getAnimeOnStreams(
       }
     }
 
-    // Згортаємо озвучки Fenix: одне джерело на епізод з усіма доріжками в audioTracks.
+    // Для Fenix видаємо кожну доступну озвучку окремим джерелом (з дефолтним треком),
+    // але зі спільним повним списком audioTracks, щоб плеєр міг перемикати їх нативно.
     for (const [epNum, sources] of fenixMap.entries()) {
-      const merged = mergeFenixSources(sources);
-      if (!merged) continue;
-      const existing = episodesMap.get(epNum) || [];
-      existing.push(merged);
-      episodesMap.set(epNum, existing);
+      const allTracks: string[] = [];
+      for (const s of sources) {
+        const label = s.audio || s.title;
+        if (label && !allTracks.includes(label)) allTracks.push(label);
+      }
+      const sortedTracks = sortAudioTrackLabels(allTracks);
+
+      for (const source of sources) {
+        const url = ensureMergeAudio(source.url);
+        const enhanced: StreamSource = {
+          ...source,
+          url,
+          audioTracks: sortedTracks,
+          sharedVideo: true,
+          lazy: source.lazy ? { ...source.lazy, url: ensureMergeAudio(source.lazy.url) } : source.lazy,
+        };
+        const existing = episodesMap.get(epNum) || [];
+        existing.push(enhanced);
+        episodesMap.set(epNum, existing);
+      }
     }
 
     // Check if it's a single movie or series
