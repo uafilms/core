@@ -1,11 +1,23 @@
 import { Hono } from 'hono';
 import fs from 'fs';
 import path from 'path';
-import esbuild from 'esbuild';
 
 export const lampaRouter = new Hono();
 
 let memoryCache: { code: string; mtime: number } | null = null;
+let esbuildModule: any = null;
+
+function getEsbuild() {
+  if (!esbuildModule) {
+    try {
+      const req = typeof require === 'function' ? require : (0, eval)('require');
+      esbuildModule = req('esbuild');
+    } catch {
+      // esbuild not available
+    }
+  }
+  return esbuildModule;
+}
 
 function getLampaDirectoryMtime(): number {
   const dir = path.resolve(process.cwd(), 'src/lampa');
@@ -30,8 +42,17 @@ function getPluginBundle(isDev: boolean): string {
   const distFile = path.resolve(process.cwd(), 'dist/lampa/plugin.js');
   const entryFile = path.resolve(process.cwd(), 'src/lampa/index.ts');
 
+  // In production with prebuilt dist file, serve directly from disk/cache
+  if (!isDev && fs.existsSync(distFile)) {
+    if (!memoryCache) {
+      memoryCache = { code: fs.readFileSync(distFile, 'utf-8'), mtime: 0 };
+    }
+    return memoryCache.code;
+  }
+
   // In development, build on the fly or reload on edit across ALL files in src/lampa
-  if (isDev || !fs.existsSync(distFile)) {
+  const esbuild = getEsbuild();
+  if (esbuild && (isDev || !fs.existsSync(distFile))) {
     try {
       const dirMtime = getLampaDirectoryMtime();
       if (memoryCache && dirMtime > 0 && memoryCache.mtime === dirMtime) {
@@ -65,14 +86,14 @@ function getPluginBundle(isDev: boolean): string {
       return code;
     } catch (err) {
       console.error('[lampaRouter] Failed to build plugin on the fly:', err);
-      if (fs.existsSync(distFile)) {
-        return fs.readFileSync(distFile, 'utf-8');
-      }
-      throw err;
     }
   }
 
-  return fs.readFileSync(distFile, 'utf-8');
+  if (fs.existsSync(distFile)) {
+    return fs.readFileSync(distFile, 'utf-8');
+  }
+
+  throw new Error('Lampa plugin bundle not found and esbuild is not available');
 }
 
 const servePluginHandler = (c: any) => {
