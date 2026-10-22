@@ -8,7 +8,8 @@
     "web"
   ],
   "scripts": {
-    "build": "tsc",
+    "build:lampa": "tsx scripts/build-lampa.ts",
+    "build": "tsc && npm run build:lampa",
     "build:web": "npm --prefix web run build",
     "build:all": "npm run build && npm run build:web",
     "start": "node dist/api/server.js",
@@ -42,6 +43,7 @@
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.2",
     "@types/ws": "^8.18.2",
+    "esbuild": "^0.25.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

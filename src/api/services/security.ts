@@ -2,6 +2,11 @@ import type { Context, MiddlewareHandler } from 'hono';
 import { isTurnstileEnabled, verifyTurnstileToken } from './turnstile.js';
 import { unauthenticatedParserRateLimiter } from './rateLimiter.js';
 import { verifyAuthToken, validateApiKey } from '../auth/service.js';
+import {
+  extractPowFromRequest,
+  verifyPowSessionToken,
+  verifyPowSolution,
+} from './pow.js';
 
 export function getClientIp(c: Context): string {
   const cfIp = c.req.header('cf-connecting-ip');
@@ -106,23 +111,42 @@ export async function enforceParsingSecurity(c: Context): Promise<Response | nul
     }
   }
 
-  // Turnstile verification (only required for unauthenticated / guest requests)
+  // Turnstile or PoW verification (only required for unauthenticated / guest requests when Turnstile is enabled)
   if (!isAuthenticated && isTurnstileEnabled()) {
+    // 1. Try Turnstile token first (default for web frontend)
     const turnstileToken = extractTurnstileToken(c);
-    const result = await verifyTurnstileToken(turnstileToken, ip);
-    if (!result.success) {
-      return c.json(
-        {
-          error: {
-            code: 'TURNSTILE_VERIFICATION_FAILED',
-            message: 'Помилка перевірки Cloudflare Turnstile. Оновіть сторінку або вкажіть API-ключ.',
-            details: { errorCodes: result.errorCodes },
-          },
-          traceId: crypto.randomUUID(),
-        },
-        403
-      );
+    if (turnstileToken) {
+      const turnstileResult = await verifyTurnstileToken(turnstileToken, ip);
+      if (turnstileResult.success) {
+        return null;
+      }
     }
+
+    // 2. Try PoW verification (for Lampa plugin / TV / non-browser clients)
+    const { token: powToken, solution: powSolution } = extractPowFromRequest(c);
+
+    if (powToken && verifyPowSessionToken(powToken, ip)) {
+      return null;
+    }
+
+    if (powSolution) {
+      const powResult = verifyPowSolution(powSolution, ip);
+      if (powResult.success && powResult.sessionToken) {
+        c.header('x-pow-token', powResult.sessionToken);
+        return null;
+      }
+    }
+
+    return c.json(
+      {
+        error: {
+          code: 'VERIFICATION_REQUIRED',
+          message: 'Потрібна перевірка Cloudflare Turnstile або Proof-of-Work челендж. Оновіть сторінку або вкажіть API-ключ.',
+        },
+        traceId: crypto.randomUUID(),
+      },
+      403
+    );
   }
 
   return null;

@@ -9,9 +9,12 @@ import { omssRouter } from './omss/routes.js';
 import { streamRouter } from './stream/master.js';
 import { catalogRouter } from './catalog/routes.js';
 import { authRouter } from './auth/routes.js';
+import { lampaRouter } from './lampa/routes.js';
 import { apiKeyMiddleware } from './auth/middleware.js';
 import { registerWsRoutes, wsServer } from './ws/index.js';
 import { isTurnstileEnabled, getTurnstileSiteKey } from './services/turnstile.js';
+import { generatePowChallenge, verifyPowSolution } from './services/pow.js';
+import { getClientIp } from './services/security.js';
 import { formatHttpLog, log } from '../utils/logger.js';
 
 export const app = new Hono();
@@ -28,8 +31,19 @@ app.use('*', async (c, next) => {
 app.use('*', cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Accept', 'Authorization', 'Range', 'x-api-key', 'cf-turnstile-response'],
-  exposeHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges'],
+  allowHeaders: [
+    'Content-Type',
+    'Accept',
+    'Authorization',
+    'Range',
+    'x-api-key',
+    'cf-turnstile-response',
+    'x-pow-token',
+    'x-pow-response',
+    'x-app-version',
+    'x-platform',
+  ],
+  exposeHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges', 'x-pow-token'],
 }));
 
 // API Key usage tracking
@@ -81,12 +95,34 @@ app.get('/config', (c) => {
     },
   });
 });
+app.get('/api/challenge', (c) => c.json(generatePowChallenge()));
+app.get('/challenge', (c) => c.json(generatePowChallenge()));
+app.post('/api/challenge/verify', async (c) => {
+  const ip = getClientIp(c);
+  const body = (await c.req.json().catch(() => ({}))) as any;
+  const res = verifyPowSolution(body, ip);
+  if (!res.success) {
+    return c.json({ error: res.error || 'INVALID_SOLUTION' }, 400);
+  }
+  return c.json({ success: true, token: res.sessionToken });
+});
+app.post('/challenge/verify', async (c) => {
+  const ip = getClientIp(c);
+  const body = (await c.req.json().catch(() => ({}))) as any;
+  const res = verifyPowSolution(body, ip);
+  if (!res.success) {
+    return c.json({ error: res.error || 'INVALID_SOLUTION' }, 400);
+  }
+  return c.json({ success: true, token: res.sessionToken });
+});
 app.route('/api', catalogRouter);
 app.route('/', catalogRouter);
 app.route('/', omssRouter);
 app.route('/api', omssRouter);
 app.route('/', streamRouter);
 app.route('/api', streamRouter);
+app.route('/', lampaRouter);
+app.route('/api', lampaRouter);
 app.route('/api/auth', authRouter);
 app.route('/auth', authRouter);
 
@@ -102,7 +138,13 @@ if (hasWebDist) {
       p.startsWith('/auth') ||
       p.startsWith('/v1') ||
       p.startsWith('/master.m3u8') ||
+      p.startsWith('/play.m3u8') ||
       p.startsWith('/subs') ||
+      p === '/l' ||
+      p.startsWith('/l/') ||
+      p === '/lampa' ||
+      p.startsWith('/lampa') ||
+      p.startsWith('/challenge') ||
       p === '/config' ||
       p === '/home' ||
       p === '/details' ||

@@ -1,4 +1,4 @@
-export type PlatformType = 'web' | 'native';
+export type PlatformType = 'web' | 'native' | 'tv';
 
 export interface OmssProviderInfo {
   id: string;

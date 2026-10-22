@@ -59,5 +59,6 @@ export class SlidingWindowRateLimiter {
   }
 }
 
-// 10 requests per minute for unauthenticated parsing
-export const unauthenticatedParserRateLimiter = new SlidingWindowRateLimiter(60000, 10);
+// 3-5 requests per minute for unauthenticated parsing
+const GUEST_PARSER_RATE_LIMIT = parseInt(process.env.GUEST_PARSER_RATE_LIMIT || '5', 10);
+export const unauthenticatedParserRateLimiter = new SlidingWindowRateLimiter(60000, GUEST_PARSER_RATE_LIMIT);
