@@ -11,6 +11,7 @@ export interface OmssRootResponse {
   version: string;
   status: 'operational' | 'degraded' | 'down';
   spec?: string;
+  pow?: boolean;
   endpoints: {
     movie: string;
     tv: string;

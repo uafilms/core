@@ -14,6 +14,7 @@ import {
 } from '../services/cache.js';
 import { applyFilterToSources } from './filter.js';
 import { enforceParsingSecurity } from '../services/security.js';
+import { isTurnstileEnabled } from '../services/turnstile.js';
 
 export const omssRouter = new Hono();
 
@@ -36,6 +37,7 @@ const rootHandler = (c: any) => {
     version: '1.0.0',
     status: 'operational',
     note: 'uafilms streaming backend',
+    pow: isTurnstileEnabled(),
     endpoints: {
       movie: '/v1/movies/{id}',
       tv: '/v1/tv/{id}/seasons/{s}/episodes/{e}',

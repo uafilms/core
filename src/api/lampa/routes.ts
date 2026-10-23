@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import fs from 'fs';
 import path from 'path';
+import { isTurnstileEnabled } from '../services/turnstile.js';
 
 export const lampaRouter = new Hono();
 
@@ -63,7 +64,7 @@ function getPluginBundle(isDev: boolean): string {
         entryPoints: [entryFile],
         bundle: true,
         format: 'iife',
-        target: ['es2018'],
+        target: ['es2015'],
         minify: true,
         minifyWhitespace: true,
         minifyIdentifiers: true,
@@ -107,7 +108,11 @@ const servePluginHandler = (c: any) => {
 
   try {
     const bundleCode = getPluginBundle(isDev);
-    const injected = `window.__UAFILMS_SERVER_HOST__ = ${JSON.stringify(serverHost)};\n` + bundleCode;
+    const powRequired = isTurnstileEnabled();
+    const injected =
+      `window.__UAFILMS_SERVER_HOST__ = ${JSON.stringify(serverHost)};\n` +
+      `window.__UAFILMS_POW_REQUIRED__ = ${powRequired ? 'true' : 'false'};\n` +
+      bundleCode;
 
     c.header('Content-Type', 'application/javascript; charset=utf-8');
     c.header('Access-Control-Allow-Origin', '*');
