@@ -609,6 +609,76 @@ export default function VideoPlayer({
 
     playerRef.current = player;
 
+    const isIPadOrIOS =
+      /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
+      (typeof navigator !== 'undefined' &&
+        navigator.platform === 'MacIntel' &&
+        navigator.maxTouchPoints > 1);
+
+    // iPad / iOS Safari Fullscreen fix:
+    // iPadOS reports as "MacIntel" with touch points, so Video.js tries div.webkitRequestFullscreen()
+    // which WebKit rejects on iPad (only HTMLVideoElement can enter fullscreen on iPadOS/iOS).
+    const videoEl = videoNode.current || player.el()?.querySelector('video');
+    const origRequestFullscreen = player.requestFullscreen.bind(player);
+    player.requestFullscreen = function () {
+      const v = videoNode.current || player.el()?.querySelector('video');
+
+      if (isIPadOrIOS && v && typeof v.webkitEnterFullscreen === 'function') {
+        try {
+          v.webkitEnterFullscreen();
+          return Promise.resolve();
+        } catch (e) {
+          console.warn('webkitEnterFullscreen error:', e);
+        }
+      }
+
+      return origRequestFullscreen().catch((err) => {
+        if (v && typeof v.webkitEnterFullscreen === 'function') {
+          try {
+            v.webkitEnterFullscreen();
+            return Promise.resolve();
+          } catch (e) {
+            console.warn('webkitEnterFullscreen fallback error:', e);
+          }
+        }
+        if (typeof player.enterFullWindow === 'function') {
+          player.enterFullWindow();
+        }
+      });
+    };
+
+    const origExitFullscreen = player.exitFullscreen.bind(player);
+    player.exitFullscreen = function () {
+      const v = videoNode.current || player.el()?.querySelector('video');
+      if (v && typeof v.webkitExitFullscreen === 'function') {
+        try {
+          v.webkitExitFullscreen();
+        } catch {
+          // Ignore
+        }
+      }
+      return origExitFullscreen().catch(() => {
+        if (typeof player.exitFullWindow === 'function') {
+          player.exitFullWindow();
+        }
+      });
+    };
+
+    if (videoEl) {
+      const onBeginFullscreen = () => {
+        player.trigger('fullscreenchange');
+      };
+      const onEndFullscreen = () => {
+        player.trigger('fullscreenchange');
+      };
+      videoEl.addEventListener('webkitbeginfullscreen', onBeginFullscreen);
+      videoEl.addEventListener('webkitendfullscreen', onEndFullscreen);
+      player.on('dispose', () => {
+        videoEl.removeEventListener('webkitbeginfullscreen', onBeginFullscreen);
+        videoEl.removeEventListener('webkitendfullscreen', onEndFullscreen);
+      });
+    }
+
     player.ready(() => {
       setPlayerContainerEl(player.el());
       const holder = player.el()?.querySelector('.vjs-progress-holder');
@@ -667,7 +737,9 @@ export default function VideoPlayer({
     if (typeof player.mobileUi === 'function') {
       player.mobileUi({
         touchControls: { seekSeconds: 10, tapTimeout: 300, disableOnEnd: false },
-        fullscreen: { enterOnRotate: true, lockOnRotate: true },
+        fullscreen: isIPadOrIOS
+          ? { enterOnRotate: false, exitOnRotate: false, lockOnRotate: false }
+          : { enterOnRotate: true, lockOnRotate: true },
       });
     }
 
