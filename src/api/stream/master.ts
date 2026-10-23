@@ -621,6 +621,7 @@ streamRouter.get('/master.m3u8', async (c) => {
         // сегменти uakino.ax підписані на IP сервера, тому тягнемо їх самі
         segmentProxyBase: isUakinoAx ? `${proxyHost}/segment?url=` : undefined,
         subtitles: extractedSubtitles.filter((sub) => sub.format !== 'ass'),
+        voice: c.req.query('voice') || c.req.query('translation'),
       }
     );
 

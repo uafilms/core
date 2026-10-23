@@ -172,9 +172,21 @@ export function renderActiveProviderSources(ctx: ComponentContext): void {
           ? displaySources.map((d) => d.voiceName)
           : [];
 
+      const movieStill = ctx.movie.backdrop_path || ctx.movie.poster_path;
+      const movieThumbnail = movieStill
+        ? typeof Lampa !== 'undefined' && Lampa.TMDB && typeof Lampa.TMDB.image === 'function'
+          ? Lampa.TMDB.image('t/p/w300' + movieStill)
+          : `https://image.tmdb.org/t/p/w300${movieStill}`
+        : '';
+
       const moviePlayObj: any = {
         url: playUrl,
         title: `${ctx.movie.title || ctx.movie.name || ''} - ${voiceName}`,
+        thumbnail: movieThumbnail,
+        icon: movieThumbnail,
+        img: movieThumbnail,
+        poster: movieThumbnail,
+        image: movieThumbnail,
         timeline,
         subtitles: subTracks,
         callback: () => {
@@ -193,7 +205,11 @@ export function renderActiveProviderSources(ctx: ComponentContext): void {
 
       if (availableTracks.length > 1) {
         moviePlayObj.translate = {
-          tracks: availableTracks.map((name: string) => ({ name })),
+          tracks: availableTracks.map((name: string) => ({
+            name,
+            label: name,
+            language: name,
+          })),
         };
         moviePlayObj.voiceovers = availableTracks.map((trackName: string, idx: number) => {
           const matchedEntry = displaySources.find(

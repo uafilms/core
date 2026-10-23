@@ -74,7 +74,7 @@ export async function buildFenixMergedManifest(url: string, options: VodExtracti
       '#EXT-X-MEDIA:TYPE=AUDIO',
       'GROUP-ID="audio"',
       `NAME="${label}"`,
-      `LANGUAGE="${track.language || 'uk'}"`,
+      `LANGUAGE="${label}"`,
       'CHANNELS="2"',
       `DEFAULT=${track === defaultTrack ? 'YES' : 'NO'}`,
       'AUTOSELECT=YES',

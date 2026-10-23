@@ -201,12 +201,24 @@ export async function playTvEpisode(
 
   const cleanProvider = activeProvider ? activeProvider.replace(/^★\s*/, '').trim() : '';
 
+  const currentStill = ep.still_path || movie.backdrop_path || movie.poster_path;
+  const currentThumbnail = currentStill
+    ? typeof Lampa !== 'undefined' && Lampa.TMDB && typeof Lampa.TMDB.image === 'function'
+      ? Lampa.TMDB.image('t/p/w300' + currentStill)
+      : `https://image.tmdb.org/t/p/w300${currentStill}`
+    : '';
+
   // Base playback item for the current episode
   const playObj: any = {
     url: playUrl,
     title: `${movie.title || movie.name} - S${activeSeason}E${epNum} (${activeVoice || 'Озвучення'})`,
     season: activeSeason,
     episode: epNum,
+    thumbnail: currentThumbnail,
+    icon: currentThumbnail,
+    img: currentThumbnail,
+    poster: currentThumbnail,
+    image: currentThumbnail,
     timeline,
     subtitles: subTracks,
     callback: () => {
@@ -222,11 +234,17 @@ export async function playTvEpisode(
       ? targetSource.audioTracks
       : provItem?.sources && provItem.sources.length > 1
       ? extractVoicesFromProvider(provItem)
+      : activeVoice
+      ? [activeVoice]
       : [];
 
-  if (availableTracks.length > 1) {
+  if (availableTracks.length > 0) {
     playObj.translate = {
-      tracks: availableTracks.map((name: string) => ({ name })),
+      tracks: availableTracks.map((name: string) => ({
+        name,
+        label: name,
+        language: name,
+      })),
     };
 
     playObj.voiceovers = availableTracks.map((trackName: string, idx: number) => {
@@ -238,6 +256,8 @@ export async function playTvEpisode(
 
       return {
         title: trackName,
+        name: trackName,
+        label: trackName,
         selected: isSelected,
         index: idx,
         url: trackPlayUrl,
@@ -289,6 +309,13 @@ export async function playTvEpisode(
           )
         : { percent: 0, time: 0, duration: 0, hash: epHashTimeline };
 
+    const still = epItem.still_path || movie.backdrop_path || movie.poster_path;
+    const itemThumbnail = still
+      ? typeof Lampa !== 'undefined' && Lampa.TMDB && typeof Lampa.TMDB.image === 'function'
+        ? Lampa.TMDB.image('t/p/w300' + still)
+        : `https://image.tmdb.org/t/p/w300${still}`
+      : '';
+
     const nextUrl = `${host}/play.m3u8?id=${encodeURIComponent(String(movie.id || movie.imdb_id))}&type=tv&s=${activeSeason}&e=${n}&provider=${encodeURIComponent(cleanProvider)}&voice=${encodeURIComponent(activeVoice)}`;
 
     const epObj: any = {
@@ -296,6 +323,11 @@ export async function playTvEpisode(
       title: `${movie.title || movie.name} - S${activeSeason}E${n} (${activeVoice || 'Озвучення'})`,
       season: activeSeason,
       episode: n,
+      thumbnail: itemThumbnail,
+      icon: itemThumbnail,
+      img: itemThumbnail,
+      poster: itemThumbnail,
+      image: itemThumbnail,
       timeline: epTimeline,
       callback: () => {
         markViewed(ctx, epHashBehold, activeSeason, n);
