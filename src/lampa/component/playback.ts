@@ -226,7 +226,7 @@ export async function playTvEpisode(
 
   if (availableTracks.length > 1) {
     playObj.translate = {
-      tracks: availableTracks.map((name: string) => ({ name, language: 'uk' })),
+      tracks: availableTracks.map((name: string) => ({ name })),
     };
 
     playObj.voiceovers = availableTracks.map((trackName: string, idx: number) => {

@@ -193,7 +193,7 @@ export function renderActiveProviderSources(ctx: ComponentContext): void {
 
       if (availableTracks.length > 1) {
         moviePlayObj.translate = {
-          tracks: availableTracks.map((name: string) => ({ name, language: 'uk' })),
+          tracks: availableTracks.map((name: string) => ({ name })),
         };
         moviePlayObj.voiceovers = availableTracks.map((trackName: string, idx: number) => {
           const matchedEntry = displaySources.find(
