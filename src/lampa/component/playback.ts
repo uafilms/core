@@ -232,13 +232,11 @@ export async function playTvEpisode(
   const availableTracks: string[] =
     targetSource?.audioTracks && targetSource.audioTracks.length > 1
       ? targetSource.audioTracks
-      : provItem?.sources && provItem.sources.length > 1
+      : provItem?.sources && provItem.sources.length > 1 && targetSource?.sharedVideo
       ? extractVoicesFromProvider(provItem)
-      : activeVoice
-      ? [activeVoice]
       : [];
 
-  if (availableTracks.length > 0) {
+  if (availableTracks.length > 1) {
     playObj.translate = {
       tracks: availableTracks.map((name: string) => ({
         name,
