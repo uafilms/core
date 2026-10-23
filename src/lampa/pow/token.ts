@@ -1,4 +1,4 @@
-import { requestJson } from '../utils/index.js';
+import { postJson, requestJson } from '../utils/index.js';
 import { solveChallenge, type ChallengePayload } from './solver.js';
 
 declare const Lampa: any;
@@ -7,11 +7,23 @@ let memoryToken: string | null = null;
 let memoryTokenExp = 0;
 let solvingPromise: Promise<string | null> | null = null;
 
-/**
- * Returns a valid PoW session token.
- * Only resolves when needed (lazy evaluation), and caches the result for 12 minutes.
- */
-export async function getOrSolvePowToken(host: string): Promise<string | null> {
+export function isPowRequired(): boolean {
+  if (
+    typeof window !== 'undefined' &&
+    typeof (window as any).__UAFILMS_POW_REQUIRED__ === 'boolean'
+  ) {
+    return (window as any).__UAFILMS_POW_REQUIRED__;
+  }
+  return false;
+}
+
+export function setPowRequired(required: boolean): void {
+  if (typeof window !== 'undefined') {
+    (window as any).__UAFILMS_POW_REQUIRED__ = required;
+  }
+}
+
+export function getCachedPowToken(): string | null {
   const now = Date.now();
 
   // 1. Check in-memory token
@@ -22,8 +34,15 @@ export async function getOrSolvePowToken(host: string): Promise<string | null> {
   // 2. Check Lampa storage token
   try {
     if (typeof Lampa !== 'undefined' && Lampa.Storage) {
-      const stored = Lampa.Storage.get('uafilms_pow_session', null);
-      if (stored && stored.token && stored.exp > now + 30000) {
+      let stored = Lampa.Storage.get('uafilms_pow_session', null);
+      if (typeof stored === 'string') {
+        try {
+          stored = JSON.parse(stored);
+        } catch {
+          stored = null;
+        }
+      }
+      if (stored && stored.token && typeof stored.exp === 'number' && stored.exp > now + 30000) {
         memoryToken = stored.token;
         memoryTokenExp = stored.exp;
         return memoryToken;
@@ -33,14 +52,46 @@ export async function getOrSolvePowToken(host: string): Promise<string | null> {
     // Ignore storage read error
   }
 
-  // 3. Deduplicate concurrent solving attempts
+  return null;
+}
+
+export function invalidatePowToken(): void {
+  memoryToken = null;
+  memoryTokenExp = 0;
+  try {
+    if (typeof Lampa !== 'undefined' && Lampa.Storage) {
+      Lampa.Storage.set('uafilms_pow_session', null);
+    }
+  } catch {
+    // Ignore
+  }
+}
+
+/**
+ * Returns a valid PoW session token.
+ * Reuses cached token until expired. Only contacts /api/challenge when PoW is required by backend.
+ */
+export async function getOrSolvePowToken(host: string, force = false): Promise<string | null> {
+  // If PoW is disabled on backend and not forced by a 403 response, return null immediately (0ms)
+  if (!force && !isPowRequired()) {
+    return null;
+  }
+
+  if (!force) {
+    const cached = getCachedPowToken();
+    if (cached) {
+      return cached;
+    }
+  }
+
+  // Deduplicate concurrent solving attempts
   if (solvingPromise) {
     return solvingPromise;
   }
 
   solvingPromise = (async () => {
     try {
-      // Fetch challenge
+      // 1. Fetch challenge
       const challengeUrl = `${host}/api/challenge`;
       const challenge = await requestJson<ChallengePayload>(challengeUrl, 10000);
 
@@ -48,48 +99,44 @@ export async function getOrSolvePowToken(host: string): Promise<string | null> {
         return null;
       }
 
-      // Solve PoW (typically takes 40-100ms)
+      // 2. Solve PoW in JS (~30-80ms)
       const solution = await solveChallenge(challenge);
 
-      // Verify and obtain session token
+      // 3. Verify and obtain session token
       const verifyUrl = `${host}/api/challenge/verify`;
       let sessionToken: string | null = null;
 
       try {
-        if (typeof fetch === 'function') {
-          const resp = await fetch(verifyUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(solution),
-          });
-          if (resp.ok) {
-            const data = (await resp.json()) as { success: boolean; token?: string };
-            sessionToken = data.token || null;
-          }
+        const verifyRes = await postJson<{ success: boolean; token?: string }>(
+          verifyUrl,
+          solution,
+          10000
+        );
+        if (verifyRes && verifyRes.success && verifyRes.token) {
+          sessionToken = verifyRes.token;
         }
       } catch {
-        // Fallback to sending raw solution in headers
+        // Ignore verify failure
       }
 
-      if (sessionToken) {
-        memoryToken = sessionToken;
-        memoryTokenExp = Date.now() + 12 * 60 * 1000;
-        try {
-          if (typeof Lampa !== 'undefined' && Lampa.Storage) {
-            Lampa.Storage.set('uafilms_pow_session', {
-              token: sessionToken,
-              exp: memoryTokenExp,
-            });
-          }
-        } catch {
-          // Ignore storage save error
+      const tokenToCache = sessionToken || btoa(JSON.stringify(solution));
+      const exp = Date.now() + 14 * 60 * 1000;
+
+      memoryToken = tokenToCache;
+      memoryTokenExp = exp;
+
+      try {
+        if (typeof Lampa !== 'undefined' && Lampa.Storage) {
+          Lampa.Storage.set('uafilms_pow_session', {
+            token: tokenToCache,
+            exp,
+          });
         }
-        return sessionToken;
+      } catch {
+        // Ignore storage save error
       }
 
-      // If verify endpoint unreachable, fallback to raw solution base64
-      const rawSolutionB64 = btoa(JSON.stringify(solution));
-      return rawSolutionB64;
+      return tokenToCache;
     } catch {
       return null;
     } finally {

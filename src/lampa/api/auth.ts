@@ -1,3 +1,5 @@
+import { getCachedPowToken } from '../pow/index.js';
+
 declare const Lampa: any;
 
 export function getAuthHeadersAndParams(): {
@@ -17,6 +19,15 @@ export function getAuthHeadersAndParams(): {
     }
   } catch {
     // Ignore storage read error
+  }
+
+  // If no explicit API key, attach cached PoW token if one already exists in cache (0ms cost)
+  if (!headers['x-api-key']) {
+    const cachedPow = getCachedPowToken();
+    if (cachedPow) {
+      params['pow_token'] = cachedPow;
+      headers['x-pow-token'] = cachedPow;
+    }
   }
 
   return { headers, params };

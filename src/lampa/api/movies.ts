@@ -1,9 +1,10 @@
-import type { OmssMovieResponse, OmssProviderItem } from '../types/index.js';
+import type { OmssProviderItem } from '../types/index.js';
 import { requestJson } from '../utils/index.js';
-import { getOrSolvePowToken } from '../pow/index.js';
+import { getOrSolvePowToken, invalidatePowToken, setPowRequired } from '../pow/index.js';
 import { getLocalCache, setLocalCache } from '../cache/index.js';
 import { getAuthHeadersAndParams } from './auth.js';
 import { streamOmssSources } from './stream.js';
+import { groupSourcesByProvider } from './episodes.js';
 
 export async function streamMovieSources(
   host: string,
@@ -22,7 +23,7 @@ export async function streamMovieSources(
 
   const { headers, params: authParams } = getAuthHeadersAndParams();
 
-  // Lazy PoW on-demand
+  // Ensure PoW token if no API key: reuses cached token (0ms) or solves ONCE and caches for 14 min
   if (!headers['x-api-key']) {
     const powToken = await getOrSolvePowToken(host);
     if (powToken) {
@@ -40,7 +41,47 @@ export async function streamMovieSources(
   const url = `${host}/v1/movies/${encodeURIComponent(String(id))}?${urlParams.toString()}`;
   const allProviders: OmssProviderItem[] = [];
 
-  return streamOmssSources(
+  let isCancelled = false;
+  let activeCancel: (() => void) | null = null;
+
+  const handleFallback = async (isRetry = false) => {
+    if (isCancelled) return;
+    try {
+      const nonSseUrl = `${host}/v1/movies/${encodeURIComponent(String(id))}?platform=tv&pow_token=${encodeURIComponent(authParams['pow_token'] || '')}`;
+      const res = await requestJson<any>(nonSseUrl);
+      if (isCancelled) return;
+
+      let providersList: OmssProviderItem[] = [];
+      if (res && res.providers && Array.isArray(res.providers)) {
+        providersList = res.providers;
+      } else if (res && res.sources && Array.isArray(res.sources)) {
+        providersList = groupSourcesByProvider(res.sources, res.subtitles || []);
+      }
+
+      if (providersList.length > 0) {
+        providersList.forEach((p) => onProvider(p));
+        setLocalCache(cacheKey, providersList, 1200);
+        onComplete();
+        return;
+      }
+      onComplete();
+    } catch (err: any) {
+      if (isCancelled) return;
+      if (!isRetry) {
+        setPowRequired(true);
+        invalidatePowToken();
+        const newToken = await getOrSolvePowToken(host, true);
+        if (newToken && !isCancelled) {
+          authParams['pow_token'] = newToken;
+          await handleFallback(true);
+          return;
+        }
+      }
+      onError(err);
+    }
+  };
+
+  activeCancel = streamOmssSources(
     url,
     (chunk) => {
       allProviders.push(chunk);
@@ -52,23 +93,17 @@ export async function streamMovieSources(
       }
       onComplete();
     },
-    (err) => {
-      // If error and we got no providers, try non-SSE fallback
+    async () => {
       if (allProviders.length === 0) {
-        requestJson<OmssMovieResponse>(
-          `${host}/v1/movies/${encodeURIComponent(String(id))}?platform=tv&pow_token=${encodeURIComponent(authParams['pow_token'] || '')}`
-        )
-          .then((res) => {
-            if (res.providers) {
-              res.providers.forEach((p) => onProvider(p));
-              setLocalCache(cacheKey, res.providers, 1200);
-            }
-            onComplete();
-          })
-          .catch(() => onError(err));
+        await handleFallback();
       } else {
-        onError(err);
+        onComplete();
       }
     }
   );
+
+  return () => {
+    isCancelled = true;
+    if (activeCancel) activeCancel();
+  };
 }
