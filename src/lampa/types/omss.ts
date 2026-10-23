@@ -8,6 +8,7 @@ export interface OmssSourceItem {
   title?: string;
   audio?: string;
   audioTracks?: string[];
+  sharedVideo?: boolean;
   studio?: {
     name?: string;
     logoUrl?: string;

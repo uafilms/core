@@ -64,7 +64,7 @@ export interface PlayItem {
   quality?: Record<string, string> | false;
   subtitles?: any[];
   callback?: () => void;
-  playlist?: PlayItem[];
+  playlist?: any[];
 }
 
 export interface EpisodeRenderItem {
