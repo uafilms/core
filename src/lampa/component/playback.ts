@@ -7,7 +7,9 @@ import {
   getEpisodeHashBehold,
   getEpisodeHashTimeline,
   markViewed,
+  saveChoice,
 } from './storage.js';
+import { extractVoicesFromProvider, updateTvFilter } from './episodes.js';
 
 declare const Lampa: any;
 
@@ -113,25 +115,26 @@ export async function playTvEpisode(
     ctx.state.currentProvidersMap.get(activeProvider) ||
     Array.from(ctx.state.currentProvidersMap.values())[0];
 
-  if (provItem && provItem.sources && provItem.sources.length) {
-    // If epNum is the probed episode, provItem.sources are already resolved for it
-    const probedEpNum = ctx.state.selectedEpisodeNumber || 1;
-    if (epNum === probedEpNum) {
-      targetSource = findMatchingVoiceSource(provItem.sources, activeVoice) || provItem.sources[0];
-      if (targetSource) {
-        playUrl = normalizeStreamUrl(targetSource.url, host);
-        if (activeVoice && targetSource.sharedVideo && !playUrl.includes('voice=')) {
-          playUrl = withVoiceQuery(playUrl, activeVoice);
-        }
-        subTracks = (targetSource.subtitles || provItem.subtitles || []).map((sub: any) => ({
-          ...sub,
-          url: normalizeStreamUrl(sub.url, host),
-        }));
+  // ONLY reuse preloaded sources if the clicked episode matches the probed episode (typically episode 1)
+  const isProbed =
+    ctx.state.probedSeason === activeSeason &&
+    ctx.state.probedEpisode === epNum;
+
+  if (isProbed && provItem && provItem.sources && provItem.sources.length) {
+    targetSource = findMatchingVoiceSource(provItem.sources, activeVoice) || provItem.sources[0];
+    if (targetSource) {
+      playUrl = normalizeStreamUrl(targetSource.url, host);
+      if (activeVoice && targetSource.sharedVideo && !playUrl.includes('voice=')) {
+        playUrl = withVoiceQuery(playUrl, activeVoice);
       }
+      subTracks = (targetSource.subtitles || provItem.subtitles || []).map((sub: any) => ({
+        ...sub,
+        url: normalizeStreamUrl(sub.url, host),
+      }));
     }
   }
 
-  // If not resolved from preloaded probe, resolve via fetchEpisodeProviders
+  // If not the probed episode or sources not yet available, resolve sources for this specific episode
   if (!playUrl) {
     let cancelled = false;
     if (typeof Lampa !== 'undefined' && Lampa.Loading && Lampa.Loading.start) {
@@ -213,6 +216,65 @@ export async function playTvEpisode(
     },
   };
 
+  // Provide all audio tracks to Lampa player panel (Option.setTracks / translates)
+  const availableTracks: string[] =
+    targetSource?.audioTracks && targetSource.audioTracks.length > 1
+      ? targetSource.audioTracks
+      : provItem?.sources && provItem.sources.length > 1
+      ? extractVoicesFromProvider(provItem)
+      : [];
+
+  if (availableTracks.length > 1) {
+    playObj.translate = {
+      tracks: availableTracks.map((name: string) => ({ name, language: 'uk' })),
+    };
+
+    playObj.voiceovers = availableTracks.map((trackName: string, idx: number) => {
+      const isSelected =
+        trackName.toLowerCase().trim() === (activeVoice || '').toLowerCase().trim();
+      const trackPlayUrl = targetSource?.sharedVideo
+        ? withVoiceQuery(playUrl, trackName)
+        : playUrl;
+
+      return {
+        title: trackName,
+        selected: isSelected,
+        index: idx,
+        url: trackPlayUrl,
+        onSelect: () => {
+          ctx.state.activeVoice = trackName;
+          saveChoice(ctx, { voice: trackName });
+          updateTvFilter(ctx);
+
+          // If Hls.js is active and has matching audio track, switch natively
+          try {
+            if (typeof Lampa !== 'undefined') {
+              if (Lampa.PlayerVideo) {
+                const videoEl = Lampa.PlayerVideo.video();
+                const hls = videoEl && videoEl._hls ? videoEl._hls : (window as any)._hls;
+                if (hls && hls.audioTracks && hls.audioTracks.length > 1) {
+                  const targetIdx = hls.audioTracks.findIndex(
+                    (t: any) =>
+                      (t.name || '').toLowerCase().trim() === trackName.toLowerCase().trim()
+                  );
+                  if (targetIdx !== -1) {
+                    hls.audioTrack = targetIdx;
+                    return;
+                  }
+                }
+              }
+              if (Lampa.Player && typeof Lampa.Player.play === 'function') {
+                playTvEpisode(ctx, ep);
+              }
+            }
+          } catch {
+            // Ignore
+          }
+        },
+      };
+    });
+  }
+
   // Build playlist for the season without circular references
   const playlist: any[] = ctx.state.seasonEpisodes.map((epItem) => {
     const n = epItem.episode_number;
@@ -229,7 +291,7 @@ export async function playTvEpisode(
 
     const nextUrl = `${host}/play.m3u8?id=${encodeURIComponent(String(movie.id || movie.imdb_id))}&type=tv&s=${activeSeason}&e=${n}&provider=${encodeURIComponent(cleanProvider)}&voice=${encodeURIComponent(activeVoice)}`;
 
-    return {
+    const epObj: any = {
       url: n === epNum ? playUrl : nextUrl,
       title: `${movie.title || movie.name} - S${activeSeason}E${n} (${activeVoice || 'Озвучення'})`,
       season: activeSeason,
@@ -240,10 +302,14 @@ export async function playTvEpisode(
         updateEpisodeViewedHtml(ctx, n, true);
       },
     };
+
+    if (playObj.voiceovers) epObj.voiceovers = playObj.voiceovers;
+    if (playObj.translate) epObj.translate = playObj.translate;
+
+    return epObj;
   });
 
   // CRITICAL FIX: Shallow clone playObj to playData so playlist does NOT contain playData itself!
-  // Android / Siaivo player executes JSON.stringify(data) which throws on circular structures.
   const playData: any = {};
   for (const k of Object.keys(playObj)) {
     playData[k] = playObj[k];

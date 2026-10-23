@@ -18,6 +18,8 @@ export interface ComponentState {
   selectedEpisode: TmdbEpisodeItem | null;
   seasonEpisodes: TmdbEpisodeItem[];
   currentProvidersMap: Map<string, OmssProviderItem>;
+  probedSeason?: number;
+  probedEpisode?: number;
   currentImages: HTMLImageElement[];
   currentStreamCancel: (() => void) | null;
   isPlaybackActive: boolean;

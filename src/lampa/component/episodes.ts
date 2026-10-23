@@ -142,7 +142,9 @@ export async function probeSeasonVoices(ctx: ComponentContext, seasonNum: number
     ctx.state.currentStreamCancel = null;
   }
 
-  const probeEpNum = ctx.state.selectedEpisodeNumber || 1;
+  const probeEpNum = 1;
+  ctx.state.probedSeason = seasonNum;
+  ctx.state.probedEpisode = probeEpNum;
 
   ctx.state.currentStreamCancel = await streamEpisodeSources(
     ctx.host,

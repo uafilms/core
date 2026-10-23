@@ -165,25 +165,56 @@ export function renderActiveProviderSources(ctx: ComponentContext): void {
         url: normalizeStreamUrl(sub.url, ctx.host),
       }));
 
-      try {
-        Lampa.Player.play({
-          url: playUrl,
-          title: `${ctx.movie.title || ctx.movie.name || ''} - ${voiceName}`,
-          timeline,
-          subtitles: subTracks,
-          callback: () => {
-            ctx.state.isPlaybackActive = false;
-            markViewed(ctx, hashBehold);
-            imgContainer.find('.online-prestige__viewed, .torrent-item__viewed').remove();
-            imgContainer.append(
-              '<div class="online-prestige__viewed">' +
-                ((typeof Lampa !== 'undefined' && Lampa.Template && Lampa.Template.get)
-                  ? Lampa.Template.get('icon_viewed', {}, true)
-                  : '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>') +
-                '</div>'
-            );
-          },
+      const availableTracks: string[] =
+        source.audioTracks && source.audioTracks.length > 1
+          ? source.audioTracks
+          : displaySources.length > 1
+          ? displaySources.map((d) => d.voiceName)
+          : [];
+
+      const moviePlayObj: any = {
+        url: playUrl,
+        title: `${ctx.movie.title || ctx.movie.name || ''} - ${voiceName}`,
+        timeline,
+        subtitles: subTracks,
+        callback: () => {
+          ctx.state.isPlaybackActive = false;
+          markViewed(ctx, hashBehold);
+          imgContainer.find('.online-prestige__viewed, .torrent-item__viewed').remove();
+          imgContainer.append(
+            '<div class="online-prestige__viewed">' +
+              ((typeof Lampa !== 'undefined' && Lampa.Template && Lampa.Template.get)
+                ? Lampa.Template.get('icon_viewed', {}, true)
+                : '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>') +
+              '</div>'
+          );
+        },
+      };
+
+      if (availableTracks.length > 1) {
+        moviePlayObj.translate = {
+          tracks: availableTracks.map((name: string) => ({ name, language: 'uk' })),
+        };
+        moviePlayObj.voiceovers = availableTracks.map((trackName: string, idx: number) => {
+          const matchedEntry = displaySources.find(
+            (d) => d.voiceName.toLowerCase().trim() === trackName.toLowerCase().trim()
+          );
+          const trackUrl = matchedEntry
+            ? normalizeStreamUrl(matchedEntry.playUrl, ctx.host)
+            : source.sharedVideo
+            ? withVoiceQuery(playUrl, trackName)
+            : playUrl;
+          return {
+            title: trackName,
+            selected: trackName.toLowerCase().trim() === voiceName.toLowerCase().trim(),
+            index: idx,
+            url: trackUrl,
+          };
         });
+      }
+
+      try {
+        Lampa.Player.play(moviePlayObj);
       } catch (err: any) {
         ctx.state.isPlaybackActive = false;
         if (typeof Lampa !== 'undefined' && Lampa.Noty && Lampa.Noty.show) {
