@@ -1,36 +1,211 @@
-import type { TmdbEpisodeItem } from '../types/index.js';
-import { fetchSeasonDetails } from '../api/index.js';
-import { formatFullDate, hashString, secondsToTime } from '../utils/index.js';
+import type { OmssProviderItem, TmdbEpisodeItem } from '../types/index.js';
+import { fetchSeasonDetails, streamEpisodeSources } from '../api/index.js';
+import { extractVoiceName, formatFullDate, secondsToTime } from '../utils/index.js';
 import type { ComponentContext } from './types.js';
-import { isViewed, saveChoice, unmarkViewed } from './storage.js';
+import {
+  getEpisodeHashBehold,
+  getEpisodeHashTimeline,
+  getSavedChoice,
+  isViewed,
+  saveChoice,
+  unmarkViewed,
+} from './storage.js';
 import { resetList, showEmpty } from './empty.js';
 import { showContextMenu } from './context-menu.js';
-import { openTvEpisodeSources } from './sources.js';
+import { favoriteCdnRank, updateBalancersTab } from './favorites.js';
+import { playTvEpisode, updateEpisodeViewedHtml } from './playback.js';
 
 declare const Lampa: any;
 declare const $: any;
 
+export function extractVoicesFromProvider(providerItem?: OmssProviderItem): string[] {
+  if (!providerItem || !providerItem.sources || !providerItem.sources.length) return [];
+  const voices: string[] = [];
+  const seen = new Set<string>();
+
+  for (const source of providerItem.sources) {
+    if (source.audioTracks && source.audioTracks.length > 1 && providerItem.sources.length === 1) {
+      for (const track of source.audioTracks) {
+        const clean = track.trim();
+        if (clean && !seen.has(clean)) {
+          seen.add(clean);
+          voices.push(clean);
+        }
+      }
+    } else {
+      const v = extractVoiceName(source);
+      if (v && !seen.has(v)) {
+        seen.add(v);
+        voices.push(v);
+      }
+    }
+  }
+  return voices;
+}
+
+export function updateTvFilter(ctx: ComponentContext): void {
+  const filterTranslate = ctx.filterTranslate;
+  const activeSeason = ctx.state.activeSeason;
+  const activeVoice = ctx.state.activeVoice;
+  const totalSeasons = Math.max(
+    ctx.movie.number_of_seasons || (ctx.movie.seasons ? ctx.movie.seasons.length : 1),
+    1
+  );
+
+  const selectItems: any[] = [
+    {
+      title: Lampa.Lang.translate('torrent_parser_reset'),
+      reset: true,
+    },
+  ];
+
+  const chosenTitles: string[] = [];
+
+  // 1. Voice acting / Studio dropdown
+  const provItem =
+    ctx.state.currentProvidersMap.get(ctx.state.activeProvider) ||
+    Array.from(ctx.state.currentProvidersMap.values())[0];
+  const voices = extractVoicesFromProvider(provItem);
+
+  if (voices.length > 0) {
+    const voiceSubitems = voices.map((v, i) => ({
+      title: v,
+      selected: v === activeVoice,
+      index: i,
+    }));
+    selectItems.push({
+      title: filterTranslate.voice,
+      subtitle: activeVoice || voices[0],
+      items: voiceSubitems,
+      stype: 'voice',
+    });
+    chosenTitles.push(`${filterTranslate.voice}: ${activeVoice || voices[0]}`);
+  } else {
+    selectItems.push({
+      title: filterTranslate.voice,
+      subtitle:
+        (typeof Lampa !== 'undefined' && Lampa.Lang && Lampa.Lang.translate('loading')) ||
+        'Завантаження...',
+      items: [],
+      stype: 'voice_loading',
+    });
+    chosenTitles.push(`${filterTranslate.voice}: ...`);
+  }
+
+  // 2. Season dropdown (if multiple seasons)
+  if (totalSeasons > 1) {
+    const seasonList: string[] = [];
+    for (let i = 1; i <= totalSeasons; i++) {
+      seasonList.push(`${filterTranslate.season} ${i}`);
+    }
+    const seasonSubitems = seasonList.map((name, i) => ({
+      title: name,
+      selected: i + 1 === activeSeason,
+      index: i + 1,
+    }));
+    selectItems.push({
+      title: filterTranslate.season,
+      subtitle: seasonList[activeSeason - 1] || seasonList[0],
+      items: seasonSubitems,
+      stype: 'season',
+    });
+    chosenTitles.push(`${filterTranslate.season}: ${activeSeason}`);
+  }
+
+  ctx.filter.set('filter', selectItems);
+  ctx.filter.chosen('filter', chosenTitles);
+}
+
+export function updateTvVoicesAndFilter(ctx: ComponentContext): void {
+  const provItem =
+    ctx.state.currentProvidersMap.get(ctx.state.activeProvider) ||
+    Array.from(ctx.state.currentProvidersMap.values())[0];
+  const voices = extractVoicesFromProvider(provItem);
+  const saved = getSavedChoice(ctx);
+
+  if (voices.length > 0) {
+    if (!ctx.state.activeVoice || !voices.includes(ctx.state.activeVoice)) {
+      if (saved.voice && voices.includes(saved.voice)) {
+        ctx.state.activeVoice = saved.voice;
+      } else {
+        ctx.state.activeVoice = voices[0];
+      }
+    }
+  }
+
+  updateTvFilter(ctx);
+}
+
+export async function probeSeasonVoices(ctx: ComponentContext, seasonNum: number): Promise<void> {
+  if (ctx.state.currentStreamCancel) {
+    ctx.state.currentStreamCancel();
+    ctx.state.currentStreamCancel = null;
+  }
+
+  const probeEpNum = ctx.state.selectedEpisodeNumber || 1;
+
+  ctx.state.currentStreamCancel = await streamEpisodeSources(
+    ctx.host,
+    ctx.movie.id || ctx.movie.imdb_id || '',
+    seasonNum,
+    probeEpNum,
+    (chunk) => {
+      ctx.state.currentProvidersMap.set(chunk.name, chunk);
+      const providers = Array.from(ctx.state.currentProvidersMap.values());
+      updateBalancersTab(ctx, providers);
+
+      // Auto-upgrade to higher-ranked favorite CDN if user has not explicitly locked provider
+      if (!ctx.state.userManuallySelectedProvider) {
+        const currentRank = favoriteCdnRank(ctx.state.activeProvider);
+        const newRank = favoriteCdnRank(chunk.provider || chunk.name);
+        if (newRank < currentRank) {
+          ctx.state.activeProvider = chunk.name;
+          updateBalancersTab(ctx, providers);
+        }
+      }
+
+      updateTvVoicesAndFilter(ctx);
+    },
+    () => {
+      updateTvVoicesAndFilter(ctx);
+    },
+    () => {
+      // Keep rendered episodes even if source discovery encounters network error
+      updateTvVoicesAndFilter(ctx);
+    }
+  );
+}
+
 export async function loadTvSeason(ctx: ComponentContext, seasonNum: number): Promise<void> {
   if (ctx.self.activity?.loader) ctx.self.activity.loader(true);
-  resetList(ctx);
 
   ctx.state.viewMode = 'episodes';
   ctx.state.selectedEpisode = null;
   ctx.state.activeSeason = seasonNum;
   saveChoice(ctx, { season: seasonNum });
 
+  updateBalancersTab(ctx, Array.from(ctx.state.currentProvidersMap.values()));
+  updateTvFilter(ctx);
+
   try {
-    const seasonData = await fetchSeasonDetails(ctx.host, ctx.movie.id || ctx.movie.imdb_id || '', seasonNum);
+    const seasonData = await fetchSeasonDetails(
+      ctx.host,
+      ctx.movie.id || ctx.movie.imdb_id || '',
+      seasonNum
+    );
     ctx.state.seasonEpisodes = seasonData.episodes || [];
 
     if (!ctx.state.seasonEpisodes.length) {
+      resetList(ctx);
       showEmpty(ctx, Lampa.Lang.translate('uafilms_not_found'));
       if (ctx.self.activity?.loader) ctx.self.activity.loader(false);
       return;
     }
 
     renderTvEpisodes(ctx, ctx.state.seasonEpisodes);
+    probeSeasonVoices(ctx, seasonNum);
   } catch {
+    resetList(ctx);
     showEmpty(ctx, Lampa.Lang.translate('uafilms_error'));
   } finally {
     if (ctx.self.activity?.loader) ctx.self.activity.loader(false);
@@ -44,41 +219,9 @@ export function renderTvEpisodes(ctx: ComponentContext, episodes: TmdbEpisodeIte
   resetList(ctx);
 
   const movie = ctx.movie;
-  const filterTranslate = ctx.filterTranslate;
   const activeSeason = ctx.state.activeSeason;
 
-  const totalSeasons = Math.max(
-    movie.number_of_seasons || (movie.seasons ? movie.seasons.length : 1),
-    1
-  );
-  const seasonList: string[] = [];
-  for (let i = 1; i <= totalSeasons; i++) {
-    seasonList.push(`${filterTranslate.season} ${i}`);
-  }
-
-  const selectItems: any[] = [
-    {
-      title: Lampa.Lang.translate('torrent_parser_reset'),
-      reset: true,
-    },
-  ];
-
-  if (seasonList.length > 1) {
-    const subitems = seasonList.map((name, i) => ({
-      title: name,
-      selected: i + 1 === activeSeason,
-      index: i + 1,
-    }));
-    selectItems.push({
-      title: filterTranslate.season,
-      subtitle: seasonList[activeSeason - 1] || seasonList[0],
-      items: subitems,
-      stype: 'season',
-    });
-  }
-
-  ctx.filter.set('filter', selectItems);
-  ctx.filter.chosen('filter', [`${filterTranslate.season}: ${activeSeason}`]);
+  updateTvFilter(ctx);
 
   let autoScrollTarget: any = null;
 
@@ -91,16 +234,16 @@ export function renderTvEpisodes(ctx: ComponentContext, episodes: TmdbEpisodeIte
       ? secondsToTime(movie.runtime * 60)
       : '';
 
-    const hashTimeline = hashString(
-      `${activeSeason}_${epNum}_${movie.original_title || movie.title || ''}`
-    );
-    const hashBehold = hashString(
-      `${activeSeason}_${epNum}_${movie.original_title || movie.title || ''}_uafilms`
-    );
+    const hashTimeline = getEpisodeHashTimeline(movie, activeSeason, epNum);
+    const hashBehold = getEpisodeHashBehold(movie, activeSeason, epNum);
 
-    const timeline = Lampa.Timeline.view
-      ? Lampa.Timeline.view(hashTimeline, Lampa.Timeline.link ? Lampa.Timeline.link(movie, activeSeason, epNum) : undefined)
-      : { percent: 0, time: 0, duration: 0 };
+    const timeline =
+      typeof Lampa !== 'undefined' && Lampa.Timeline && Lampa.Timeline.view
+        ? Lampa.Timeline.view(
+            hashTimeline,
+            Lampa.Timeline.link ? Lampa.Timeline.link(movie, activeSeason, epNum) : undefined
+          )
+        : { percent: 0, time: 0, duration: 0, hash: hashTimeline };
 
     const infoParts: string[] = [];
     if (ep.vote_average) {
@@ -118,6 +261,8 @@ export function renderTvEpisodes(ctx: ComponentContext, episodes: TmdbEpisodeIte
         quality: '',
       })
     );
+
+    itemHtml.attr('data-episode', String(epNum));
 
     const imgContainer = itemHtml.find('.online-prestige__img');
     const loader = itemHtml.find('.online-prestige__loader');
@@ -139,9 +284,10 @@ export function renderTvEpisodes(ctx: ComponentContext, episodes: TmdbEpisodeIte
             `<div class="online-prestige__episode-number">${('0' + epNum).slice(-2)}</div>`
           );
         };
-        img.src = Lampa.TMDB && Lampa.TMDB.image
-          ? Lampa.TMDB.image('t/p/w300' + stillPath)
-          : `https://image.tmdb.org/t/p/w300${stillPath}`;
+        img.src =
+          Lampa.TMDB && Lampa.TMDB.image
+            ? Lampa.TMDB.image('t/p/w300' + stillPath)
+            : `https://image.tmdb.org/t/p/w300${stillPath}`;
         ctx.state.currentImages.push(img);
       } else {
         loader.remove();
@@ -151,14 +297,16 @@ export function renderTvEpisodes(ctx: ComponentContext, episodes: TmdbEpisodeIte
       }
     }
 
-    if (timeline && Lampa.Timeline.render) {
+    if (timeline && Lampa.Timeline && Lampa.Timeline.render) {
       itemHtml.find('.online-prestige__timeline').append(Lampa.Timeline.render(timeline));
     }
 
     if (isViewed(hashBehold)) {
       imgContainer.append(
         '<div class="online-prestige__viewed">' +
-          Lampa.Template.get('icon_viewed', {}, true) +
+          ((typeof Lampa !== 'undefined' && Lampa.Template && Lampa.Template.get)
+            ? Lampa.Template.get('icon_viewed', {}, true)
+            : '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>') +
           '</div>'
       );
     }
@@ -175,8 +323,7 @@ export function renderTvEpisodes(ctx: ComponentContext, episodes: TmdbEpisodeIte
     });
 
     itemHtml.on('hover:enter', () => {
-      ctx.state.selectedEpisodeNumber = epNum;
-      openTvEpisodeSources(ctx, ep);
+      playTvEpisode(ctx, ep);
     });
 
     showContextMenu(ctx, {
@@ -184,10 +331,12 @@ export function renderTvEpisodes(ctx: ComponentContext, episodes: TmdbEpisodeIte
       hashBehold,
       timeline,
       onPlay: () => {
-        ctx.state.selectedEpisodeNumber = epNum;
-        openTvEpisodeSources(ctx, ep);
+        playTvEpisode(ctx, ep);
       },
-      onClearWatched: () => unmarkViewed(hashBehold),
+      onClearWatched: () => {
+        unmarkViewed(hashBehold);
+        updateEpisodeViewedHtml(ctx, epNum, false);
+      },
     });
 
     ctx.scroll.append(itemHtml);
@@ -198,10 +347,5 @@ export function renderTvEpisodes(ctx: ComponentContext, episodes: TmdbEpisodeIte
   } else {
     const first = ctx.scroll.render().find('.selector').first();
     ctx.state.lastFocusElement = first.length ? first[0] : null;
-  }
-
-  Lampa.Controller.toggle('content');
-  if (ctx.state.lastFocusElement && typeof ctx.scroll.update === 'function') {
-    ctx.scroll.update($(ctx.state.lastFocusElement), true);
   }
 }

@@ -1,5 +1,4 @@
 import type { ComponentContext } from './types.js';
-import { renderTvEpisodes } from './episodes.js';
 
 declare const Lampa: any;
 
@@ -36,6 +35,8 @@ export function setupController(ctx: ComponentContext): void {
       const nav = getNav();
       if (nav && typeof nav.canmove === 'function' && nav.canmove('right')) {
         nav.move('right');
+      } else if (ctx.filter && typeof ctx.filter.show === 'function') {
+        ctx.filter.show(Lampa.Lang.translate('title_filter'), 'filter');
       } else if (ctx.filter && ctx.filter.render().find('.filter--filter').length) {
         ctx.filter.render().find('.filter--filter').trigger('hover:enter');
       }
@@ -44,17 +45,11 @@ export function setupController(ctx: ComponentContext): void {
       const nav = getNav();
       if (nav && typeof nav.canmove === 'function' && nav.canmove('left')) {
         nav.move('left');
-      } else if (ctx.files.toggle) {
-        ctx.files.toggle();
+      } else {
+        Lampa.Controller.toggle('menu');
       }
     },
     back: () => {
-      if (ctx.isTv && ctx.state.viewMode === 'sources') {
-        // Return to episodes list
-        ctx.state.viewMode = 'episodes';
-        renderTvEpisodes(ctx, ctx.state.seasonEpisodes);
-        return;
-      }
       Lampa.Activity.backward();
     },
   });

@@ -16,7 +16,7 @@ export async function buildLampaPlugin(options?: { minify?: boolean; outfile?: s
     entryPoints: [path.resolve(process.cwd(), 'src/lampa/index.ts')],
     bundle: true,
     format: 'iife',
-    target: ['es2018'],
+    target: ['es2015'],
     minify: true,
     minifyWhitespace: true,
     minifyIdentifiers: true,

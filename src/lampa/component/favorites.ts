@@ -36,7 +36,17 @@ export function sortProvidersWithFavorites(providers: OmssProviderItem[]): OmssP
 }
 
 export function updateBalancersTab(ctx: ComponentContext, providers: OmssProviderItem[]): void {
-  if (!providers.length) return;
+  if (!providers.length) {
+    ctx.filter.set('sort', [
+      {
+        title: (typeof Lampa !== 'undefined' && Lampa.Lang && Lampa.Lang.translate('loading')) || 'Завантаження...',
+        source: '',
+        selected: true,
+      },
+    ]);
+    ctx.filter.chosen('sort', [ctx.filterTranslate.source]);
+    return;
+  }
 
   const sorted = sortProvidersWithFavorites(providers);
   const providerNames = sorted.map((p) => p.name);
@@ -46,7 +56,6 @@ export function updateBalancersTab(ctx: ComponentContext, providers: OmssProvide
     if (saved && providerNames.includes(saved)) {
       ctx.state.activeProvider = saved;
     } else {
-      // Automatically prefer the top favorite CDN (fenix > ashdi > others)
       ctx.state.activeProvider = sorted[0].name;
     }
   } else if (!providerNames.includes(ctx.state.activeProvider)) {

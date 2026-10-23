@@ -4,8 +4,14 @@ import { fetchTvDetails } from '../api/index.js';
 import type { ComponentContext, ComponentState } from './types.js';
 import { getSavedChoice, saveChoice } from './storage.js';
 import { clearImages } from './empty.js';
-import { loadTvSeason, renderTvEpisodes } from './episodes.js';
-import { loadMovie, openTvEpisodeSources, renderActiveProviderSources } from './sources.js';
+import {
+  extractVoicesFromProvider,
+  loadTvSeason,
+  renderTvEpisodes,
+  updateTvFilter,
+  updateTvVoicesAndFilter,
+} from './episodes.js';
+import { loadMovie, renderActiveProviderSources } from './sources.js';
 import { setupController } from './controller.js';
 
 export * from './types.js';
@@ -42,7 +48,9 @@ export function UAFilmsComponent(this: any, object: LampaActivityObject) {
     viewMode: 'episodes',
     activeSeason: 1,
     activeProvider: '',
+    activeVoice: '',
     userManuallySelectedProvider: false,
+    userManuallySelectedVoice: false,
     selectedEpisode: null,
     seasonEpisodes: [],
     currentProvidersMap: new Map(),
@@ -74,9 +82,20 @@ export function UAFilmsComponent(this: any, object: LampaActivityObject) {
     const saved = getSavedChoice(ctx);
     state.activeSeason = saved.season || 1;
     state.activeProvider = saved.provider || '';
+    state.activeVoice = saved.voice || '';
 
     // Set balancer tab label to "Джерело"
     filter.render().find('.filter--sort span').text(filterTranslate.source);
+    filter.set('sort', [
+      {
+        title:
+          (typeof Lampa !== 'undefined' && Lampa.Lang && Lampa.Lang.translate('loading')) ||
+          'Завантаження...',
+        source: '',
+        selected: true,
+      },
+    ]);
+    filter.chosen('sort', [filterTranslate.source]);
 
     filter.onSearch = (value: string) => {
       Lampa.Activity.replace({
@@ -99,30 +118,35 @@ export function UAFilmsComponent(this: any, object: LampaActivityObject) {
           saveChoice(ctx, { provider: state.activeProvider });
           filter.chosen('sort', [state.activeProvider]);
 
-          if (state.viewMode === 'sources' || !isTv) {
+          if (isTv) {
+            updateTvVoicesAndFilter(ctx);
+          } else {
             renderActiveProviderSources(ctx);
           }
         }
       } else if (type === 'filter') {
-        if (a.back || a.stype === 'back') {
-          // Return to episodes list
-          state.viewMode = 'episodes';
-          renderTvEpisodes(ctx, state.seasonEpisodes);
-          return;
-        }
-
         if (a.reset) {
           if (isTv) {
-            if (state.viewMode === 'sources' && state.selectedEpisode) {
-              openTvEpisodeSources(ctx, state.selectedEpisode);
-            } else {
-              renderTvEpisodes(ctx, state.seasonEpisodes);
-            }
+            state.userManuallySelectedProvider = false;
+            state.activeVoice = '';
+            loadTvSeason(ctx, state.activeSeason);
           } else {
             loadMovie(ctx);
           }
         } else if (a.stype === 'season') {
           loadTvSeason(ctx, b.index);
+        } else if (a.stype === 'voice') {
+          state.userManuallySelectedVoice = true;
+          const provItem =
+            state.currentProvidersMap.get(state.activeProvider) ||
+            Array.from(state.currentProvidersMap.values())[0];
+          const voices = extractVoicesFromProvider(provItem);
+          if (voices[b.index]) {
+            state.activeVoice = voices[b.index];
+            saveChoice(ctx, { voice: state.activeVoice });
+            updateTvFilter(ctx);
+          }
+          Lampa.Select.close();
         }
       }
     };

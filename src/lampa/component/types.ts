@@ -9,10 +9,12 @@ export interface ComponentState {
   lastFocusElement: any;
   selectedEpisodeNumber: number;
   initialized: boolean;
-  viewMode: 'episodes' | 'sources';
+  viewMode?: 'episodes' | 'sources';
   activeSeason: number;
   activeProvider: string;
+  activeVoice: string;
   userManuallySelectedProvider: boolean;
+  userManuallySelectedVoice: boolean;
   selectedEpisode: TmdbEpisodeItem | null;
   seasonEpisodes: TmdbEpisodeItem[];
   currentProvidersMap: Map<string, OmssProviderItem>;
