@@ -492,7 +492,11 @@ streamRouter.get('/master.m3u8', async (c) => {
     'Accept': '*/*',
   };
 
-  const isAshdi = streamUrl.includes('ashdi.vip');
+  const isAshdi =
+    streamUrl.includes('ashdi.vip') ||
+    streamUrl.includes('ashdi.me') ||
+    streamUrl.includes('0yql3tj') ||
+    streamUrl.includes('oyql3tj');
   const isMoon = streamUrl.includes('moonanime.art') || streamUrl.includes('mooncdn') || streamUrl.includes('s.moonanime');
   const isBamboo = streamUrl.includes('bambooua.com');
   const isHdvb = streamUrl.includes('hdvbua.pro') || streamUrl.includes('vidcache');

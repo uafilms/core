@@ -214,7 +214,14 @@ export function parseMasterPlaylist(
 
       if (nextIsStreamUrl) {
         let streamTargetUrl = absoluteUrl;
-        if (currentStreamHeight && streamTargetUrl.includes('ashdi.vip') && /\/hls\/\d+\//.test(streamTargetUrl)) {
+        if (
+          currentStreamHeight &&
+          (streamTargetUrl.includes('ashdi.vip') ||
+            streamTargetUrl.includes('ashdi.me') ||
+            streamTargetUrl.includes('0yql3tj') ||
+            streamTargetUrl.includes('oyql3tj')) &&
+          /\/hls\/\d+\//.test(streamTargetUrl)
+        ) {
           streamTargetUrl = streamTargetUrl.replace(/\/hls\/\d+\//, `/hls/${currentStreamHeight}/`);
         }
         newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(streamTargetUrl)}`);
@@ -231,9 +238,11 @@ export function parseMasterPlaylist(
         }
         nextIsSegmentUrl = false;
       } else {
+        const isSegmentFile = /\.(ts|m4s|mp4|m4a|aac|key)(\?|$)/i.test(absoluteUrl);
         const looksLikePlaylist =
-          absoluteUrl.includes('.m3u8') ||
-          /\/(index|master|playlist|stream|hls)(\/|\?|$)/i.test(absoluteUrl);
+          !isSegmentFile &&
+          (absoluteUrl.includes('.m3u8') ||
+            /\/(index|master|playlist)(\/|\?|$)/i.test(absoluteUrl));
 
         if (looksLikePlaylist) {
           newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(absoluteUrl)}`);
