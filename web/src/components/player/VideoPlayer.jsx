@@ -1928,11 +1928,14 @@ export default function VideoPlayer({
                       )}
                       <div className="vjs-audio-text-group">
                         <span className="vjs-audio-title">{track.label}</span>
-                        {track.language && (
-                          <span className="vjs-audio-sub">
-                            <span className="vjs-audio-badge">{track.language.toUpperCase()}</span>
-                          </span>
-                        )}
+                        {track.language &&
+                          normalizeStudioLabel(track.language) !== normalizeStudioLabel(track.label) &&
+                          track.language.toLowerCase() !== 'uk' &&
+                          track.language.toLowerCase() !== 'ukr' && (
+                            <span className="vjs-audio-sub">
+                              <span className="vjs-audio-badge">{track.language.toUpperCase()}</span>
+                            </span>
+                          )}
                       </div>
                     </div>
                   ))

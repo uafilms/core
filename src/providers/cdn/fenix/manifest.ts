@@ -5,6 +5,7 @@
 import type { Subtitle } from '../../../types/media.js';
 import type { VodExtractionOptions } from '../../../types/vod.js';
 import { sortAudioTrackLabels } from '../../../utils/sort.js';
+import { detectAudioLang } from '../../../utils/studio.js';
 import { FENIX_PREFER_AVC } from './config.js';
 import {
   FenixTrack,
@@ -70,11 +71,12 @@ export async function buildFenixMergedManifest(url: string, options: VodExtracti
   const mediaLines = orderedTracks.map((track) => {
     const uri = audioPlaylistUrl(track, ctx.token);
     const label = (track.label || 'Audio').replace(/"/g, '\\"');
+    const lang = track.language || detectAudioLang(track.label || '');
     const attrs = [
       '#EXT-X-MEDIA:TYPE=AUDIO',
       'GROUP-ID="audio"',
       `NAME="${label}"`,
-      `LANGUAGE="${label}"`,
+      `LANGUAGE="${lang}"`,
       'CHANNELS="2"',
       `DEFAULT=${track === defaultTrack ? 'YES' : 'NO'}`,
       'AUTOSELECT=YES',
