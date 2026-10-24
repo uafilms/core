@@ -1972,9 +1972,10 @@ export default function VideoPlayer({
                           // Fenix: одне відео + кілька доріжок — перемикаємо нативно,
                           // без перезавантаження джерела (лише якщо доріжка вже доступна)
                           const voiceLabel = normalizeStudioLabel(srcOption.studio?.name || srcOption.audioTracks?.[0]);
-                          const nativeIndex = nativeAudioTracks.findIndex(
-                            (track) => normalizeStudioLabel(track.label) === voiceLabel
-                          );
+                          const nativeIndex = nativeAudioTracks.findIndex((track) => {
+                            const tNorm = normalizeStudioLabel(track.label);
+                            return tNorm === voiceLabel || tNorm.includes(voiceLabel) || voiceLabel.includes(tNorm);
+                          });
                           if (srcOption.sharedVideo && nativeAudioTracks.length > 1 && nativeIndex >= 0) {
                             selectNativeAudioTrack(nativeIndex);
                             return;

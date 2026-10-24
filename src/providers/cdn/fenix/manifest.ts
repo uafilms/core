@@ -92,7 +92,17 @@ export async function buildFenixMergedManifest(url: string, options: VodExtracti
       mediaInserted = true;
     }
     if (/^#EXT-X-MEDIA:TYPE=AUDIO/i.test(trimmed)) continue;
-    output.push(trimmed.startsWith('#EXT-X-STREAM-INF') ? trimmed.replace(/AUDIO="[^"]*"/, 'AUDIO="audio"') : line);
+    if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
+      let streamInf = trimmed;
+      if (/AUDIO="[^"]*"/i.test(streamInf)) {
+        streamInf = streamInf.replace(/AUDIO="[^"]*"/i, 'AUDIO="audio"');
+      } else {
+        streamInf = `${streamInf},AUDIO="audio"`;
+      }
+      output.push(streamInf);
+    } else {
+      output.push(line);
+    }
   }
 
   if (!mediaInserted) return null;

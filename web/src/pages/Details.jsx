@@ -84,7 +84,11 @@ const Details = () => {
     if (!source?.url) return null;
     try {
       const parsed = new URL(source.url, window.location.origin);
-      return [parsed.searchParams.get('cdn'), parsed.searchParams.get('type'), parsed.searchParams.get('id')].join('|');
+      const cdn = parsed.searchParams.get('cdn');
+      const type = parsed.searchParams.get('type');
+      const id = parsed.searchParams.get('id') || parsed.searchParams.get('url');
+      const ep = parsed.searchParams.get('ep') || parsed.searchParams.get('episode');
+      return [cdn, type, id, ep].filter(Boolean).join('|');
     } catch {
       return null;
     }
