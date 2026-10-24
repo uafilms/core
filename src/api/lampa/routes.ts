@@ -133,3 +133,4 @@ const servePluginHandler = (c: any) => {
 lampaRouter.get('/l', servePluginHandler);
 lampaRouter.get('/lampa', servePluginHandler);
 lampaRouter.get('/lampa.js', servePluginHandler);
+lampaRouter.get('/online.js', servePluginHandler);

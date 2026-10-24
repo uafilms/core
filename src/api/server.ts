@@ -10,6 +10,7 @@ import { streamRouter } from './stream/master.js';
 import { catalogRouter } from './catalog/routes.js';
 import { authRouter } from './auth/routes.js';
 import { lampaRouter } from './lampa/routes.js';
+import { lampacRouter } from './lampac/routes.js';
 import { apiKeyMiddleware } from './auth/middleware.js';
 import { registerWsRoutes, wsServer } from './ws/index.js';
 import { isTurnstileEnabled, getTurnstileSiteKey } from './services/turnstile.js';
@@ -123,6 +124,10 @@ app.route('/', streamRouter);
 app.route('/api', streamRouter);
 app.route('/', lampaRouter);
 app.route('/api', lampaRouter);
+app.route('/', lampacRouter);
+app.route('/l', lampacRouter);
+app.route('/api', lampacRouter);
+app.route('/api/l', lampacRouter);
 app.route('/api/auth', authRouter);
 app.route('/auth', authRouter);
 
@@ -151,7 +156,10 @@ if (hasWebDist) {
       p === '/season' ||
       p === '/comments' ||
       p === '/segments' ||
-      p === '/batch-meta'
+      p === '/batch-meta' ||
+      p.startsWith('/lite') ||
+      p.startsWith('/lifeevents') ||
+      p.startsWith('/externalids')
     ) {
       return next();
     }
