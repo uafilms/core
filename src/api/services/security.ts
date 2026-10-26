@@ -15,6 +15,7 @@ import {
   verifyPowSessionToken,
   verifyPowSolution,
 } from './pow.js';
+import { autoBanService } from './autoBan.js';
 
 export function getClientIp(c: Context): string {
   const cfIp = c.req.header('cf-connecting-ip');
@@ -139,6 +140,22 @@ export function extractTurnstileToken(c: Context, bodyToken?: string): string | 
  */
 export async function enforceParsingSecurity(c: Context): Promise<Response | null> {
   const ip = getClientIp(c);
+
+  // 1. Check if IP is currently banned by Fail2Ban
+  const banStatus = autoBanService.check(ip);
+  if (banStatus.banned) {
+    return c.json(
+      {
+        error: {
+          code: 'IP_TEMPORARILY_BANNED',
+          message: `Вашу IP-адресу тимчасово заблоковано через повторні порушення лімітів. Розблокування через ${banStatus.formattedRemaining}.`,
+        },
+        traceId: crypto.randomUUID(),
+      },
+      403
+    );
+  }
+
   const identity = await getAuthIdentity(c);
   const isAuthenticated = identity !== null;
 
@@ -146,6 +163,19 @@ export async function enforceParsingSecurity(c: Context): Promise<Response | nul
   if (!isAuthenticated) {
     const { allowed } = unauthenticatedParserRateLimiter.check(ip, 3);
     if (!allowed) {
+      const ban = autoBanService.recordViolation(ip);
+      if (ban.banned) {
+        return c.json(
+          {
+            error: {
+              code: 'IP_TEMPORARILY_BANNED',
+              message: `Вашу IP-адресу заблоковано на ${ban.banMinutes} хв. через систематичне перевищення ліміту запитів.`,
+            },
+            traceId: crypto.randomUUID(),
+          },
+          403
+        );
+      }
       return c.json(
         {
           error: {
@@ -168,6 +198,19 @@ export async function enforceParsingSecurity(c: Context): Promise<Response | nul
 
     const { allowed } = authenticatedParserRateLimiter.check(rateKey, maxRequests);
     if (!allowed) {
+      const ban = autoBanService.recordViolation(ip);
+      if (ban.banned) {
+        return c.json(
+          {
+            error: {
+              code: 'IP_TEMPORARILY_BANNED',
+              message: `Вашу IP-адресу заблоковано на ${ban.banMinutes} хв. через систематичне перевищення ліміту запитів.`,
+            },
+            traceId: crypto.randomUUID(),
+          },
+          403
+        );
+      }
       const remainingDays = Math.max(1, Math.ceil((FOURTEEN_DAYS_MS - accountAgeMs) / (24 * 60 * 60 * 1000)));
       return c.json(
         {
