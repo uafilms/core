@@ -333,6 +333,15 @@ streamRouter.get('/segment', async (c) => {
   }
 });
 
+function fixRedirectLocation(location: string): string {
+  try {
+    const utf8 = Buffer.from(location, 'latin1').toString('utf8');
+    return encodeURI(utf8);
+  } catch {
+    return encodeURI(location);
+  }
+}
+
 streamRouter.get('/video.mp4', async (c) => {
   let target = stripCorsProxy(c.req.query('url') || '');
   const cdn = c.req.query('cdn');
@@ -360,31 +369,52 @@ streamRouter.get('/video.mp4', async (c) => {
 
   try {
     const range = c.req.header('range');
-    const reqHeaders: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-      'Accept': '*/*',
-      ...(target.includes('ufdub.com') ? { 'Referer': 'https://video.ufdub.com/' } : {}),
-      ...(range ? { Range: range } : {}),
-    };
 
-    const proxyOpts = proxyManager.getConfig(cdn || undefined, target);
+    let currentUrl = target;
+    let redirectsCount = 0;
+    let res: any = null;
 
-    const res = await axios.get(target, {
-      headers: reqHeaders,
-      responseType: 'stream',
-      timeout: 30000,
-      maxRedirects: 5,
-      validateStatus: () => true,
-      ...proxyOpts,
-    });
+    while (redirectsCount < 5) {
+      const isUfdub = currentUrl.includes('ufdub.com');
+      const reqHeaders: Record<string, string> = {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        ...(isUfdub ? { 'Referer': 'https://video.ufdub.com/' } : {}),
+        ...(range ? { Range: range } : {}),
+      };
 
-    if (res.status >= 400) {
-      logWarn('stream', `video.mp4 upstream error ${res.status}: ${target}`);
-      return c.text(`Video upstream error ${res.status}`, 502, { 'Access-Control-Allow-Origin': '*' });
+      const proxyOpts = proxyManager.getConfig(cdn || undefined, currentUrl);
+
+      res = await axios.get(currentUrl, {
+        headers: reqHeaders,
+        responseType: 'stream',
+        timeout: 30000,
+        maxRedirects: 0,
+        validateStatus: () => true,
+        ...proxyOpts,
+      });
+
+      if (res.status >= 300 && res.status < 400 && res.headers.location) {
+        redirectsCount++;
+        const nextLoc = res.headers.location as string;
+        currentUrl = new URL(fixRedirectLocation(nextLoc), currentUrl).toString();
+        continue;
+      }
+
+      break;
     }
 
+    if (!res || res.status >= 400) {
+      logWarn('stream', `video.mp4 upstream error ${res?.status}: ${target}`);
+      return c.text(`Video upstream error ${res?.status || 502}`, 502, { 'Access-Control-Allow-Origin': '*' });
+    }
+
+    const rawType = res.headers['content-type'] as string;
+    const contentType = !rawType || rawType.includes('octet-stream') ? 'video/mp4' : rawType;
+
     const headers: Record<string, string> = {
-      'Content-Type': (res.headers['content-type'] as string) || 'video/mp4',
+      'Content-Type': contentType,
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'public, max-age=3600',
     };

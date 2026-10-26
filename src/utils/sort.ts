@@ -136,6 +136,34 @@ export interface TitleSeasonInfo {
 }
 
 /**
+ * Визначає номер сиквелу/частини фільму або франшизи (наприклад: "2", "3", "II", "III", "IV")
+ */
+export function extractSequelNumber(title?: string): number | null {
+  if (!title) return null;
+  const t = title.trim();
+  const tokens = t.split(/[\s:,\.\-_/\\()]+/).filter(Boolean);
+  for (const tok of tokens) {
+    if (/^\d{1,2}$/.test(tok)) {
+      const n = parseInt(tok, 10);
+      if (n > 0 && n < 100) return n;
+    }
+    const up = tok.toUpperCase();
+    if (['II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'].includes(up)) {
+      if (up === 'II') return 2;
+      if (up === 'III') return 3;
+      if (up === 'IV') return 4;
+      if (up === 'V') return 5;
+      if (up === 'VI') return 6;
+      if (up === 'VII') return 7;
+      if (up === 'VIII') return 8;
+      if (up === 'IX') return 9;
+      if (up === 'X') return 10;
+    }
+  }
+  return null;
+}
+
+/**
  * Визначає номер сезону та частини з назви серіалу або аніме
  * (наприклад: "1 сезон, 2 частина", "Season 3", "Частина 2", "II", "Кей-Он!!")
  */
@@ -305,9 +333,24 @@ export function scoreSearchResult(
   const itemType = result.type || (result as any).mediaType;
   if (targetType && itemType) {
     if (targetType === 'movie' && itemType === 'tv') {
-      bestScore = Math.max(0, bestScore - 40);
+      bestScore = Math.max(0, bestScore - 55);
     } else if (targetType === 'tv' && itemType === 'movie') {
-      bestScore = Math.max(0, bestScore - 40);
+      bestScore = Math.max(0, bestScore - 55);
+    }
+  }
+
+  // 5.5. Перевірка номера сиквелу (2, 3, 4, II, III тощо)
+  const qSequel = extractSequelNumber(query);
+  const candSequel =
+    extractSequelNumber(result.title) ?? extractSequelNumber(result.originalTitle);
+
+  if (qSequel !== null || candSequel !== null) {
+    if (qSequel === candSequel) {
+      bestScore += 25;
+    } else {
+      // Якщо в запиті чітко вказана частина 2/3 (наприклад "Зоотрополіс 2"),
+      // а в результаті частини немає ("Зоотрополіс") або вона інша — штрафуємо
+      bestScore = Math.max(0, bestScore - 60);
     }
   }
 

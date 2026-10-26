@@ -119,7 +119,7 @@ export async function getUfdub(
       }
     }
 
-    if (seasonsMap.size > 0 && !isMovie) {
+    if (seasonsMap.size > 0) {
       const seasons = [];
       for (const [seasonNum, epMap] of seasonsMap.entries()) {
         const episodes = [];
@@ -155,26 +155,6 @@ export async function getUfdub(
 
       ufdubCache.set(pageUrl, { result, timestamp: Date.now() });
       return result;
-    }
-
-    // If only seasons were extracted but it's marked as movie, return episodes as sources
-    if (seasonsMap.size > 0) {
-      const flatSources: StreamSource[] = [];
-      for (const epMap of seasonsMap.values()) {
-        for (const sources of epMap.values()) {
-          flatSources.push(...sources);
-        }
-      }
-
-      if (flatSources.length > 0) {
-        const result: ProviderResult = {
-          provider: 'ufdub',
-          type: 'movie',
-          sources: sortSources(flatSources),
-        };
-        ufdubCache.set(pageUrl, { result, timestamp: Date.now() });
-        return result;
-      }
     }
 
     return null;
