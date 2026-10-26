@@ -1,0 +1,184 @@
+import * as cheerio from 'cheerio';
+import type { ProviderResult, SearchResult, StreamSource } from '../../types/media.js';
+import type { ProviderGetOptions } from '../../types/provider.js';
+import { getHtml } from '../../utils/http.js';
+import { sortSeasons, sortSources } from '../../utils/sort.js';
+import { extractVod } from '../cdn/index.js';
+import { searchUfdub } from './search.js';
+
+const BASE_URL = 'https://ufdub.com';
+const UA = 'Mozilla/5.0 (X11; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0';
+
+const ufdubCache = new Map<string, { result: ProviderResult; timestamp: number }>();
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+export async function getUfdub(
+  target: SearchResult | string,
+  options?: ProviderGetOptions
+): Promise<ProviderResult | null> {
+  let pageUrl = '';
+  const meta = options?.meta;
+
+  if (typeof target === 'object') {
+    pageUrl = target.url || target.id;
+  } else if (target.startsWith('http://') || target.startsWith('https://')) {
+    pageUrl = target;
+  } else if (meta?.title) {
+    const results = await searchUfdub(meta.title, {
+      signal: options?.signal,
+      year: meta.year,
+      type: meta.type,
+    });
+    if (results.length > 0) {
+      pageUrl = results[0].url || results[0].id;
+    }
+  }
+
+  if (!pageUrl) {
+    return null;
+  }
+
+  if (!pageUrl.startsWith('http')) {
+    pageUrl = `${BASE_URL}${pageUrl.startsWith('/') ? '' : '/'}${pageUrl}`;
+  }
+
+  const cached = ufdubCache.get(pageUrl);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.result;
+  }
+
+  try {
+    const html = await getHtml(pageUrl, {
+      signal: options?.signal,
+      headers: {
+        'Referer': `${BASE_URL}/`,
+        'User-Agent': UA,
+      },
+    });
+
+    if (!html || typeof html !== 'string') {
+      return null;
+    }
+
+    const $ = cheerio.load(html);
+    const iframeUrls: string[] = [];
+
+    // Find iframe in player elements
+    $('iframe').each((_, el) => {
+      let src = $(el).attr('src');
+      if (!src) return;
+      if (src.startsWith('//')) src = `https:${src}`;
+      if (!iframeUrls.includes(src)) iframeUrls.push(src);
+    });
+
+    // Fallback: check script variables or regex for VP.php
+    if (iframeUrls.length === 0) {
+      const match = html.match(/https?:\/\/video\.ufdub\.com\/(?:V2|AT)\/VP\.php\?ID=\d+[^"'\s]*/i);
+      if (match) {
+        iframeUrls.push(match[0]);
+      }
+    }
+
+    if (iframeUrls.length === 0) {
+      return null;
+    }
+
+    const isMovie = pageUrl.includes('/film/') || meta?.type === 'movie';
+    const allMovieSources: StreamSource[] = [];
+    const seasonsMap = new Map<number, Map<number, StreamSource[]>>();
+
+    for (const iframeSrc of iframeUrls) {
+      try {
+        const vodResult = await extractVod(iframeSrc, {
+          referer: pageUrl,
+          signal: options?.signal,
+        });
+
+        if (!vodResult) continue;
+
+        if (vodResult.sources && vodResult.sources.length > 0) {
+          allMovieSources.push(...vodResult.sources);
+        }
+
+        if (vodResult.seasons && vodResult.seasons.length > 0) {
+          for (const s of vodResult.seasons) {
+            if (!seasonsMap.has(s.season)) {
+              seasonsMap.set(s.season, new Map());
+            }
+            const epMap = seasonsMap.get(s.season)!;
+            for (const ep of s.episodes) {
+              if (!epMap.has(ep.episode)) {
+                epMap.set(ep.episode, []);
+              }
+              epMap.get(ep.episode)!.push(...ep.sources);
+            }
+          }
+        }
+      } catch {
+        // ignore extractor errors
+      }
+    }
+
+    if (seasonsMap.size > 0 && !isMovie) {
+      const seasons = [];
+      for (const [seasonNum, epMap] of seasonsMap.entries()) {
+        const episodes = [];
+        for (const [epNum, sources] of epMap.entries()) {
+          episodes.push({
+            episode: epNum,
+            sources: sortSources(sources),
+          });
+        }
+        episodes.sort((a, b) => a.episode - b.episode);
+        seasons.push({
+          season: seasonNum,
+          episodes,
+        });
+      }
+
+      const result: ProviderResult = {
+        provider: 'ufdub',
+        type: 'tv',
+        seasons: sortSeasons(seasons),
+      };
+
+      ufdubCache.set(pageUrl, { result, timestamp: Date.now() });
+      return result;
+    }
+
+    if (allMovieSources.length > 0) {
+      const result: ProviderResult = {
+        provider: 'ufdub',
+        type: 'movie',
+        sources: sortSources(allMovieSources),
+      };
+
+      ufdubCache.set(pageUrl, { result, timestamp: Date.now() });
+      return result;
+    }
+
+    // If only seasons were extracted but it's marked as movie, return episodes as sources
+    if (seasonsMap.size > 0) {
+      const flatSources: StreamSource[] = [];
+      for (const epMap of seasonsMap.values()) {
+        for (const sources of epMap.values()) {
+          flatSources.push(...sources);
+        }
+      }
+
+      if (flatSources.length > 0) {
+        const result: ProviderResult = {
+          provider: 'ufdub',
+          type: 'movie',
+          sources: sortSources(flatSources),
+        };
+        ufdubCache.set(pageUrl, { result, timestamp: Date.now() });
+        return result;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}

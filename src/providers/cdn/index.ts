@@ -12,6 +12,7 @@ import { zetvideoVod } from './zetvideo/main.js';
 import { fenixVod } from './fenix/main.js';
 import { dawnVod } from './dawn/main.js';
 import { uakinoAxVod } from './uakinoax/main.js';
+import { ufdubVod } from './ufdub/main.js';
 
 export { tortugaVod } from './tortuga/main.js';
 export { ashdiVod } from './ashdi/main.js';
@@ -25,6 +26,7 @@ export { zetvideoVod } from './zetvideo/main.js';
 export { fenixVod, buildFenixMergedManifest } from './fenix/main.js';
 export { dawnVod } from './dawn/main.js';
 export { uakinoAxVod, stripUakinoAxIntro } from './uakinoax/main.js';
+export { ufdubVod } from './ufdub/main.js';
 export { playUakinoAx, findUakinoAxMovie, uakinoAxVoiceCdnId } from './uakinoax/api.js';
 
 export const vodExtractors: VodExtractor[] = [
@@ -39,6 +41,7 @@ export const vodExtractors: VodExtractor[] = [
   fenixVod,
   dawnVod,
   uakinoAxVod,
+  ufdubVod,
 ];
 
 /**
@@ -105,10 +108,6 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
     }
   }
 
-  // Якщо посилання на Tortuga — вона офлайн
-  if (url.includes('tortuga.tw') || url.includes('tortuga.wtf')) {
-    return null;
-  }
 
   // Якщо передали наш proxy URL з параметром url або id
   if (url.includes('/master.m3u8')) {
@@ -234,6 +233,11 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
     if (res) return res;
   }
 
+  if (url.includes('cdn=ufdub') || url.includes('video.ufdub.com') || url.includes('api.ufdub.com') || url.includes('ufdub.com/video/')) {
+    const res = await runWithProvider(ufdubVod.name, () => ufdubVod.extract(url, options));
+    if (res) return res;
+  }
+
   // Спробувати всі інші по черзі
   for (const extractor of vodExtractors) {
     try {
@@ -252,3 +256,4 @@ export * from './ashdi/main.js';
 export * from './hdvb/main.js';
 export * from './bunny/main.js';
 export * from './aniworld/main.js';
+export * from './ufdub/main.js';

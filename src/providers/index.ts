@@ -12,6 +12,9 @@ export { AniWorldProvider, aniWorldProvider } from './aniworld/main.js';
 export { UaflixProvider, uaflixProvider } from './uaflix/main.js';
 export { MikaiProvider, mikaiProvider } from './mikai/main.js';
 export { UaKinoAXProvider, uakinoAxProvider, uakinoAx } from './uakino-ax/main.js';
+export { SerialnoProvider, serialnoProvider } from './serialno/main.js';
+export { KinostrainProvider, kinostrainProvider } from './kinostrain/main.js';
+export { UfdubProvider, ufdubProvider } from './ufdub/main.js';
 
 import { uakinoProvider } from './uakino/main.js';
 import { kinoukrProvider } from './kinoukr/main.js';
@@ -26,6 +29,9 @@ import { aniWorldProvider } from './aniworld/main.js';
 import { uaflixProvider } from './uaflix/main.js';
 import { mikaiProvider } from './mikai/main.js';
 import { uakinoAxProvider } from './uakino-ax/main.js';
+import { serialnoProvider } from './serialno/main.js';
+import { kinostrainProvider } from './kinostrain/main.js';
+import { ufdubProvider } from './ufdub/main.js';
 import type { Provider } from '../types/provider.js';
 
 export const providers: Provider[] = [
@@ -47,4 +53,7 @@ export const providers: Provider[] = [
   uaflixProvider,
   mikaiProvider,
   uakinoAxProvider,
+  serialnoProvider,
+  kinostrainProvider,
+  ufdubProvider,
 ];
