@@ -84,8 +84,16 @@ export async function get(pageUrl: string): Promise<UaSerialsGetResult | null> {
       let id = '';
 
       if (url.includes('tortuga.tw') || url.includes('tortuga.wtf')) {
-        // Tortuga CDN офлайн, пропускаємо
-        continue;
+        cdn = 'tortuga';
+        const vodMatch = url.match(/\/vod\/([a-zA-Z0-9_-]+)/);
+        const embedMatch = url.match(/\/embed\/([a-zA-Z0-9_-]+)/);
+        if (vodMatch) {
+          endpointType = 'vod';
+          id = vodMatch[1];
+        } else if (embedMatch) {
+          endpointType = 'embed';
+          id = embedMatch[1];
+        }
       }
 
       const lazyStream: LazyStream = {

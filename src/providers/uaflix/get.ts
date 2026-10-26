@@ -134,6 +134,27 @@ function buildLazyStreamFromTab(iframeSrc: string, tabLabel: string, referer: st
     };
   }
 
+  // Tortuga
+  const tortugaMatch = cleanSrc.match(/(?:tortuga\.(?:tw|wtf)|calypso\.tortuga\.tw)\/(vod|embed)\/([a-zA-Z0-9_-]+)/i);
+  if (tortugaMatch) {
+    const type = tortugaMatch[1].toLowerCase() as 'vod' | 'embed';
+    const id = tortugaMatch[2];
+    const lazyUrl = `/master.m3u8?cdn=tortuga&type=${type}&id=${id}`;
+    return {
+      title: tabLabel && tabLabel !== 'Плеєр 1' && tabLabel !== 'Дивитись онлайн' ? tabLabel : 'Tortuga',
+      url: lazyUrl,
+      mime: 'application/x-mpegURL',
+      lazy: {
+        cdn: 'tortuga',
+        type,
+        id,
+        url: lazyUrl,
+        directUrl: cleanSrc,
+      },
+      headers: { Referer: referer },
+    };
+  }
+
   // Generic iframe
   const lazyUrl = `/master.m3u8?url=${encodeURIComponent(cleanSrc)}`;
   return {
@@ -299,7 +320,6 @@ export async function getUaflix(
       // If specific season & episode requested by orchestrator:
       if (targetSeason !== undefined && targetEpisode !== undefined) {
         const epSources: StreamSource[] = probeTabs
-          .filter(tab => !tab.iframeSrc.includes('tortuga'))
           .map(tab => buildLazyStreamFromTab(tab.iframeSrc, tab.label, probeLink.url));
 
         // Build season array with all known episodes, placing extracted sources in the target episode
@@ -344,7 +364,6 @@ export async function getUaflix(
           const $ep = cheerio.load(html);
           const tabs = extractPlayerTabs($ep);
           const epSources: StreamSource[] = tabs
-            .filter(tab => !tab.iframeSrc.includes('tortuga'))
             .map(tab => buildLazyStreamFromTab(tab.iframeSrc, tab.label, link.url));
 
           return { season: link.season, episode: link.episode, sources: sortSources(epSources) };
@@ -384,10 +403,6 @@ export async function getUaflix(
     let discoveredSeasons: Season[] | undefined;
 
     for (const tab of playerTabs) {
-      if (tab.iframeSrc.includes('tortuga.tw') || tab.iframeSrc.includes('tortuga.wtf')) {
-        continue;
-      }
-
       // If tab iframe is a full serial playlist (e.g. ashdi.vip/serial/... or zetvideo.net/serial/...)
       if (tab.iframeSrc.includes('/serial/')) {
         const vodResult = await extractVod(tab.iframeSrc, {
