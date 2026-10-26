@@ -367,66 +367,51 @@ streamRouter.get('/video.mp4', async (c) => {
     }
   }
 
-  try {
-    const range = c.req.header('range');
+  let finalUrl = target;
 
-    let currentUrl = target;
-    let redirectsCount = 0;
-    let res: any = null;
+  // Якщо це редиректний скрипт (як VIDEOS.php або подібні)
+  if (target.includes('VIDEOS.php') || target.includes('/video/') || !target.includes('.mp4')) {
+    try {
+      let currentUrl = target;
+      let redirectsCount = 0;
 
-    while (redirectsCount < 5) {
-      const isUfdub = currentUrl.includes('ufdub.com');
-      const reqHeaders: Record<string, string> = {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        ...(isUfdub ? { 'Referer': 'https://video.ufdub.com/' } : {}),
-        ...(range ? { Range: range } : {}),
-      };
+      while (redirectsCount < 5) {
+        const isUfdub = currentUrl.includes('ufdub.com');
+        const reqHeaders: Record<string, string> = {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+          ...(isUfdub ? { 'Referer': 'https://video.ufdub.com/' } : {}),
+        };
 
-      const proxyOpts = proxyManager.getConfig(cdn || undefined, currentUrl);
+        const proxyOpts = proxyManager.getConfig(cdn || undefined, currentUrl);
 
-      res = await axios.get(currentUrl, {
-        headers: reqHeaders,
-        responseType: 'stream',
-        timeout: 30000,
-        maxRedirects: 0,
-        validateStatus: () => true,
-        ...proxyOpts,
-      });
+        const res = await axios.head(currentUrl, {
+          headers: reqHeaders,
+          timeout: 10000,
+          maxRedirects: 0,
+          validateStatus: () => true,
+          ...proxyOpts,
+        });
 
-      if (res.status >= 300 && res.status < 400 && res.headers.location) {
-        redirectsCount++;
-        const nextLoc = res.headers.location as string;
-        currentUrl = new URL(fixRedirectLocation(nextLoc), currentUrl).toString();
-        continue;
+        if (res.status >= 300 && res.status < 400 && res.headers.location) {
+          redirectsCount++;
+          const nextLoc = res.headers.location as string;
+          currentUrl = new URL(fixRedirectLocation(nextLoc), currentUrl).toString();
+          continue;
+        }
+
+        break;
       }
 
-      break;
+      finalUrl = currentUrl;
+    } catch (err: any) {
+      logWarn('stream', `video.mp4 redirect resolution error: ${err.message}`);
     }
-
-    if (!res || res.status >= 400) {
-      logWarn('stream', `video.mp4 upstream error ${res?.status}: ${target}`);
-      return c.text(`Video upstream error ${res?.status || 502}`, 502, { 'Access-Control-Allow-Origin': '*' });
-    }
-
-    const rawType = res.headers['content-type'] as string;
-    const contentType = !rawType || rawType.includes('octet-stream') ? 'video/mp4' : rawType;
-
-    const headers: Record<string, string> = {
-      'Content-Type': contentType,
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'public, max-age=3600',
-    };
-    if (res.headers['content-range']) headers['Content-Range'] = String(res.headers['content-range']);
-    if (res.headers['accept-ranges']) headers['Accept-Ranges'] = String(res.headers['accept-ranges']);
-    if (res.headers['content-length']) headers['Content-Length'] = String(res.headers['content-length']);
-
-    return c.body(res.data, res.status as 200 | 206, headers);
-  } catch (err: unknown) {
-    logWarn('stream', `video.mp4 proxy error: ${(err as Error).message}`);
-    return c.text('Video fetch error', 502, { 'Access-Control-Allow-Origin': '*' });
   }
+
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Cache-Control', 'public, max-age=14400');
+  return c.redirect(finalUrl, 302);
 });
 
 streamRouter.get('/master.m3u8', async (c) => {
