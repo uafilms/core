@@ -31,7 +31,6 @@ export function markAntiScamNoticeViewed(): void {
 }
 
 let isModalActive = false;
-let pendingCallbacks: Array<() => void> = [];
 
 export function showAntiScamNotice(onClose?: () => void): boolean {
   if (isAntiScamNoticeViewed()) {
@@ -39,15 +38,9 @@ export function showAntiScamNotice(onClose?: () => void): boolean {
     return false;
   }
 
-  if (onClose) {
-    pendingCallbacks.push(onClose);
-  }
-
   if (isModalActive) return false;
   if (typeof Lampa === 'undefined' || !Lampa.Modal || !Lampa.Modal.open || typeof $ === 'undefined') {
-    const cbs = pendingCallbacks.slice();
-    pendingCallbacks = [];
-    cbs.forEach((cb) => cb());
+    if (onClose) onClose();
     return false;
   }
 
@@ -55,6 +48,14 @@ export function showAntiScamNotice(onClose?: () => void): boolean {
   let remaining = 5;
   let locked = true;
   let timer: any = null;
+
+  // Capture current controller name before opening modal to safely restore remote focus
+  const prevController =
+    (typeof Lampa !== 'undefined' &&
+      Lampa.Controller &&
+      Lampa.Controller.enabled &&
+      Lampa.Controller.enabled().name) ||
+    'content';
 
   const cleanup = () => {
     if (timer) {
@@ -82,17 +83,28 @@ export function showAntiScamNotice(onClose?: () => void): boolean {
     </div>
   `);
 
-  const closeModal = () => {
+  const closeModal = (proceedWithLaunch = true) => {
     cleanup();
     markAntiScamNoticeViewed();
+
     try {
       Lampa.Modal.close();
     } catch {
       // Ignore
     }
-    const cbs = pendingCallbacks.slice();
-    pendingCallbacks = [];
-    cbs.forEach((cb) => cb());
+
+    if (proceedWithLaunch && onClose) {
+      onClose();
+    } else {
+      // Return focus to the screen underneath so remote control never hangs
+      try {
+        if (typeof Lampa !== 'undefined' && Lampa.Controller && Lampa.Controller.toggle) {
+          Lampa.Controller.toggle(prevController || 'content');
+        }
+      } catch {
+        // Ignore
+      }
+    }
   };
 
   try {
@@ -103,27 +115,31 @@ export function showAntiScamNotice(onClose?: () => void): boolean {
       align: 'center',
       buttons: [
         {
-          name: `ОК (${remaining})`,
+          name: `Зачекайте (${remaining})`,
           onSelect: () => {
-            if (locked) return;
-            closeModal();
+            if (locked) {
+              if (typeof Lampa !== 'undefined' && Lampa.Noty && Lampa.Noty.show) {
+                Lampa.Noty.show(`Будь ласка, зачекайте ${remaining} с...`);
+              }
+              return;
+            }
+            closeModal(true);
           },
         },
       ],
       onBack: () => {
-        if (locked) return;
-        closeModal();
+        // Pressing Back on remote control dismisses the warning cleanly
+        closeModal(false);
       },
     });
 
-    const modalElem = noticeHtml.closest('.modal');
-    const btn = modalElem.find('.modal__button');
-    if (btn.length) {
-      btn.css({
-        opacity: '0.4',
-        cursor: 'not-allowed',
-        transition: 'opacity 0.2s ease',
-      });
+    // Make sure remote controller is focused on modal
+    try {
+      if (typeof Lampa !== 'undefined' && Lampa.Controller && Lampa.Controller.toggle) {
+        Lampa.Controller.toggle('modal');
+      }
+    } catch {
+      // Ignore
     }
 
     timer = setInterval(() => {
@@ -131,22 +147,23 @@ export function showAntiScamNotice(onClose?: () => void): boolean {
       const curModal = noticeHtml.closest('.modal');
       const curBtn =
         curModal.length > 0 ? curModal.find('.modal__button') : $('.modal:not(.hide) .modal__button');
+
       if (remaining > 0) {
         if (curBtn.length) {
-          curBtn.text(`ОК (${remaining})`);
+          curBtn.text(`Зачекайте (${remaining})`);
         }
       } else {
         cleanup();
         locked = false;
         if (curBtn.length) {
-          curBtn.text('ОК');
-          curBtn.css({
-            opacity: '1',
-            cursor: 'pointer',
-          });
-          curBtn.addClass('focus');
-          if (Lampa.Controller && Lampa.Controller.collectionFocus) {
-            Lampa.Controller.collectionFocus(curBtn[0], curBtn.parent());
+          curBtn.text('Зрозуміло (ОК)');
+          // Keep remote focus on modal
+          try {
+            if (typeof Lampa !== 'undefined' && Lampa.Controller && Lampa.Controller.toggle) {
+              Lampa.Controller.toggle('modal');
+            }
+          } catch {
+            // Ignore
           }
         }
       }
@@ -155,9 +172,7 @@ export function showAntiScamNotice(onClose?: () => void): boolean {
     return true;
   } catch {
     cleanup();
-    const cbs = pendingCallbacks.slice();
-    pendingCallbacks = [];
-    cbs.forEach((cb) => cb());
+    if (onClose) onClose();
     return false;
   }
 }
