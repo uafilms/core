@@ -6,7 +6,7 @@ import { getUakinoDb } from './db.js';
 
 export class UakinoProvider implements Provider {
   readonly name = 'uakino';
-  readonly cdns = ['ashdi', 'uakino'] as const;
+  readonly cdns = ['ashdi'] as const;
 
   public async init(forceSync = false): Promise<void> {
     await getUakinoDb(forceSync);

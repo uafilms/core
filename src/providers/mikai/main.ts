@@ -5,7 +5,7 @@ import { getMikai } from './get.js';
 
 export class MikaiProvider implements Provider {
   readonly name = 'mikai';
-  readonly cdns = ['fenix', 'dawn'] as const;
+  readonly cdns = ['fenix', 'dawn', 'ashdi', 'tortuga', 'moonanime'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchMikai(query, options);
