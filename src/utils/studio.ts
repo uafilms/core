@@ -167,6 +167,10 @@ export const KNOWN_STUDIOS: Record<string, StudioDefinition> = {
     aliases: ['uaflix', 'уафлікс'],
     logoFile: 'uaflix.png',
   },
+  'uaserials-fm': {
+    name: 'UASerials FM',
+    aliases: ['uaserials-fm', 'uaserials.fm', 'уасеріалс фм'],
+  },
   serialno: {
     name: 'Serialno',
     aliases: ['serialno', 'серіально'],
