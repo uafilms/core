@@ -39,8 +39,8 @@ function normalizeQuality(q?: string): OmssQuality {
 }
 
 function inferType(url: string, mime?: string): OmssVideoType {
+  if (url.includes('/video.mp4') || mime?.includes('mp4') || url.includes('.mp4') || url.includes('VIDEOS.php')) return 'mp4';
   if (mime?.includes('mpegURL') || url.includes('.m3u8') || url.includes('master.m3u8')) return 'hls';
-  if (mime?.includes('mp4') || url.includes('.mp4')) return 'mp4';
   if (mime?.includes('mkv') || url.includes('.mkv')) return 'mkv';
   if (mime?.includes('dash') || url.includes('.mpd')) return 'dash';
   return 'hls';
@@ -251,8 +251,12 @@ export class OrchestratorService {
           }
 
           const isWebLike = platform === 'web' || platform === 'tv';
+          const isMp4 = raw.mime === 'video/mp4' || raw.url?.includes('.mp4') || raw.url?.includes('VIDEOS.php') || raw.lazy?.directUrl?.includes('.mp4');
 
-          if (isWebLike) {
+          if (isMp4) {
+            const targetUrl = lazy?.directUrl || (lazy?.url && !lazy.url.startsWith('/master.m3u8') ? lazy.url : undefined) || raw.url;
+            playUrl = isWebLike ? `${proxyHost}/video.mp4?url=${encodeURIComponent(targetUrl)}` : targetUrl;
+          } else if (isWebLike) {
             if (lazy) {
               if (lazy.cdn && lazy.id) {
                 const params = new URLSearchParams();
@@ -273,7 +277,7 @@ export class OrchestratorService {
           } else {
             // Native platform: if directUrl is an API endpoint, proxy it via master.m3u8
             if (lazy) {
-              const isApi = lazy.directUrl?.includes('/api/');
+              const isApi = lazy.directUrl?.includes('animeon.club/api/') || lazy.directUrl?.includes('/api/player');
               if (lazy.directUrl && !isApi) {
                 playUrl = lazy.directUrl;
               } else if (lazy.url && lazy.url.startsWith('/master.m3u8')) {
@@ -312,7 +316,7 @@ export class OrchestratorService {
             id: randomUUID(),
             url: playUrl,
             streamable: !raw.mime?.includes('text/html'),
-            type: inferType(raw.url, raw.mime),
+            type: isMp4 ? 'mp4' : inferType(raw.url, raw.mime),
             quality: normalizeQuality(raw.quality),
             audioTracks,
             ...(audioTrackStudios.length ? { audioTrackStudios } : {}),

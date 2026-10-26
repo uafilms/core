@@ -41,14 +41,18 @@ export class ProxyManager {
       : [];
 
     this.agents = proxyUrls
-      .map((url) => {
+      .map((rawUrl) => {
+        let url = rawUrl;
+        if (url.includes('gw.dataimpulse.com') && !url.includes('__sessid')) {
+          url = url.replace(/(__cr\.[a-z]{2})/i, (m) => `${m}__sessid.uafilms`);
+        }
         try {
           if (url.startsWith('socks')) {
             return new SocksProxyAgent(url);
           }
           return new HttpsProxyAgent(url);
         } catch (e: any) {
-          logWarn('proxy', `Invalid proxy URL: ${url} (${e.message})`);
+          logWarn('proxy', `Invalid proxy URL: ${rawUrl} (${e.message})`);
           return null;
         }
       })

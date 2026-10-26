@@ -144,6 +144,9 @@ if (hasWebDist) {
       p.startsWith('/v1') ||
       p.startsWith('/master.m3u8') ||
       p.startsWith('/play.m3u8') ||
+      p.startsWith('/play.mp4') ||
+      p === '/play' ||
+      p.startsWith('/video.mp4') ||
       p.startsWith('/subs') ||
       p === '/l' ||
       p.startsWith('/l/') ||

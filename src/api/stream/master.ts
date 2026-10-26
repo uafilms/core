@@ -12,7 +12,7 @@ import { OrchestratorService } from '../services/orchestrator.js';
 export const streamRouter = new Hono();
 
 // Роут для прямих посилань на відтворення серій у плейлістах Lampa та external плеєрів
-streamRouter.get('/play.m3u8', async (c) => {
+const handleDirectPlay = async (c: any) => {
   const query = c.req.query();
   const id = query.id;
   const sParam = query.s || '1';
@@ -20,6 +20,7 @@ streamRouter.get('/play.m3u8', async (c) => {
   const media = (query.type || (query.s ? 'tv' : 'movie')) as 'movie' | 'tv';
   const provider = query.provider;
   const voice = query.voice;
+  const platform = (query.platform || 'web') as any;
 
   if (!id) {
     return c.text('Missing id parameter', 400);
@@ -43,7 +44,7 @@ streamRouter.get('/play.m3u8', async (c) => {
       type: media,
       season,
       episode,
-      platform: 'web',
+      platform,
       proxyHost,
       providerId: undefined,
     });
@@ -96,7 +97,11 @@ streamRouter.get('/play.m3u8', async (c) => {
   } catch (err: unknown) {
     return c.text(`Play error: ${(err as Error).message}`, 500);
   }
-});
+};
+
+streamRouter.get('/play.m3u8', handleDirectPlay);
+streamRouter.get('/play.mp4', handleDirectPlay);
+streamRouter.get('/play', handleDirectPlay);
 
 // HLS Media Playlist для субтитрів (/subs.m3u8)
 streamRouter.get('/subs.m3u8', async (c) => {
@@ -182,6 +187,9 @@ streamRouter.get('/subs.vtt', async (c) => {
       subHeaders['Referer'] = 'https://uafix.net/';
     } else if (subUrl.includes('hdvbua.pro') || subUrl.includes('vidcache')) {
       subHeaders['Referer'] = 'https://eneyida.tv/';
+    } else if (subUrl.includes('tortuga.tw') || subUrl.includes('tortuga.wtf')) {
+      subHeaders['Referer'] = 'https://tortuga.tw/';
+      subHeaders['Origin'] = 'https://tortuga.tw';
     }
 
     const proxyOpts = proxyManager.getConfig(cdn || undefined, subUrl);
@@ -322,6 +330,72 @@ streamRouter.get('/segment', async (c) => {
   } catch (err: unknown) {
     logWarn('stream', `segment proxy error: ${(err as Error).message}`);
     return c.text('Segment fetch error', 502, { 'Access-Control-Allow-Origin': '*' });
+  }
+});
+
+streamRouter.get('/video.mp4', async (c) => {
+  let target = stripCorsProxy(c.req.query('url') || '');
+  const cdn = c.req.query('cdn');
+  const id = c.req.query('id');
+
+  if (!target && cdn === 'ufdub' && id) {
+    target = `https://video.ufdub.com/V2/VP.php?ID=${encodeURIComponent(id)}`;
+  }
+
+  if (!target) {
+    return c.text('Bad url', 400, { 'Access-Control-Allow-Origin': '*' });
+  }
+
+  // Якщо target вказує на сторінку плеєра (наприклад, video.ufdub.com/V2/VP.php?ID=...)
+  if (target.includes('video.ufdub.com')) {
+    try {
+      const extracted = await extractVod(target);
+      if (extracted?.sources?.[0]?.url) {
+        target = extracted.sources[0].url;
+      }
+    } catch {
+      // продовжуємо з вихідним target
+    }
+  }
+
+  try {
+    const range = c.req.header('range');
+    const reqHeaders: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+      ...(target.includes('ufdub.com') ? { 'Referer': 'https://video.ufdub.com/' } : {}),
+      ...(range ? { Range: range } : {}),
+    };
+
+    const proxyOpts = proxyManager.getConfig(cdn || undefined, target);
+
+    const res = await axios.get(target, {
+      headers: reqHeaders,
+      responseType: 'stream',
+      timeout: 30000,
+      maxRedirects: 5,
+      validateStatus: () => true,
+      ...proxyOpts,
+    });
+
+    if (res.status >= 400) {
+      logWarn('stream', `video.mp4 upstream error ${res.status}: ${target}`);
+      return c.text(`Video upstream error ${res.status}`, 502, { 'Access-Control-Allow-Origin': '*' });
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': (res.headers['content-type'] as string) || 'video/mp4',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=3600',
+    };
+    if (res.headers['content-range']) headers['Content-Range'] = String(res.headers['content-range']);
+    if (res.headers['accept-ranges']) headers['Accept-Ranges'] = String(res.headers['accept-ranges']);
+    if (res.headers['content-length']) headers['Content-Length'] = String(res.headers['content-length']);
+
+    return c.body(res.data, res.status as 200 | 206, headers);
+  } catch (err: unknown) {
+    logWarn('stream', `video.mp4 proxy error: ${(err as Error).message}`);
+    return c.text('Video fetch error', 502, { 'Access-Control-Allow-Origin': '*' });
   }
 });
 
@@ -535,6 +609,8 @@ streamRouter.get('/master.m3u8', async (c) => {
   } else if (isFenix) {
     headers['Referer'] = 'https://fenixplay.xyz/';
     headers['Origin'] = 'https://fenixplay.xyz';
+  } else if (streamUrl.includes('ufdub.com')) {
+    headers['Referer'] = 'https://video.ufdub.com/';
   }
 
   // 4. Fetch manifest and rewrite
