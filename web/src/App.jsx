@@ -4,18 +4,18 @@ import { Routes, Route, useLocation } from 'react-router-dom';
 import LoadingBar from 'react-top-loading-bar';
 import { loaderEvent } from './api/axios';
 
-import Sidebar from './components/Sidebar';
-import AuthModal from './components/AuthModal';
+import Sidebar from './components/sidebar';
+import AuthModal from './components/auth-modal';
 import { AuthProvider } from './context/AuthContext';
 import { initPalette } from './utils/palette';
-import TurnstileWidget from './components/TurnstileWidget';
+import TurnstileWidget from './components/turnstile';
 
-const Home = React.lazy(() => import('./pages/Home'));
-const Details = React.lazy(() => import('./pages/Details'));
-const Search = React.lazy(() => import('./pages/Search'));
-const Favorites = React.lazy(() => import('./pages/Favorites'));
-const Settings = React.lazy(() => import('./pages/Settings'));
-const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const Home = React.lazy(() => import('./pages/home'));
+const Details = React.lazy(() => import('./pages/details'));
+const Search = React.lazy(() => import('./pages/search'));
+const Favorites = React.lazy(() => import('./pages/favorites'));
+const Settings = React.lazy(() => import('./pages/settings'));
+const Dashboard = React.lazy(() => import('./pages/dashboard'));
 
 const PageLoader = () => (
   <div className="page-loader">
