@@ -178,10 +178,17 @@ export async function playTvEpisode(
     }
   }
 
-  // Fallback to /play.m3u8 if still not resolved
+  const isTargetMp4 =
+    targetSource?.type === 'mp4' ||
+    targetSource?.videoType === 'mp4' ||
+    playUrl.includes('/video.mp4') ||
+    playUrl.includes('.mp4');
+
+  // Fallback to /play.m3u8 or /play.mp4 if still not resolved
   if (!playUrl) {
     const cleanProv = activeProvider ? activeProvider.replace(/^★\s*/, '').trim() : '';
-    playUrl = `${host}/play.m3u8?id=${encodeURIComponent(String(movie.id || movie.imdb_id))}&type=tv&s=${activeSeason}&e=${epNum}&provider=${encodeURIComponent(cleanProv)}&voice=${encodeURIComponent(activeVoice)}`;
+    const ext = isTargetMp4 ? 'mp4' : 'm3u8';
+    playUrl = `${host}/play.${ext}?id=${encodeURIComponent(String(movie.id || movie.imdb_id))}&type=tv&s=${activeSeason}&e=${epNum}&provider=${encodeURIComponent(cleanProv)}&voice=${encodeURIComponent(activeVoice)}`;
   }
 
   const hashTimeline = getEpisodeHashTimeline(movie, activeSeason, epNum);
@@ -211,6 +218,8 @@ export async function playTvEpisode(
   // Base playback item for the current episode
   const playObj: any = {
     url: playUrl,
+    type: isTargetMp4 ? 'mp4' : 'hls',
+    video_type: isTargetMp4 ? 'mp4' : 'hls',
     title: `${movie.title || movie.name} - S${activeSeason}E${epNum} (${activeVoice || 'Озвучення'})`,
     season: activeSeason,
     episode: epNum,
@@ -314,10 +323,13 @@ export async function playTvEpisode(
         : `https://image.tmdb.org/t/p/w300${still}`
       : '';
 
-    const nextUrl = `${host}/play.m3u8?id=${encodeURIComponent(String(movie.id || movie.imdb_id))}&type=tv&s=${activeSeason}&e=${n}&provider=${encodeURIComponent(cleanProvider)}&voice=${encodeURIComponent(activeVoice)}`;
+    const nextExt = isTargetMp4 ? 'mp4' : 'm3u8';
+    const nextUrl = `${host}/play.${nextExt}?id=${encodeURIComponent(String(movie.id || movie.imdb_id))}&type=tv&s=${activeSeason}&e=${n}&provider=${encodeURIComponent(cleanProvider)}&voice=${encodeURIComponent(activeVoice)}`;
 
     const epObj: any = {
       url: n === epNum ? playUrl : nextUrl,
+      type: isTargetMp4 ? 'mp4' : 'hls',
+      video_type: isTargetMp4 ? 'mp4' : 'hls',
       title: `${movie.title || movie.name} - S${activeSeason}E${n} (${activeVoice || 'Озвучення'})`,
       season: activeSeason,
       episode: n,

@@ -3,6 +3,7 @@ import { initSettings } from '../settings/index.js';
 import { UAFilmsComponent } from '../component/index.js';
 import { registerManifest } from './manifest.js';
 import { initCardButtonListener } from './card-button.js';
+import { isAntiScamNoticeViewed, showAntiScamNotice } from './anti-scam.js';
 
 declare const Lampa: any;
 
@@ -21,4 +22,10 @@ export function initUAFilmsPlugin(): void {
 
   registerManifest();
   initCardButtonListener();
+
+  setTimeout(() => {
+    if (!isAntiScamNoticeViewed()) {
+      showAntiScamNotice();
+    }
+  }, 1500);
 }

@@ -1,9 +1,16 @@
 import { UAFilmsComponent } from '../component/index.js';
+import { isAntiScamNoticeViewed, showAntiScamNotice } from './anti-scam.js';
 
 declare const Lampa: any;
 
 export function openUAFilms(movie: any) {
   if (!movie) return;
+  if (!isAntiScamNoticeViewed()) {
+    showAntiScamNotice(() => {
+      openUAFilms(movie);
+    });
+    return;
+  }
   Lampa.Component.add('uafilms', UAFilmsComponent);
   Lampa.Activity.push({
     url: '',

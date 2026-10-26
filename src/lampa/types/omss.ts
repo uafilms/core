@@ -15,6 +15,7 @@ export interface OmssSourceItem {
   };
   quality?: string;
   url: string;
+  type?: 'hls' | 'mp4' | 'dash' | string;
   videoType?: 'hls' | 'mp4' | 'dash' | string;
   subtitles?: OmssSubtitleItem[];
   provider?: {

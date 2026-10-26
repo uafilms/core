@@ -179,8 +179,16 @@ export function renderActiveProviderSources(ctx: ComponentContext): void {
           : `https://image.tmdb.org/t/p/w300${movieStill}`
         : '';
 
+      const isMp4 =
+        source.type === 'mp4' ||
+        source.videoType === 'mp4' ||
+        playUrl.includes('/video.mp4') ||
+        playUrl.includes('.mp4');
+
       const moviePlayObj: any = {
         url: playUrl,
+        type: isMp4 ? 'mp4' : 'hls',
+        video_type: isMp4 ? 'mp4' : 'hls',
         title: `${ctx.movie.title || ctx.movie.name || ''} - ${voiceName}`,
         thumbnail: movieThumbnail,
         icon: movieThumbnail,

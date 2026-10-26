@@ -38,7 +38,7 @@ export const emptyTemplate = `
 </div>`;
 
 export const cardButtonHtml = `
-<div class="full-start__button selector view--uafilms" data-subtitle="UAFilms">
+<div class="full-start__button selector view--uafilms" data-subtitle="UAFilms • t.me/uafilms_official">
   <svg width="20" height="20" viewBox="0 0 31 32" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M0.557816 9.24832L29.4367 0.035822C30.033 -0.154392 30.6108 0.380053 30.4678 0.989283L23.505 30.6436C23.3493 31.3074 22.4888 31.4853 22.0783 30.9384L13.0188 18.8739C12.961 18.7969 12.89 18.7308 12.809 18.6788L0.371912 10.6918C-0.201881 10.3233 -0.0899653 9.45505 0.557816 9.24832Z" fill="currentColor"/>
   </svg>
