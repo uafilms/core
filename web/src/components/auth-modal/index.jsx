@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { isTrustedEmailDomain } from './utils/validation';
@@ -6,13 +6,27 @@ import AuthTabSwitch from './AuthTabSwitch';
 import AuthForm from './AuthForm';
 
 export default function AuthModal() {
-  const { isAuthModalOpen, setIsAuthModalOpen, login, register } = useAuth();
+  const { isAuthModalOpen, setIsAuthModalOpen, login, register, sendVerificationCode } = useAuth();
   const [tab, setTab] = useState('login'); // 'login' | 'register'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [sendingCode, setSendingCode] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [codeCountdown, setCodeCountdown] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+
+  useEffect(() => {
+    let timer;
+    if (codeCountdown > 0) {
+      timer = setTimeout(() => {
+        setCodeCountdown((c) => c - 1);
+      }, 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [codeCountdown]);
 
   const handleClose = () => {
     setIsClosing(true);
@@ -24,6 +38,30 @@ export default function AuthModal() {
   };
 
   if ((!isAuthModalOpen && !isClosing) || typeof document === 'undefined') return null;
+
+  const handleSendCode = async () => {
+    setError('');
+    if (!email || !email.includes('@')) {
+      setError('Введіть коректну електронну пошту');
+      return;
+    }
+
+    if (!isTrustedEmailDomain(email)) {
+      setError('Дозволені лише надійні поштові сервіси: Gmail, Outlook, Proton, Yahoo, iCloud, Ukr.net');
+      return;
+    }
+
+    setSendingCode(true);
+    const res = await sendVerificationCode(email);
+    setSendingCode(false);
+
+    if (res.success) {
+      setCodeSent(true);
+      setCodeCountdown(60);
+    } else {
+      setError(res.error || 'Не вдалося надіслати код');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -44,9 +82,13 @@ export default function AuthModal() {
       return;
     }
 
+    if (tab === 'register' && (!code || code.length < 6)) {
+      setError('Введіть 6-значний код підтвердження з пошти');
+      return;
+    }
+
     setLoading(true);
-    const action = tab === 'login' ? login : register;
-    const res = await action(email, password);
+    const res = tab === 'login' ? await login(email, password) : await register(email, password, code);
     setLoading(false);
 
     if (!res.success) {
@@ -54,6 +96,8 @@ export default function AuthModal() {
     } else {
       setEmail('');
       setPassword('');
+      setCode('');
+      setCodeSent(false);
       setError('');
     }
   };
@@ -119,6 +163,12 @@ export default function AuthModal() {
           setEmail={setEmail}
           password={password}
           setPassword={setPassword}
+          code={code}
+          setCode={setCode}
+          onSendCode={handleSendCode}
+          sendingCode={sendingCode}
+          codeSent={codeSent}
+          codeCountdown={codeCountdown}
           loading={loading}
           onSubmit={handleSubmit}
         />

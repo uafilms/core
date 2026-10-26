@@ -133,6 +133,16 @@ export function getAuthDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_user_coll_items ON user_collection_items(user_id, collection_id);
+
+    CREATE TABLE IF NOT EXISTS email_verifications (
+      email TEXT PRIMARY KEY COLLATE NOCASE,
+      code_hash TEXT NOT NULL,
+      attempts INTEGER DEFAULT 0,
+      last_sent_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_email_verifications_expires ON email_verifications(expires_at);
   `);
 
   dbInstance = db;

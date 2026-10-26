@@ -26,13 +26,14 @@ import {
 } from './service.js';
 import { isTurnstileEnabled, verifyTurnstileToken } from '../services/turnstile.js';
 import { extractTurnstileToken, getClientIp } from '../services/security.js';
+import { requestEmailVerificationCode } from '../services/email.js';
 
 export const authRouter = new Hono();
 
 // Auth token middleware
 authRouter.use('*', async (c, next) => {
   const p = c.req.path;
-  if (p.endsWith('/register') || p.endsWith('/login')) {
+  if (p.endsWith('/register') || p.endsWith('/login') || p.endsWith('/send-code')) {
     return next();
   }
 
@@ -50,6 +51,37 @@ authRouter.use('*', async (c, next) => {
   c.set('userId' as any, payload.sub);
   c.set('userEmail' as any, payload.email);
   return next();
+});
+
+// Send Verification Code
+authRouter.post('/send-code', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+
+    if (isTurnstileEnabled()) {
+      const turnstileToken = extractTurnstileToken(c, body.turnstileToken || body.cf_turnstile_response);
+      const ip = getClientIp(c);
+      const check = await verifyTurnstileToken(turnstileToken, ip);
+      if (!check.success) {
+        return c.json(
+          {
+            error: {
+              code: 'TURNSTILE_VERIFICATION_FAILED',
+              message: 'Помилка перевірки Cloudflare Turnstile. Оновіть сторінку або повторіть спробу.',
+              details: { errorCodes: check.errorCodes },
+            },
+          },
+          403
+        );
+      }
+    }
+
+    const { email } = body;
+    const res = await requestEmailVerificationCode(email);
+    return c.json(res, 200);
+  } catch (err: any) {
+    return c.json({ error: { code: 'SEND_CODE_FAILED', message: err.message || 'Не вдалося надіслати код' } }, 400);
+  }
 });
 
 // Register
@@ -75,8 +107,8 @@ authRouter.post('/register', async (c) => {
       }
     }
 
-    const { email, password } = body;
-    const result = await registerUser(email, password);
+    const { email, password, code } = body;
+    const result = await registerUser(email, password, code);
     return c.json(result, 201);
   } catch (err: any) {
     return c.json({ error: { code: 'REGISTER_FAILED', message: err.message || 'Помилка реєстрації' } }, 400);

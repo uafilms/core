@@ -6,6 +6,12 @@ export default function AuthForm({
   setEmail,
   password,
   setPassword,
+  code,
+  setCode,
+  onSendCode,
+  sendingCode,
+  codeSent,
+  codeCountdown,
   loading,
   onSubmit,
 }) {
@@ -36,6 +42,44 @@ export default function AuthForm({
           />
           <label>Пароль</label>
         </div>
+
+        {tab === 'register' && (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div className="field label prefix border round" style={{ flex: 1, margin: 0 }}>
+              <i>pin</i>
+              <input
+                type="text"
+                value={code || ''}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder=" "
+                maxLength={6}
+                required
+              />
+              <label>Код з пошти (6 цифр)</label>
+            </div>
+            <button
+              type="button"
+              className="round border secondary"
+              onClick={onSendCode}
+              disabled={sendingCode || codeCountdown > 0}
+              style={{
+                height: '48px',
+                minWidth: '125px',
+                whiteSpace: 'nowrap',
+                margin: 0,
+                fontSize: '13px',
+              }}
+            >
+              {sendingCode ? (
+                <progress className="circle small indeterminate"></progress>
+              ) : codeCountdown > 0 ? (
+                <span>{codeCountdown} с</span>
+              ) : (
+                <span>{codeSent ? 'Надіслати ще раз' : 'Отримати код'}</span>
+              )}
+            </button>
+          </div>
+        )}
 
         <button
           type="submit"

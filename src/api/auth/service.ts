@@ -100,7 +100,11 @@ export function isTrustedEmailDomain(email: string): boolean {
   return false;
 }
 
-export async function registerUser(email: string, password: string): Promise<{ user: UserProfile; token: string }> {
+export async function registerUser(
+  email: string,
+  password: string,
+  code?: string
+): Promise<{ user: UserProfile; token: string }> {
   const cleanEmail = (email || '').trim().toLowerCase();
   if (!cleanEmail || !cleanEmail.includes('@')) {
     throw new Error('Некоректний формат email');
@@ -110,6 +114,15 @@ export async function registerUser(email: string, password: string): Promise<{ u
   }
   if (!password || password.length < 6) {
     throw new Error('Пароль має містити мінімум 6 символів');
+  }
+
+  // Check email verification code
+  const { isEmailVerificationEnabled, verifyEmailCode } = await import('../services/email.js');
+  if (isEmailVerificationEnabled() || (code && code.trim())) {
+    if (!code || !code.trim()) {
+      throw new Error('Введіть 6-значний код підтвердження з пошти');
+    }
+    verifyEmailCode(cleanEmail, code);
   }
 
   const db = getAuthDb();
@@ -253,13 +266,24 @@ export function revokeApiKey(userId: string, keyId: string): boolean {
   return res.changes > 0;
 }
 
-export function validateApiKey(rawKey: string): { id: string; user_id: string; prefix: string } | null {
+export interface ApiKeyValidationResult {
+  id: string;
+  user_id: string;
+  prefix: string;
+  key_created_at: number;
+  user_created_at: number;
+}
+
+export function validateApiKey(rawKey: string): ApiKeyValidationResult | null {
   if (!rawKey || typeof rawKey !== 'string') return null;
   const keyHash = hashKey(rawKey.trim());
   const db = getAuthDb();
-  const row = db.prepare('SELECT id, user_id, prefix FROM api_keys WHERE key_hash = ? AND is_active = 1').get(keyHash) as
-    | { id: string; user_id: string; prefix: string }
-    | undefined;
+  const row = db.prepare(`
+    SELECT k.id, k.user_id, k.prefix, k.created_at AS key_created_at, u.created_at AS user_created_at
+    FROM api_keys k
+    JOIN users u ON u.id = k.user_id
+    WHERE k.key_hash = ? AND k.is_active = 1
+  `).get(keyHash) as ApiKeyValidationResult | undefined;
   return row || null;
 }
 

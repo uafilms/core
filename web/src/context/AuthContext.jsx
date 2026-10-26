@@ -114,9 +114,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (email, password) => {
+  const sendVerificationCode = async (email) => {
     try {
-      const res = await axios.post('/auth/register', { email, password });
+      const res = await axios.post('/auth/send-code', { email });
+      return { success: true, message: res.data?.message || 'Код надіслано на вашу пошту' };
+    } catch (err) {
+      const msg = err.response?.data?.error?.message || err.message || 'Не вдалося надіслати код';
+      return { success: false, error: msg };
+    }
+  };
+
+  const register = async (email, password, code) => {
+    try {
+      const res = await axios.post('/auth/register', { email, password, code });
       const newToken = res.data?.token;
       const newUser = res.data?.user;
       if (newToken && newUser) {
@@ -178,6 +188,7 @@ export const AuthProvider = ({ children }) => {
         setIsAuthModalOpen,
         login,
         register,
+        sendVerificationCode,
         logout,
         changePassword,
         deleteAccount,
