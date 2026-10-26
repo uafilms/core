@@ -186,7 +186,13 @@ app.notFound((c) => {
   }, 404);
 });
 
+import { startTelegramBot } from './services/telegramVerification.js';
+
 export function startServer(port = 3000) {
+  startTelegramBot().catch((err) => {
+    console.error('[TelegramBot] Failed to start:', err);
+  });
+
   return serve({
     fetch: app.fetch,
     port,

@@ -14,6 +14,10 @@ const PROTECTED_PATHS = [
   '/auth/register',
   '/api/auth/login',
   '/api/auth/register',
+  '/auth/telegram-start',
+  '/auth/telegram-status',
+  '/api/auth/telegram-start',
+  '/api/auth/telegram-status',
 ];
 
 export const waitForToken = () => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { isTrustedEmailDomain } from './utils/validation';
@@ -6,27 +6,53 @@ import AuthTabSwitch from './AuthTabSwitch';
 import AuthForm from './AuthForm';
 
 export default function AuthModal() {
-  const { isAuthModalOpen, setIsAuthModalOpen, login, register, sendVerificationCode } = useAuth();
+  const {
+    isAuthModalOpen,
+    setIsAuthModalOpen,
+    login,
+    register,
+    startTelegramVerification,
+    checkTelegramVerification,
+  } = useAuth();
   const [tab, setTab] = useState('login'); // 'login' | 'register'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-  const [sendingCode, setSendingCode] = useState(false);
-  const [codeSent, setCodeSent] = useState(false);
-  const [codeCountdown, setCodeCountdown] = useState(0);
+
+  // Telegram verification states
+  const [tgSession, setTgSession] = useState(null); // { token, link, botUsername }
+  const [tgVerified, setTgVerified] = useState(false);
+  const [tgUsername, setTgUsername] = useState('');
+  const [tgLoading, setTgLoading] = useState(false);
+  const pollTimerRef = useRef(null);
+
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
+  // Polling for Telegram verification
   useEffect(() => {
-    let timer;
-    if (codeCountdown > 0) {
-      timer = setTimeout(() => {
-        setCodeCountdown((c) => c - 1);
-      }, 1000);
+    if (tgSession && !tgVerified && tab === 'register') {
+      const poll = async () => {
+        const res = await checkTelegramVerification(tgSession.token);
+        if (res.success && res.data) {
+          if (res.data.verified) {
+            setTgVerified(true);
+            setTgUsername(res.data.username || '');
+            setError('');
+          } else if (res.data.error) {
+            setError(res.data.error);
+          }
+        }
+      };
+
+      poll();
+      pollTimerRef.current = setInterval(poll, 2000);
     }
-    return () => clearTimeout(timer);
-  }, [codeCountdown]);
+
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, [tgSession, tgVerified, tab]);
 
   const handleClose = () => {
     setIsClosing(true);
@@ -39,27 +65,19 @@ export default function AuthModal() {
 
   if ((!isAuthModalOpen && !isClosing) || typeof document === 'undefined') return null;
 
-  const handleSendCode = async () => {
+  const handleStartTelegram = async () => {
     setError('');
-    if (!email || !email.includes('@')) {
-      setError('Введіть коректну електронну пошту');
-      return;
-    }
+    setTgLoading(true);
+    const res = await startTelegramVerification();
+    setTgLoading(false);
 
-    if (!isTrustedEmailDomain(email)) {
-      setError('Дозволені лише надійні поштові сервіси: Gmail, Outlook, Proton, Yahoo, iCloud, Ukr.net');
-      return;
-    }
-
-    setSendingCode(true);
-    const res = await sendVerificationCode(email);
-    setSendingCode(false);
-
-    if (res.success) {
-      setCodeSent(true);
-      setCodeCountdown(60);
+    if (res.success && res.data) {
+      setTgSession(res.data);
+      setTgVerified(false);
+      // Open Telegram link in new window/app
+      window.open(res.data.link, '_blank');
     } else {
-      setError(res.error || 'Не вдалося надіслати код');
+      setError(res.error || 'Не вдалося підключитися до Telegram-бота');
     }
   };
 
@@ -82,13 +100,16 @@ export default function AuthModal() {
       return;
     }
 
-    if (tab === 'register' && (!code || code.length < 6)) {
-      setError('Введіть 6-значний код підтвердження з пошти');
+    if (tab === 'register' && !tgVerified) {
+      setError('Необхідно підтвердити акаунт через Telegram перед реєстрацією');
       return;
     }
 
     setLoading(true);
-    const res = tab === 'login' ? await login(email, password) : await register(email, password, code);
+    const res =
+      tab === 'login'
+        ? await login(email, password)
+        : await register(email, password, tgSession?.token);
     setLoading(false);
 
     if (!res.success) {
@@ -96,8 +117,8 @@ export default function AuthModal() {
     } else {
       setEmail('');
       setPassword('');
-      setCode('');
-      setCodeSent(false);
+      setTgSession(null);
+      setTgVerified(false);
       setError('');
     }
   };
@@ -163,12 +184,11 @@ export default function AuthModal() {
           setEmail={setEmail}
           password={password}
           setPassword={setPassword}
-          code={code}
-          setCode={setCode}
-          onSendCode={handleSendCode}
-          sendingCode={sendingCode}
-          codeSent={codeSent}
-          codeCountdown={codeCountdown}
+          tgSession={tgSession}
+          tgVerified={tgVerified}
+          tgUsername={tgUsername}
+          tgLoading={tgLoading}
+          onStartTelegram={handleStartTelegram}
           loading={loading}
           onSubmit={handleSubmit}
         />

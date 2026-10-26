@@ -134,16 +134,28 @@ export function getAuthDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_user_coll_items ON user_collection_items(user_id, collection_id);
 
-    CREATE TABLE IF NOT EXISTS email_verifications (
-      email TEXT PRIMARY KEY COLLATE NOCASE,
-      code_hash TEXT NOT NULL,
-      attempts INTEGER DEFAULT 0,
-      last_sent_at INTEGER NOT NULL,
+    CREATE TABLE IF NOT EXISTS telegram_verifications (
+      token TEXT PRIMARY KEY,
+      telegram_id TEXT,
+      telegram_username TEXT,
+      verified INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_email_verifications_expires ON email_verifications(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_tg_verif_expires ON telegram_verifications(expires_at);
   `);
+
+  // Ensure telegram_id column in users table (backward-compatible)
+  try {
+    const userColumns = db.pragma('table_info(users)') as Array<{ name: string }>;
+    if (!userColumns.some((col) => col.name === 'telegram_id')) {
+      db.exec('ALTER TABLE users ADD COLUMN telegram_id TEXT');
+    }
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id) WHERE telegram_id IS NOT NULL');
+  } catch {
+    // Ignore migration errors
+  }
 
   dbInstance = db;
   return dbInstance;

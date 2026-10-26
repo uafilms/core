@@ -6,12 +6,11 @@ export default function AuthForm({
   setEmail,
   password,
   setPassword,
-  code,
-  setCode,
-  onSendCode,
-  sendingCode,
-  codeSent,
-  codeCountdown,
+  tgSession,
+  tgVerified,
+  tgUsername,
+  tgLoading,
+  onStartTelegram,
   loading,
   onSubmit,
 }) {
@@ -44,47 +43,75 @@ export default function AuthForm({
         </div>
 
         {tab === 'register' && (
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <div className="field label prefix border round" style={{ flex: 1, margin: 0 }}>
-              <i>pin</i>
-              <input
-                type="text"
-                value={code || ''}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder=" "
-                maxLength={6}
-                required
-              />
-              <label>Код з пошти (6 цифр)</label>
-            </div>
-            <button
-              type="button"
-              className="round border secondary"
-              onClick={onSendCode}
-              disabled={sendingCode || codeCountdown > 0}
-              style={{
-                height: '48px',
-                minWidth: '125px',
-                whiteSpace: 'nowrap',
-                margin: 0,
-                fontSize: '13px',
-              }}
-            >
-              {sendingCode ? (
-                <progress className="circle small indeterminate"></progress>
-              ) : codeCountdown > 0 ? (
-                <span>{codeCountdown} с</span>
-              ) : (
-                <span>{codeSent ? 'Надіслати ще раз' : 'Отримати код'}</span>
+          <div
+            className="round border surface-container-low"
+            style={{
+              padding: '14px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              border: tgVerified ? '1px solid rgba(74, 222, 128, 0.4)' : undefined,
+              background: tgVerified ? 'rgba(74, 222, 128, 0.05)' : undefined,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <i className={tgVerified ? 'primary-text' : 'secondary-text'}>
+                  {tgVerified ? 'check_circle' : 'smart_toy'}
+                </i>
+                <span style={{ fontWeight: 500, fontSize: '14px' }}>
+                  {tgVerified ? 'Telegram підтверджено' : 'Підтвердження через Telegram'}
+                </span>
+              </div>
+              {tgVerified && tgUsername && (
+                <span className="small-text surface-variant-text" style={{ fontWeight: 500 }}>
+                  @{tgUsername}
+                </span>
               )}
-            </button>
+            </div>
+
+            {!tgVerified ? (
+              <>
+                <p className="small-text surface-variant-text" style={{ margin: 0, opacity: 0.85, lineHeight: 1.4 }}>
+                  Правило: <b>1 акаунт на користувача Telegram</b>. Натисніть кнопку та запустіть бота (Start).
+                </p>
+                <button
+                  type="button"
+                  className="round secondary max"
+                  onClick={onStartTelegram}
+                  disabled={tgLoading}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    margin: 0,
+                    height: '46px',
+                  }}
+                >
+                  {tgLoading ? (
+                    <progress className="circle small indeterminate"></progress>
+                  ) : (
+                    <>
+                      <i>send</i>
+                      <span>{tgSession ? 'Відкрити бота ще раз' : 'Підтвердити через Telegram'}</span>
+                    </>
+                  )}
+                </button>
+                {tgSession && (
+                  <span className="small-text surface-variant-text" style={{ textAlign: 'center', opacity: 0.75 }}>
+                    Очікуємо натискання Start у боті...
+                  </span>
+                )}
+              </>
+            ) : null}
           </div>
         )}
 
         <button
           type="submit"
           className="round primary max"
-          disabled={loading}
+          disabled={loading || (tab === 'register' && !tgVerified)}
           style={{ marginTop: '8px', transition: 'all 0.2s cubic-bezier(0.2, 0, 0, 1)' }}
         >
           {loading ? (

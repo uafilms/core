@@ -114,19 +114,29 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const sendVerificationCode = async (email) => {
+  const startTelegramVerification = async () => {
     try {
-      const res = await axios.post('/auth/send-code', { email });
-      return { success: true, message: res.data?.message || 'Код надіслано на вашу пошту' };
+      const res = await axios.post('/auth/telegram-start');
+      return { success: true, data: res.data };
     } catch (err) {
-      const msg = err.response?.data?.error?.message || err.message || 'Не вдалося надіслати код';
+      const msg = err.response?.data?.error?.message || err.message || 'Не вдалося створити сесію верифікації';
       return { success: false, error: msg };
     }
   };
 
-  const register = async (email, password, code) => {
+  const checkTelegramVerification = async (token) => {
     try {
-      const res = await axios.post('/auth/register', { email, password, code });
+      const res = await axios.get('/auth/telegram-status', { params: { token } });
+      return { success: true, data: res.data };
+    } catch (err) {
+      const msg = err.response?.data?.error?.message || err.message || 'Не вдалося отримати статус';
+      return { success: false, error: msg };
+    }
+  };
+
+  const register = async (email, password, telegramToken) => {
+    try {
+      const res = await axios.post('/auth/register', { email, password, telegramToken });
       const newToken = res.data?.token;
       const newUser = res.data?.user;
       if (newToken && newUser) {
@@ -188,7 +198,8 @@ export const AuthProvider = ({ children }) => {
         setIsAuthModalOpen,
         login,
         register,
-        sendVerificationCode,
+        startTelegramVerification,
+        checkTelegramVerification,
         logout,
         changePassword,
         deleteAccount,

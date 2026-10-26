@@ -7,6 +7,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'uafilms-auth-secret-key-change-in-
 export interface UserProfile {
   id: string;
   email: string;
+  telegram_id?: string | null;
   created_at: number;
 }
 
@@ -103,7 +104,7 @@ export function isTrustedEmailDomain(email: string): boolean {
 export async function registerUser(
   email: string,
   password: string,
-  code?: string
+  telegramToken?: string
 ): Promise<{ user: UserProfile; token: string }> {
   const cleanEmail = (email || '').trim().toLowerCase();
   if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -116,16 +117,40 @@ export async function registerUser(
     throw new Error('Пароль має містити мінімум 6 символів');
   }
 
-  // Check email verification code
-  const { isEmailVerificationEnabled, verifyEmailCode } = await import('../services/email.js');
-  if (isEmailVerificationEnabled() || (code && code.trim())) {
-    if (!code || !code.trim()) {
-      throw new Error('Введіть 6-значний код підтвердження з пошти');
+  const db = getAuthDb();
+
+  // Telegram verification & 1-account-per-telegram check
+  const { isTelegramVerificationEnabled } = await import('../services/telegramVerification.js');
+  let telegramId: string | null = null;
+
+  if (isTelegramVerificationEnabled() || (telegramToken && telegramToken.trim())) {
+    if (!telegramToken || !telegramToken.trim()) {
+      throw new Error('Необхідно підтвердити акаунт через Telegram');
     }
-    verifyEmailCode(cleanEmail, code);
+
+    const row = db.prepare(`
+      SELECT telegram_id, verified, expires_at
+      FROM telegram_verifications
+      WHERE token = ?
+    `).get(telegramToken.trim()) as { telegram_id: string; verified: number; expires_at: number } | undefined;
+
+    if (!row || Date.now() > row.expires_at) {
+      throw new Error('Посилання на верифікацію застаріло. Будь ласка, почніть підтвердження знову');
+    }
+
+    if (row.verified !== 1 || !row.telegram_id) {
+      throw new Error('Будь ласка, перейдіть у бот і натисніть «Start» для підтвердження');
+    }
+
+    // Verify 1 account per Telegram user
+    const existingTg = db.prepare('SELECT id FROM users WHERE telegram_id = ?').get(row.telegram_id);
+    if (existingTg) {
+      throw new Error('Цей Telegram-акаунт вже прив’язано до іншого користувача');
+    }
+
+    telegramId = row.telegram_id;
   }
 
-  const db = getAuthDb();
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(cleanEmail);
   if (existing) {
     throw new Error('Користувач із таким email вже зареєстрований');
@@ -136,13 +161,18 @@ export async function registerUser(
   const passwordHash = hashPassword(password);
 
   db.prepare(`
-    INSERT INTO users (id, email, password_hash, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(userId, cleanEmail, passwordHash, now, now);
+    INSERT INTO users (id, email, password_hash, telegram_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(userId, cleanEmail, passwordHash, telegramId, now, now);
+
+  if (telegramToken) {
+    db.prepare('DELETE FROM telegram_verifications WHERE token = ?').run(telegramToken.trim());
+  }
 
   const user: UserProfile = {
     id: userId,
     email: cleanEmail,
+    telegram_id: telegramId,
     created_at: now,
   };
 
