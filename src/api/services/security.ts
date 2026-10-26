@@ -1,7 +1,15 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { isTurnstileEnabled, verifyTurnstileToken } from './turnstile.js';
-import { unauthenticatedParserRateLimiter } from './rateLimiter.js';
-import { verifyAuthToken, validateApiKey } from '../auth/service.js';
+import {
+  unauthenticatedParserRateLimiter,
+  authenticatedParserRateLimiter,
+} from './rateLimiter.js';
+import {
+  verifyAuthToken,
+  validateApiKey,
+  getUserById,
+  type ApiKeyValidationResult,
+} from '../auth/service.js';
 import {
   extractPowFromRequest,
   verifyPowSessionToken,
@@ -24,10 +32,23 @@ export function getClientIp(c: Context): string {
   return 'unknown';
 }
 
-export async function isRequestAuthenticated(c: Context): Promise<boolean> {
-  // 1. Check if already marked by apiKeyMiddleware
-  if (c.get('apiKeyId' as any)) {
-    return true;
+export interface AuthIdentity {
+  type: 'api_key' | 'user';
+  id: string;
+  userId: string;
+  userCreatedAt: number;
+}
+
+export async function getAuthIdentity(c: Context): Promise<AuthIdentity | null> {
+  // 1. Check if already validated by apiKeyMiddleware
+  const apiKeyInfo = c.get('apiKeyInfo' as any) as ApiKeyValidationResult | undefined;
+  if (apiKeyInfo) {
+    return {
+      type: 'api_key',
+      id: apiKeyInfo.id,
+      userId: apiKeyInfo.user_id,
+      userCreatedAt: apiKeyInfo.user_created_at || apiKeyInfo.key_created_at || Date.now(),
+    };
   }
 
   // 2. Check API Key in headers or query
@@ -48,23 +69,48 @@ export async function isRequestAuthenticated(c: Context): Promise<boolean> {
 
   if (rawApiKey) {
     const valid = validateApiKey(rawApiKey);
-    if (valid) return true;
+    if (valid) {
+      return {
+        type: 'api_key',
+        id: valid.id,
+        userId: valid.user_id,
+        userCreatedAt: valid.user_created_at || valid.key_created_at || Date.now(),
+      };
+    }
   }
 
   // 3. Check JWT token in Authorization header or query
+  let jwtToken: string | undefined = undefined;
   if (authHeader && authHeader.startsWith('Bearer ') && !authHeader.startsWith('Bearer uaf_')) {
-    const jwtToken = authHeader.slice(7).trim();
+    jwtToken = authHeader.slice(7).trim();
+  } else {
+    const queryAuth = c.req.query('token') || c.req.query('auth_token');
+    if (queryAuth) {
+      jwtToken = queryAuth.trim();
+    }
+  }
+
+  if (jwtToken) {
     const payload = await verifyAuthToken(jwtToken);
-    if (payload) return true;
+    if (payload?.sub) {
+      const user = getUserById(payload.sub);
+      if (user) {
+        return {
+          type: 'user',
+          id: user.id,
+          userId: user.id,
+          userCreatedAt: user.created_at,
+        };
+      }
+    }
   }
 
-  const queryAuth = c.req.query('token') || c.req.query('auth_token');
-  if (queryAuth) {
-    const payload = await verifyAuthToken(queryAuth.trim());
-    if (payload) return true;
-  }
+  return null;
+}
 
-  return false;
+export async function isRequestAuthenticated(c: Context): Promise<boolean> {
+  const identity = await getAuthIdentity(c);
+  return identity !== null;
 }
 
 export function extractTurnstileToken(c: Context, bodyToken?: string): string | undefined {
@@ -87,22 +133,49 @@ export function extractTurnstileToken(c: Context, bodyToken?: string): string | 
 
 /**
  * Middleware or guard for source parser endpoints (/v1/movies/*, /v1/tv/*)
- * - If user is unauthenticated: enforces 10 req/min sliding-window rate limit
- * - If Turnstile is enabled: enforces token verification
+ * - If user is unauthenticated: enforces 3 req/min sliding-window rate limit
+ * - If user is authenticated: enforces 5 req/min (accounts < 14 days) or 15 req/min (>= 14 days)
+ * - If Turnstile is enabled: enforces token verification for guests
  */
 export async function enforceParsingSecurity(c: Context): Promise<Response | null> {
   const ip = getClientIp(c);
-  const isAuthenticated = await isRequestAuthenticated(c);
+  const identity = await getAuthIdentity(c);
+  const isAuthenticated = identity !== null;
 
-  // Rate limiting for guest / unauthenticated requests (5-10 requests/min)
+  // Rate limiting for guest / unauthenticated requests (3 requests/min)
   if (!isAuthenticated) {
-    const { allowed } = unauthenticatedParserRateLimiter.check(ip);
+    const { allowed } = unauthenticatedParserRateLimiter.check(ip, 3);
     if (!allowed) {
       return c.json(
         {
           error: {
             code: 'RATE_LIMIT_EXCEEDED',
-            message: 'Забагато запитів на парсинг джерел. Зареєструйтесь або використовуйте API-ключ для зняття обмежень (ліміт: 10 запитів на хвилину для гостей).',
+            message: 'Забагато запитів на парсинг джерел. Ліміт для гостей: 3 запити на хвилину. Зареєструйтесь або використовуйте API-ключ для підвищення ліміту.',
+          },
+          traceId: crypto.randomUUID(),
+        },
+        429
+      );
+    }
+  } else {
+    // Authenticated user / API Key rate limiting:
+    // 5 req/min for new accounts (< 14 days old), 15 req/min after 14 days
+    const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+    const accountAgeMs = Date.now() - (identity.userCreatedAt || Date.now());
+    const isNewbie = accountAgeMs < FOURTEEN_DAYS_MS;
+    const maxRequests = isNewbie ? 5 : 15;
+    const rateKey = identity.type === 'api_key' ? `key:${identity.id}` : `user:${identity.userId}`;
+
+    const { allowed } = authenticatedParserRateLimiter.check(rateKey, maxRequests);
+    if (!allowed) {
+      const remainingDays = Math.max(1, Math.ceil((FOURTEEN_DAYS_MS - accountAgeMs) / (24 * 60 * 60 * 1000)));
+      return c.json(
+        {
+          error: {
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: isNewbie
+              ? `Перевищено ліміт запитів: 5 запитів на хвилину для нових акаунтів (до 14 днів). Через ${remainingDays} дн. ліміт автоматично зросте до 15 запитів/хв.`
+              : 'Перевищено ліміт запитів: 15 запитів на хвилину для перевірених акаунтів.',
           },
           traceId: crypto.randomUUID(),
         },

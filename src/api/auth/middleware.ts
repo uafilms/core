@@ -36,6 +36,7 @@ export const apiKeyMiddleware: MiddlewareHandler = async (c, next) => {
     }
     apiKeyId = valid.id;
     c.set('apiKeyId' as any, valid.id);
+    c.set('apiKeyInfo' as any, valid);
   }
 
   const start = Date.now();

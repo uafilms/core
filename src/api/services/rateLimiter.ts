@@ -18,15 +18,16 @@ export class SlidingWindowRateLimiter {
     }
   }
 
-  public check(key: string): { allowed: boolean; remaining: number; resetMs: number } {
+  public check(key: string, customLimit?: number): { allowed: boolean; remaining: number; resetMs: number } {
     const now = Date.now();
     const threshold = now - this.windowMs;
+    const limit = customLimit ?? this.maxRequests;
 
     let timestamps = this.records.get(key) || [];
     // Filter timestamps within current window
     timestamps = timestamps.filter((t) => t > threshold);
 
-    if (timestamps.length >= this.maxRequests) {
+    if (timestamps.length >= limit) {
       const oldest = timestamps[0];
       const resetMs = Math.max(0, oldest + this.windowMs - now);
       this.records.set(key, timestamps);
@@ -37,7 +38,7 @@ export class SlidingWindowRateLimiter {
     this.records.set(key, timestamps);
     return {
       allowed: true,
-      remaining: this.maxRequests - timestamps.length,
+      remaining: Math.max(0, limit - timestamps.length),
       resetMs: this.windowMs,
     };
   }
@@ -59,6 +60,7 @@ export class SlidingWindowRateLimiter {
   }
 }
 
-// 3-5 requests per minute for unauthenticated parsing
-const GUEST_PARSER_RATE_LIMIT = parseInt(process.env.GUEST_PARSER_RATE_LIMIT || '5', 10);
+// 3 requests per minute for unauthenticated parsing
+const GUEST_PARSER_RATE_LIMIT = parseInt(process.env.GUEST_PARSER_RATE_LIMIT || '3', 10);
 export const unauthenticatedParserRateLimiter = new SlidingWindowRateLimiter(60000, GUEST_PARSER_RATE_LIMIT);
+export const authenticatedParserRateLimiter = new SlidingWindowRateLimiter(60000, 5);
