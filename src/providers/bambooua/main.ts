@@ -10,6 +10,7 @@ import { getBamboo } from './get.js';
 
 export class BambooUaProvider implements Provider {
   readonly name = 'bambooua';
+  readonly cdns = ['bamboo', 'ashdi'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchBamboo(query, options);

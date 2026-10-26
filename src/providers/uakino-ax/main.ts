@@ -9,6 +9,7 @@ import { getUakinoAx } from './get.js';
  */
 export class UaKinoAXProvider implements Provider {
   readonly name = 'uakino-ax';
+  readonly cdns = ['uakino-ax', 'ashdi'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchUakinoAx(query, options);

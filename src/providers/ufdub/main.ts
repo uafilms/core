@@ -10,6 +10,7 @@ import { getUfdub } from './get.js';
 
 export class UfdubProvider implements Provider {
   readonly name = 'ufdub';
+  readonly cdns = ['ufdub'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchUfdub(query, options);

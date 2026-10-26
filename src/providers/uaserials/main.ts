@@ -11,6 +11,7 @@ import type {
 
 export class UaSerialsProvider implements Provider {
   readonly name = 'uaserials';
+  readonly cdns = ['tortuga'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     const results = await search(query, options?.year);

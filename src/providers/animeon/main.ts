@@ -5,6 +5,7 @@ import { getAnimeOnStreams } from './get.js';
 
 export class AnimeOnProvider implements Provider {
   readonly name = 'animeon';
+  readonly cdns = ['fenix', 'moonanime', 'ashdi'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchAnimeOn(query, options);

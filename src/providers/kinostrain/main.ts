@@ -10,6 +10,8 @@ import { getKinostrain } from './get.js';
 
 export class KinostrainProvider implements Provider {
   readonly name = 'kinostrain';
+  readonly cdns = ['ashdi', 'tortuga'] as const;
+  readonly priority = 2 as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchKinostrain(query, options);

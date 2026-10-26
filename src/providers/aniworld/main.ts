@@ -5,6 +5,7 @@ import { getAniWorld } from './get.js';
 
 export class AniWorldProvider implements Provider {
   readonly name = 'aniworld';
+  readonly cdns = ['aniworld'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchAniWorld(query, options);

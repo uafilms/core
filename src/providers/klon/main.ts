@@ -10,6 +10,8 @@ import { getKlon } from './get.js';
 
 export class KlonProvider implements Provider {
   readonly name = 'klon';
+  readonly cdns = ['ashdi'] as const;
+  readonly priority = 2 as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchKlon(query, options);

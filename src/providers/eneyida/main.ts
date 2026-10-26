@@ -10,6 +10,7 @@ import { getEneyida } from './get.js';
 
 export class EneyidaProvider implements Provider {
   readonly name = 'eneyida';
+  readonly cdns = ['hdvb'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchEneyida(query, options);

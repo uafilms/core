@@ -10,6 +10,7 @@ import type {
 
 export class WormholeProvider implements Provider {
   readonly name = 'wormhole';
+  readonly cdns = ['ashdi'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return search(query, options);

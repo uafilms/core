@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { MediaMetadata, MediaType, StreamSource } from '../../types/media.js';
+import type { Provider } from '../../types/provider.js';
 import type { OmssSource, OmssSubtitle, OmssDiagnostic, PlatformType, OmssQuality, OmssVideoType } from '../types.js';
 import { providers } from '../../providers/index.js';
 import { extractVod } from '../../providers/cdn/index.js';
@@ -137,8 +138,28 @@ export class OrchestratorService {
     // їх не надсилаємо — клієнт лишається з тим провайдером, що завершився першим.
     const emittedCdns = new Set<string>();
 
-    // Run providers in parallel with individual error catching
-    const tasks = targetProviders.map(async (provider, providerIndex) => {
+    // CDN redundancy check & AbortController management
+    const isRedundant = (p: Provider): boolean => {
+      if (!p.cdns || p.cdns.length === 0) return false;
+      return p.cdns.every((cdn: string) => claimedCdns.has(cdn));
+    };
+
+    const activeControllers = new Map<Provider, AbortController>();
+
+    const abortRedundantTasks = () => {
+      for (const [p, controller] of activeControllers.entries()) {
+        if (isRedundant(p)) {
+          controller.abort();
+        }
+      }
+    };
+
+    const runProviderTask = async (provider: Provider, providerIndex: number) => {
+      if (isRedundant(provider)) return;
+
+      const abortController = new AbortController();
+      activeControllers.set(provider, abortController);
+
       return runWithProvider(provider.name, async () => {
         try {
           const searchOptions = {
@@ -147,21 +168,26 @@ export class OrchestratorService {
             type,
             season,
             episode,
+            signal: abortController.signal,
           };
           const query = meta.imdbId || meta.title;
           let searchResults = await provider.search(query, searchOptions);
+
+          if (abortController.signal.aborted || isRedundant(provider)) return;
 
           // If no results by IMDb ID, fallback to title
           if ((!searchResults || searchResults.length === 0) && meta.title && meta.imdbId) {
             searchResults = await provider.search(meta.title, searchOptions);
           }
 
+          if (abortController.signal.aborted || isRedundant(provider)) return;
+
           // If still no results, fallback to original title if available
           if ((!searchResults || searchResults.length === 0) && meta.originalTitle && meta.originalTitle !== meta.title) {
             searchResults = await provider.search(meta.originalTitle, searchOptions);
           }
 
-          if (!searchResults || searchResults.length === 0) {
+          if (abortController.signal.aborted || !searchResults || searchResults.length === 0 || isRedundant(provider)) {
             return;
           }
 
@@ -183,25 +209,26 @@ export class OrchestratorService {
           }
 
           if (!target) {
-            target = searchResults.find(r =>
+            target = searchResults.find((r: any) =>
               (meta.title && isSearchResultMatch(r, meta.title, meta.year, meta.type, 50, season)) ||
               (meta.originalTitle && isSearchResultMatch(r, meta.originalTitle, meta.year, meta.type, 50, season))
             ) || null;
           }
 
-          if (!target) {
+          if (!target || abortController.signal.aborted || isRedundant(provider)) {
             return;
           }
-          const res = await provider.get(target, { meta, season, episode });
-          if (!res) return;
+
+          const res = await provider.get(target, { meta, season, episode, signal: abortController.signal });
+          if (!res || abortController.signal.aborted || isRedundant(provider)) return;
 
           let rawSources: StreamSource[] = [];
 
           if (type === 'movie') {
             rawSources = res.sources || [];
           } else {
-            const s = res.seasons?.find(sn => sn.season === season);
-            const ep = s?.episodes?.find(e => e.episode === episode);
+            const s = res.seasons?.find((sn: any) => sn.season === season);
+            const ep = s?.episodes?.find((e: any) => e.episode === episode);
             rawSources = ep?.sources || [];
           }
 
@@ -387,6 +414,7 @@ export class OrchestratorService {
           // пізніший провайдер з меншим індексом перебирає cdn.id собі. Стримінговому
           // клієнту при цьому нічого не пересилаємо — CDN, який уже поїхав у чанку,
           // лишається за тим провайдером, який завершився першим (без подій removed).
+          let newlyClaimed = false;
           for (const group of providerGroups.values()) {
             const owner = claimedCdnOwner.get(group.id);
             if (owner !== undefined && owner <= providerIndex) {
@@ -402,6 +430,7 @@ export class OrchestratorService {
 
             claimedCdns.add(group.id);
             claimedCdnOwner.set(group.id, providerIndex);
+            newlyClaimed = true;
 
             const acceptedSources = group.sources.filter((s) => {
               if (seenSourceUrls.has(s.url)) return false;
@@ -429,19 +458,46 @@ export class OrchestratorService {
               });
             }
           }
+
+          if (newlyClaimed) {
+            abortRedundantTasks();
+          }
         }
       } catch (err: unknown) {
+        if ((err as any)?.name === 'AbortError' || (err as any)?.code === 'ERR_CANCELED') {
+          return;
+        }
         diagnostics.push({
           code: 'PROVIDER_ERROR',
           message: `Provider ${provider.name} error: ${(err as Error).message}`,
           source: provider.name,
           severity: 'warning',
         });
+      } finally {
+        activeControllers.delete(provider);
       }
       });
-    });
+    };
 
-    await Promise.allSettled(tasks);
+    // Priority Waves execution:
+    // Wave 1: Priority 1 (Primary providers, Unique CDNs, local DBs)
+    // Wave 2: Priority 2 (Fallback scrapers: kinostrain, serialno, klon)
+    const wave1 = targetProviders.filter((p) => (p.priority ?? 1) <= 1);
+    const wave2 = targetProviders.filter((p) => (p.priority ?? 1) > 1);
+
+    const wave1Tasks = wave1.map((p, idx) => runProviderTask(p, idx));
+
+    if (wave2.length > 0) {
+      // Start wave 2 after wave 1 settles or after 350ms delay
+      const wave1Settled = Promise.allSettled(wave1Tasks);
+      const delay = new Promise((resolve) => setTimeout(resolve, 350));
+      await Promise.race([wave1Settled, delay]);
+
+      const wave2Tasks = wave2.map((p, idx) => runProviderTask(p, wave1.length + idx));
+      await Promise.allSettled([...wave1Tasks, ...wave2Tasks]);
+    } else {
+      await Promise.allSettled(wave1Tasks);
+    }
 
     // Sort sources: Ashdi always first, then quality 4K > FHD > HD > SD > Auto
     const qualityWeights: Record<OmssQuality, number> = {

@@ -10,6 +10,8 @@ import { getSerialno } from './get.js';
 
 export class SerialnoProvider implements Provider {
   readonly name = 'serialno';
+  readonly cdns = ['ashdi'] as const;
+  readonly priority = 2 as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchSerialno(query, options);

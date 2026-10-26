@@ -9,6 +9,7 @@ import { searchAniHub } from './search.js';
  */
 export class AniHubProvider implements Provider {
   readonly name = 'anihub';
+  readonly cdns = ['fenix', 'moonanime', 'ashdi'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchAniHub(query, options);

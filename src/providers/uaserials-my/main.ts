@@ -10,6 +10,7 @@ import { getUaSerialsMy } from './get.js';
 
 export class UaSerialsMyProvider implements Provider {
   readonly name = 'uaserials-my';
+  readonly cdns = ['hdvb'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchUaSerialsMy(query, options);

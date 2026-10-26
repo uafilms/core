@@ -10,6 +10,7 @@ import { getUaflix } from './get.js';
 
 export class UaflixProvider implements Provider {
   readonly name = 'uaflix';
+  readonly cdns = ['zetvideo', 'ashdi'] as const;
 
   async search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
     return searchUaflix(query, options);

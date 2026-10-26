@@ -6,6 +6,7 @@ import { getKinoUkrDb } from './db.js';
 
 export class KinoUkrProvider implements Provider {
   readonly name = 'kinoukr';
+  readonly cdns = ['ashdi', 'tortuga'] as const;
 
   public async init(forceSync = false): Promise<void> {
     await getKinoUkrDb(forceSync);

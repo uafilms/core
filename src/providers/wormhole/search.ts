@@ -6,13 +6,12 @@ import type { SearchResult, ProviderSearchOptions } from '../../types/index.js';
  */
 export async function search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]> {
   const cleanQuery = query.trim();
-  const imdbMatch = cleanQuery.match(/tt\d{6,8}/);
+  const imdbId = cleanQuery.match(/tt\d{6,8}/)?.[0] || options?.meta?.imdbId;
 
-  if (imdbMatch) {
-    const imdbId = imdbMatch[0];
+  if (imdbId) {
     return [{
       id: imdbId,
-      title: cleanQuery,
+      title: options?.meta?.title || cleanQuery,
       url: `https://wh.lme.isroot.in/?imdb_id=${imdbId}`,
     }];
   }
