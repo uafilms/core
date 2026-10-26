@@ -154,6 +154,14 @@ const BADGES: StudioBadgeConfig[] = [
     text: 'HDrezka',
     subtext: 'STUDIO',
     icon: `<text x="100" y="115" font-family="system-ui, sans-serif" font-weight="900" font-size="46" text-anchor="middle" fill="#f59e0b">REZKA</text>`,
+  },
+  {
+    slug: 'ufdub',
+    bg: ['#1c0c29', '#381652'],
+    accent: '#c084fc',
+    text: 'UFDUB',
+    subtext: 'STUDIO',
+    icon: `<text x="100" y="115" font-family="system-ui, sans-serif" font-weight="900" font-size="52" text-anchor="middle" fill="#c084fc">UFDUB</text>`,
   }
 ];
 

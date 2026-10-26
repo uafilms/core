@@ -167,6 +167,14 @@ export const KNOWN_STUDIOS: Record<string, StudioDefinition> = {
     aliases: ['uaflix', 'уафлікс'],
     logoFile: 'uaflix.png',
   },
+  serialno: {
+    name: 'Serialno',
+    aliases: ['serialno', 'серіально'],
+  },
+  kinostrain: {
+    name: 'Kinostrain',
+    aliases: ['kinostrain', 'кінострейн'],
+  },
   hdrezka: {
     name: 'HDrezka Studio',
     aliases: ['hdrezka', 'резка'],
@@ -255,7 +263,8 @@ export const KNOWN_STUDIOS: Record<string, StudioDefinition> = {
   },
   ufdub: {
     name: 'UFDUB',
-    aliases: ['ufdub', 'юфдаб'],
+    aliases: ['ufdub', 'юфдаб', 'ufdub group', 'ufdub studio'],
+    logoFile: 'ufdub.svg',
   },
   kaizoku: {
     name: 'Клан Кайзоку',

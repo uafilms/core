@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="grad-paramountcomedy" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d1527"/>
+      <stop offset="100%" stop-color="#1a284c"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" rx="44" fill="url(#grad-paramountcomedy)"/>
+  <rect width="196" height="196" x="2" y="2" rx="42" fill="none" stroke="#38bdf8" stroke-width="2" opacity="0.4"/>
+  <path d="M100 50 L140 120 L60 120 Z" fill="#38bdf8"/><path d="M100 70 L125 120 L75 120 Z" fill="#0d1527"/>
+  <text x="100" y="162" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="700" font-size="16" text-anchor="middle" fill="#ffffff" letter-spacing="0.5">Paramount</text>
+  <text x="100" y="178" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="600" font-size="9" text-anchor="middle" fill="#38bdf8" letter-spacing="2.5" opacity="0.9">COMEDY</text>
+</svg>
