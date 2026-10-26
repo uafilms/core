@@ -15,6 +15,7 @@ export { UaKinoAXProvider, uakinoAxProvider, uakinoAx } from './uakino-ax/main.j
 export { SerialnoProvider, serialnoProvider } from './serialno/main.js';
 export { KinostrainProvider, kinostrainProvider } from './kinostrain/main.js';
 export { UfdubProvider, ufdubProvider } from './ufdub/main.js';
+export { KlonProvider, klonProvider } from './klon/main.js';
 
 import { uakinoProvider } from './uakino/main.js';
 import { kinoukrProvider } from './kinoukr/main.js';
@@ -32,6 +33,7 @@ import { uakinoAxProvider } from './uakino-ax/main.js';
 import { serialnoProvider } from './serialno/main.js';
 import { kinostrainProvider } from './kinostrain/main.js';
 import { ufdubProvider } from './ufdub/main.js';
+import { klonProvider } from './klon/main.js';
 import type { Provider } from '../types/provider.js';
 
 export const providers: Provider[] = [
@@ -56,4 +58,5 @@ export const providers: Provider[] = [
   serialnoProvider,
   kinostrainProvider,
   ufdubProvider,
+  klonProvider,
 ];

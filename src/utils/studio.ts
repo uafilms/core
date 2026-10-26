@@ -175,6 +175,10 @@ export const KNOWN_STUDIOS: Record<string, StudioDefinition> = {
     name: 'Kinostrain',
     aliases: ['kinostrain', 'кінострейн'],
   },
+  klon: {
+    name: 'Klon UA',
+    aliases: ['klon', 'klonua', 'клон'],
+  },
   hdrezka: {
     name: 'HDrezka Studio',
     aliases: ['hdrezka', 'резка'],
