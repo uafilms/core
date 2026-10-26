@@ -34,5 +34,5 @@ export async function searchAniHub(query: string, options?: ProviderSearchOption
   if (items.length === 0) return [];
 
   const results = items.map(mapAniHubItem);
-  return rankSearchResults(results, trimmed, options?.year, options?.type, options?.season);
+  return rankSearchResults(results, trimmed, options?.year, options?.type, options?.season, options?.episode);
 }

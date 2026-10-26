@@ -13,6 +13,8 @@ export async function searchMikai(
   if (!trimmed) return [];
 
   const targetYear = typeof options === 'number' ? options : options?.year;
+  const targetSeason = typeof options === 'object' ? options?.season : undefined;
+  const targetEpisode = typeof options === 'object' ? options?.episode : undefined;
   const signal = typeof options === 'object' ? options?.signal : undefined;
   const targetType = typeof options === 'object' ? options?.type : undefined;
 
@@ -65,17 +67,7 @@ export async function searchMikai(
       };
     });
 
-    const ranked = rankSearchResults(results, query, targetYear, targetType);
-    // Strict threshold: anime title must have some overlap with query
-    const cleanQuery = trimmed.toLowerCase();
-    const queryTokens = cleanQuery.split(/[\s,.:;!?'"-]+/).filter(t => t.length > 2);
-    
-    return ranked.filter(r => {
-      const titleLower = (r.title + ' ' + (r.originalTitle || '')).toLowerCase();
-      if (titleLower.includes(cleanQuery)) return true;
-      if (queryTokens.length > 0 && queryTokens.every(tok => titleLower.includes(tok))) return true;
-      return false;
-    });
+    return rankSearchResults(results, query, targetYear, targetType, targetSeason, targetEpisode);
   } catch {
     return [];
   }

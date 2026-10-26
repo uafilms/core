@@ -130,14 +130,29 @@ export function tokenizeTitle(text?: string): string[] {
   return filtered.length > 0 ? filtered : words;
 }
 
+export interface TitleSeasonInfo {
+  season: number | null;
+  part: number | null;
+}
+
 /**
- * Визначає номер сезону з назви серіалу або аніме (наприклад: "2 сезон", "Season 3", "Частина 2", "II", "Кей-Он!!")
+ * Визначає номер сезону та частини з назви серіалу або аніме
+ * (наприклад: "1 сезон, 2 частина", "Season 3", "Частина 2", "II", "Кей-Он!!")
  */
-export function extractSeasonFromTitle(title?: string): number | null {
-  if (!title) return null;
+export function extractSeasonAndPartFromTitle(title?: string): TitleSeasonInfo {
+  if (!title) return { season: null, part: null };
   const t = title.trim();
 
-  // 1. Пряма вказівка сезону: "2 сезон", "сезон 2", "Season 3", "S2", "2-й сезон"
+  let part: number | null = null;
+  const partMatch =
+    t.match(/(?:^|[^\p{L}\p{N}])(?:частина|part|cour)\s*(\d{1,2})/iu) ||
+    t.match(/(?:^|[^\p{L}\p{N}])(\d{1,2})\s*(?:-?(?:я|а)?\s*)?(?:частина|part|cour)/iu);
+  if (partMatch && partMatch[1]) {
+    const p = parseInt(partMatch[1], 10);
+    if (!isNaN(p) && p > 0 && p < 100) part = p;
+  }
+
+  let season: number | null = null;
   const seasonMatch =
     t.match(/(?:^|[^\p{L}\p{N}])(\d{1,2})\s*(?:-?(?:й|ий|ій)?\s*)?сезон/iu) ||
     t.match(/сезон\s*(\d{1,2})/iu) ||
@@ -145,36 +160,37 @@ export function extractSeasonFromTitle(title?: string): number | null {
     t.match(/(?:^|[^\p{L}\p{N}])s(\d{1,2})(?:[^\p{L}\p{N}]|$)/iu);
   if (seasonMatch && seasonMatch[1]) {
     const s = parseInt(seasonMatch[1], 10);
-    if (!isNaN(s) && s > 0 && s < 100) return s;
+    if (!isNaN(s) && s > 0 && s < 100) season = s;
   }
 
-  // 2. Частина: "2 частина", "Part 2"
-  const partMatch =
-    t.match(/(?:^|[^\p{L}\p{N}])(\d{1,2})\s*(?:-?(?:я|а)?\s*)?частина/iu) ||
-    t.match(/частина\s*(\d{1,2})/iu) ||
-    t.match(/(?:^|[^\p{L}\p{N}])part\s*(\d{1,2})/iu);
-  if (partMatch && partMatch[1]) {
-    const p = parseInt(partMatch[1], 10);
-    if (!isNaN(p) && p > 0 && p < 100) return p;
+  if (season === null && part !== null && !seasonMatch) {
+    season = 1;
   }
 
-  // 3. Римські цифри в кінці або окремим словом: "II" (2), "III" (3), "IV" (4)
-  const romanMatch = t.match(/(?:^|[^\p{L}\p{N}])(IV|III|II)(?:[^\p{L}\p{N}]|$)/iu);
-  if (romanMatch && romanMatch[1]) {
-    const r = romanMatch[1].toUpperCase();
-    if (r === 'II') return 2;
-    if (r === 'III') return 3;
-    if (r === 'IV') return 4;
+  // Римські цифри: "II" (2), "III" (3), "IV" (4)
+  if (season === null) {
+    const romanMatch = t.match(/(?:^|[^\p{L}\p{N}])(IV|III|II)(?:[^\p{L}\p{N}]|$)/iu);
+    if (romanMatch && romanMatch[1]) {
+      const r = romanMatch[1].toUpperCase();
+      if (r === 'II') season = 2;
+      else if (r === 'III') season = 3;
+      else if (r === 'IV') season = 4;
+    }
   }
 
-  // 4. Специфіка аніме: кількість знаків оклику в кінці назви франшизи
-  // Наприклад: "Кей-Он!!" -> 2 сезон, "Кей-Он!" -> 1 сезон, "Working!!" -> 2 сезон, "Working!!!" -> 3 сезон
-  const exclMatch = t.match(/(!{1,4})(?:\s*\(|$)/);
-  if (exclMatch && exclMatch[1]) {
-    return exclMatch[1].length;
+  // Кількість знаків оклику в кінці назви аніме (Working!! -> 2 сезон)
+  if (season === null) {
+    const exclMatch = t.match(/(!{1,4})(?:\s*\(|$)/);
+    if (exclMatch && exclMatch[1]) {
+      season = exclMatch[1].length;
+    }
   }
 
-  return null;
+  return { season, part };
+}
+
+export function extractSeasonFromTitle(title?: string): number | null {
+  return extractSeasonAndPartFromTitle(title).season;
 }
 
 /**
@@ -185,7 +201,8 @@ export function scoreSearchResult(
   query: string,
   targetYear?: number,
   targetType?: MediaType,
-  targetSeason?: number
+  targetSeason?: number,
+  targetEpisode?: number
 ): number {
   const normQ = normalizeTitle(query);
   if (!normQ) return 0;
@@ -294,17 +311,39 @@ export function scoreSearchResult(
     }
   }
 
-  // 6. Вплив сезону (для серіалів/аніме)
+  // 6. Вплив сезону та частини (для серіалів/аніме)
   if (targetType === 'tv' && targetSeason !== undefined && targetSeason > 0) {
-    const detectedSeasonInCandidate =
-      extractSeasonFromTitle(result.title) ||
-      extractSeasonFromTitle(result.originalTitle);
+    const titleInfo =
+      extractSeasonAndPartFromTitle(result.title) ||
+      extractSeasonAndPartFromTitle(result.originalTitle);
+
+    const detectedSeasonInCandidate = titleInfo.season;
+    const detectedPartInCandidate = titleInfo.part;
 
     if (detectedSeasonInCandidate !== null) {
       if (detectedSeasonInCandidate === targetSeason) {
         bestScore += 35; // Великий бонус за точний сезон
       } else {
         bestScore = Math.max(0, bestScore - 55); // Жорсткий штраф за чужий сезон!
+      }
+    } else if (targetSeason === 1 && detectedPartInCandidate === null) {
+      // Якщо шукаємо 1-й сезон і в релізі немає суфікса іншого сезону чи частини (чиста назва франшизи)
+      // — це оригінальний перший сезон!
+      bestScore += 30;
+    }
+
+    // Обробка розділених сезонів (частина 2 / Part 2 / Cour 2):
+    // Якщо запитується перша половина сезону (targetEpisode <= 12 або 1):
+    // реліз частини 2 (епізоди 13+) штрафується, щоб не перекривати епізоди 1-12 частини 1!
+    if (detectedPartInCandidate !== null && detectedPartInCandidate >= 2) {
+      if (targetEpisode === undefined || targetEpisode <= 12) {
+        bestScore = Math.max(0, bestScore - 60);
+      } else {
+        bestScore += 25;
+      }
+    } else if (detectedPartInCandidate === 1) {
+      if (targetEpisode === undefined || targetEpisode <= 12) {
+        bestScore += 15;
       }
     }
   }
@@ -334,10 +373,11 @@ export function isSearchResultMatch(
   targetYear?: number,
   targetType?: MediaType,
   minScore: number = 50,
-  targetSeason?: number
+  targetSeason?: number,
+  targetEpisode?: number
 ): boolean {
   if (!result || !query) return false;
-  return scoreSearchResult(result, query, targetYear, targetType, targetSeason) >= minScore;
+  return scoreSearchResult(result, query, targetYear, targetType, targetSeason, targetEpisode) >= minScore;
 }
 
 /**
@@ -349,19 +389,20 @@ export function rankSearchResults(
   query: string,
   targetYear?: number,
   targetType?: MediaType,
-  targetSeason?: number
+  targetSeason?: number,
+  targetEpisode?: number
 ): SearchResult[] {
   if (!results || results.length === 0 || !query) return [];
 
-  // Якщо запит — IMDb ID (tt...)
-  if (/^tt\d+$/.test(query.trim())) {
+  // Якщо запит — IMDb ID (tt...) і лише 1 результат
+  if (/^tt\d+$/.test(query.trim()) && results.length <= 1) {
     return results;
   }
 
   const scored = results
     .map(result => ({
       result,
-      score: scoreSearchResult(result, query, targetYear, targetType, targetSeason),
+      score: scoreSearchResult(result, query, targetYear, targetType, targetSeason, targetEpisode),
     }))
     .filter(item => item.score >= 50);
 

@@ -93,5 +93,5 @@ export async function searchAnimeOn(query: string, options?: ProviderSearchOptio
   if (items.length === 0) return [];
 
   const results: SearchResult[] = items.map(mapAnimeOnItem);
-  return rankSearchResults(results, trimmed, options?.year);
+  return rankSearchResults(results, trimmed, options?.year, options?.type, options?.season, options?.episode);
 }

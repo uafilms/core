@@ -197,14 +197,14 @@ export class OrchestratorService {
           let target: typeof searchResults[0] | null = null;
 
           if (meta.title) {
-            const ranked = rankSearchResults(searchResults, meta.title, meta.year, meta.type, season);
+            const ranked = rankSearchResults(searchResults, meta.title, meta.year, meta.type, season, episode);
             if (ranked.length > 0) {
               target = ranked[0];
             }
           }
 
           if (!target && meta.originalTitle) {
-            const ranked = rankSearchResults(searchResults, meta.originalTitle, meta.year, meta.type, season);
+            const ranked = rankSearchResults(searchResults, meta.originalTitle, meta.year, meta.type, season, episode);
             if (ranked.length > 0) {
               target = ranked[0];
             }
@@ -212,8 +212,8 @@ export class OrchestratorService {
 
           if (!target) {
             target = searchResults.find((r: any) =>
-              (meta.title && isSearchResultMatch(r, meta.title, meta.year, meta.type, 50, season)) ||
-              (meta.originalTitle && isSearchResultMatch(r, meta.originalTitle, meta.year, meta.type, 50, season))
+              (meta.title && isSearchResultMatch(r, meta.title, meta.year, meta.type, 50, season, episode)) ||
+              (meta.originalTitle && isSearchResultMatch(r, meta.originalTitle, meta.year, meta.type, 50, season, episode))
             ) || null;
           }
 
