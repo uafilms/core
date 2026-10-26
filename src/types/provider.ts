@@ -20,6 +20,7 @@ export interface Provider {
   readonly name: string;
   readonly cdns?: readonly string[];
   readonly priority?: number;
+  readonly animeOnly?: boolean;
   search(query: string, options?: ProviderSearchOptions): Promise<SearchResult[]>;
   get(target: SearchResult | string, options?: ProviderGetOptions): Promise<ProviderResult | null>;
 }

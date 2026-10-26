@@ -611,6 +611,9 @@ streamRouter.get('/master.m3u8', async (c) => {
     headers['Origin'] = 'https://fenixplay.xyz';
   } else if (streamUrl.includes('ufdub.com')) {
     headers['Referer'] = 'https://video.ufdub.com/';
+  } else if (streamUrl.includes('unimay.media')) {
+    headers['Referer'] = 'https://unimay.media/';
+    headers['Origin'] = 'https://unimay.media';
   }
 
   // 4. Fetch manifest and rewrite
