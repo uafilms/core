@@ -71,6 +71,27 @@ export async function searchUfdub(
       const yearMatch = fullText.match(/\b(19\d\d|20\d\d)\b/) || href.match(/-(\d{4})\.html/);
       const year = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
 
+      const shortC = $card.find('.short-c').text().toLowerCase();
+      const isAnimeCard = href.includes('/anime/') || shortC.includes('аніме');
+      const isCartoonCard =
+        href.includes('/cartoon') ||
+        href.includes('/donghua') ||
+        shortC.includes('мульт') ||
+        shortC.includes('донгхуа');
+
+      if (options?.meta) {
+        if (options.meta.isAnime === false && isAnimeCard) {
+          return;
+        }
+        const isMetaAnimation =
+          Boolean(options.meta.isAnime) ||
+          Boolean(options.meta.genres?.some(g => /анімац|мульт|animation/i.test(g)));
+
+        if (!isMetaAnimation && (isCartoonCard || isAnimeCard)) {
+          return;
+        }
+      }
+
       results.push({
         id: href,
         title,
@@ -82,7 +103,14 @@ export async function searchUfdub(
       });
     });
 
-    return rankSearchResults(results, searchTerm, options?.year, options?.type);
+    return rankSearchResults(
+      results,
+      searchTerm,
+      options?.year,
+      options?.type,
+      options?.season,
+      options?.episode
+    );
   } catch {
     return [];
   }

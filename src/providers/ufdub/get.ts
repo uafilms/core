@@ -28,6 +28,9 @@ export async function getUfdub(
       signal: options?.signal,
       year: meta.year,
       type: meta.type,
+      season: options?.season,
+      episode: options?.episode,
+      meta,
     });
     if (results.length > 0) {
       pageUrl = results[0].url || results[0].id;
@@ -58,6 +61,32 @@ export async function getUfdub(
 
     if (!html || typeof html !== 'string') {
       return null;
+    }
+
+    if (meta) {
+      const yearMatch = html.match(/xfsearch\/year\/(\d{4})/i);
+      const pageYear = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
+      if (meta.year && pageYear && Math.abs(meta.year - pageYear) >= 3) {
+        return null;
+      }
+
+      const isAnimePage = pageUrl.includes('/anime/') || /xfsearch\/genres\/[^"]*аніме/i.test(html);
+      if (meta.isAnime === false && isAnimePage) {
+        return null;
+      }
+
+      const isCartoonPage =
+        pageUrl.includes('/cartoon') ||
+        pageUrl.includes('/donghua') ||
+        /xfsearch\/genres\/[^"]*мульт/i.test(html);
+
+      const isMetaAnimation =
+        Boolean(meta.isAnime) ||
+        Boolean(meta.genres?.some(g => /анімац|мульт|animation/i.test(g)));
+
+      if (!isMetaAnimation && (isCartoonPage || isAnimePage)) {
+        return null;
+      }
     }
 
     const $ = cheerio.load(html);

@@ -120,6 +120,14 @@ const STOP_WORDS = new Set([
 ]);
 
 /**
+ * Технічні слова релізів (сезони, серії, формати), які не є частиною унікальної назви
+ */
+const MEDIA_NOISE_WORDS = new Set([
+  'сезон', 'season', 'серія', 'серії', 'серій', 'серіал', 'серіалу',
+  'фільм', 'фільму', 'мультфільм', 'мультсеріал', 'частина', 'part', 'cour'
+]);
+
+/**
  * Розбиває назву на значущі токени
  */
 export function tokenizeTitle(text?: string): string[] {
@@ -142,10 +150,18 @@ export function extractSequelNumber(title?: string): number | null {
   if (!title) return null;
   const t = title.trim();
   const tokens = t.split(/[\s:,\.\-_/\\()]+/).filter(Boolean);
-  for (const tok of tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    const prev = i > 0 ? tokens[i - 1].toLowerCase() : '';
+    // Якщо число йде після "сезон", "season", "s", "серія", "епізод" — це номер сезону/серії, а не сиквелу
+    if (['сезон', 'season', 's', 'серія', 'серії', 'епізод', 'episode'].includes(prev)) {
+      continue;
+    }
+
     if (/^\d{1,2}$/.test(tok)) {
       const n = parseInt(tok, 10);
-      if (n > 0 && n < 100) return n;
+      // Сиквели починаються з 2 (2, 3, 4 тощо); 1 — це перший сезон / оригінальний реліз
+      if (n >= 2 && n < 100) return n;
     }
     const up = tok.toUpperCase();
     if (['II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'].includes(up)) {
@@ -254,15 +270,21 @@ export function scoreSearchResult(
       continue;
     }
 
-    // 2. Префіксний збіг по словах (наприклад, "Посіпаки" і "Посіпаки: Становлення лиходія")
+    // 2. Префіксний збіг по словах
     const isWordPrefix =
       normCand.startsWith(normQ + ' ') ||
       normQ.startsWith(normCand + ' ');
 
     if (isWordPrefix) {
       const ratio = Math.min(normQ.length, normCand.length) / Math.max(normQ.length, normCand.length);
-      bestScore = Math.max(bestScore, 80 + Math.round(ratio * 15));
-      continue;
+      // Якщо довжини суттєво відрізняються, це інший твір (спіноф, підзаголовок, антологія тощо)
+      if (ratio >= 0.75) {
+        bestScore = Math.max(bestScore, Math.round(70 + ratio * 20));
+      } else if (ratio >= 0.5) {
+        bestScore = Math.max(bestScore, Math.round(ratio * 40));
+      } else {
+        bestScore = Math.max(bestScore, Math.round(ratio * 30));
+      }
     }
 
     // 3. Підрядок по словах (якщо рядок достатньо довгий)
@@ -274,24 +296,34 @@ export function scoreSearchResult(
 
     if (isWordSubstring) {
       const ratio = Math.min(normQ.length, normCand.length) / Math.max(normQ.length, normCand.length);
-      bestScore = Math.max(bestScore, 65 + Math.round(ratio * 15));
-      continue;
+      if (ratio >= 0.8) {
+        bestScore = Math.max(bestScore, Math.round(60 + ratio * 20));
+      } else {
+        bestScore = Math.max(bestScore, Math.round(ratio * 35));
+      }
     }
 
     // 4. Збіг токенів
     const candTokens = tokenizeTitle(candTitle);
     if (qTokens.length > 0 && candTokens.length > 0) {
-      // Текстові токени (без чистих цифр, якщо є текст)
-      const textQTokens = qTokens.filter(t => !/^\d+$/.test(t));
+      // Текстові токени (без чистих цифр та технічних слів релізів, якщо є змістовний текст)
+      const textQTokens = qTokens.filter(t => !/^\d+$/.test(t) && !MEDIA_NOISE_WORDS.has(t));
       const tokensToCheck = textQTokens.length > 0 ? textQTokens : qTokens;
 
+      const textCandTokens = candTokens.filter(t => !/^\d+$/.test(t) && !MEDIA_NOISE_WORDS.has(t));
+      const candTokensToCheck = textCandTokens.length > 0 ? textCandTokens : candTokens;
+
       const matchedTokens = tokensToCheck.filter(qt =>
-        candTokens.some(ct => {
+        candTokensToCheck.some(ct => {
           if (ct === qt) return true;
-          // Дозволяємо підрядок лише якщо довжина відрізняється не більше ніж на 2 літери (наприклад відмінки: "дюна" і "дюни")
+          // Дозволяємо підрядок або спільну основу для відмінків (наприклад "дюна" і "дюни")
           if (ct.length >= 4 && qt.length >= 4) {
             const lenDiff = Math.abs(ct.length - qt.length);
             if (lenDiff <= 2 && (ct.includes(qt) || qt.includes(ct))) {
+              return true;
+            }
+            const minLen = Math.min(ct.length, qt.length);
+            if (lenDiff <= 1 && ct.slice(0, minLen - 1) === qt.slice(0, minLen - 1)) {
               return true;
             }
           }
@@ -300,27 +332,43 @@ export function scoreSearchResult(
       );
 
       const matchRatio = matchedTokens.length / tokensToCheck.length;
+      const candCoverage = matchedTokens.length / candTokensToCheck.length;
 
       if (tokensToCheck.length === 1) {
         if (matchRatio === 1) {
-          bestScore = Math.max(bestScore, 70);
+          if (candTokensToCheck.length === 1) {
+            bestScore = Math.max(bestScore, 85);
+          } else if (candCoverage >= 0.65) {
+            bestScore = Math.max(bestScore, 65);
+          } else {
+            // Одне слово збіглося у багатослівному заголовку (наприклад "покоївка" у "президент студради покоївка")
+            bestScore = Math.max(bestScore, Math.round(candCoverage * 40));
+          }
         }
       } else if (tokensToCheck.length === 2) {
         if (matchRatio === 1) {
-          bestScore = Math.max(bestScore, 85);
+          if (candCoverage >= 0.65) {
+            bestScore = Math.max(bestScore, 85);
+          } else {
+            bestScore = Math.max(bestScore, Math.round(candCoverage * 60));
+          }
         } else {
           // Якщо для 2-слівного запиту збіглося лише одне слово — це недостатній збіг
           bestScore = Math.max(bestScore, 20);
         }
       } else {
         if (matchRatio === 1) {
-          bestScore = Math.max(bestScore, 85);
-        } else if (matchRatio >= 0.75) {
+          if (candCoverage >= 0.65) {
+            bestScore = Math.max(bestScore, 85);
+          } else {
+            bestScore = Math.max(bestScore, Math.round(candCoverage * 60));
+          }
+        } else if (matchRatio >= 0.75 && candCoverage >= 0.5) {
           bestScore = Math.max(bestScore, 65);
-        } else if (matchRatio >= 0.6) {
+        } else if (matchRatio >= 0.6 && candCoverage >= 0.4) {
           bestScore = Math.max(bestScore, 35);
         } else {
-          bestScore = Math.max(bestScore, Math.round(matchRatio * 25));
+          bestScore = Math.max(bestScore, Math.round(matchRatio * candCoverage * 30));
         }
       }
     }
@@ -371,8 +419,10 @@ export function scoreSearchResult(
       }
     } else if (targetSeason === 1 && detectedPartInCandidate === null) {
       // Якщо шукаємо 1-й сезон і в релізі немає суфікса іншого сезону чи частини (чиста назва франшизи)
-      // — це оригінальний перший сезон!
-      bestScore += 30;
+      // — це оригінальний перший сезон! Застосовується лише якщо назва вже є валідним збігом.
+      if (bestScore >= 50) {
+        bestScore += 30;
+      }
     }
 
     // Обробка розділених сезонів (частина 2 / Part 2 / Cour 2):
