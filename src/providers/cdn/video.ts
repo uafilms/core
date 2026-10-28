@@ -35,14 +35,19 @@ export async function resolveDirectVideoUrl(
 
   if (!target) return null;
 
-  // Розпакування сторінок плеєрів
+  // Sniplyo / Creavio: Just-In-Time resolution with client IP token binding
   if (
-    target.includes('video.ufdub.com') ||
+    cdn === 'sniplyo' ||
     target.includes('sniplyo.online') ||
     target.includes('creavio.online')
   ) {
+    return await resolveSniplyoUrlForIp(target, clientIp);
+  }
+
+  // Розпакування сторінок плеєрів
+  if (target.includes('video.ufdub.com')) {
     try {
-      const extracted = await extractVod(target);
+      const extracted = await extractVod(target, { clientIp });
       if (extracted?.sources?.[0]?.url) {
         target = extracted.sources[0].url;
       }
@@ -54,21 +59,18 @@ export async function resolveDirectVideoUrl(
   let finalUrl = target;
 
   // Визначення кінцевого URL при редиректах (наприклад VIDEOS.php або подібні)
-  if (target.includes('VIDEOS.php') || target.includes('/video/') || !target.includes('.mp4')) {
+  if (target.includes('VIDEOS.php') || !target.includes('.mp4')) {
     try {
       let currentUrl = target;
       let redirectsCount = 0;
 
       while (redirectsCount < 5) {
         const isUfdub = currentUrl.includes('ufdub.com');
-        const isSniplyo =
-          currentUrl.includes('sniplyo.online') || currentUrl.includes('creavio.online');
 
         const reqHeaders: Record<string, string> = {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
           ...(isUfdub ? { 'Referer': 'https://video.ufdub.com/' } : {}),
-          ...(isSniplyo ? { 'Referer': 'https://moviestape.lat/' } : {}),
         };
 
         const proxyOpts = proxyManager.getConfig(cdn || undefined, currentUrl);
@@ -95,11 +97,6 @@ export async function resolveDirectVideoUrl(
     } catch (err: any) {
       logWarn('stream', `video.mp4 redirect resolution error: ${err.message}`);
     }
-  }
-
-  // Прив'язка токена Sniplyo/Creavio до IP користувача
-  if (finalUrl.includes('sniplyo.online') || finalUrl.includes('creavio.online')) {
-    finalUrl = await resolveSniplyoUrlForIp(finalUrl, clientIp);
   }
 
   return finalUrl;

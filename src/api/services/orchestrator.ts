@@ -9,7 +9,6 @@ import { isSearchResultMatch, rankSearchResults } from '../../utils/sort.js';
 import { cleanStudioName, detectAudioLang, resolveStudioInfo } from '../../utils/studio.js';
 import { omssSourceResolutionCache, mediaParsedTimestampCache } from '../services/cache.js';
 import { runWithProvider } from '../../utils/proxyManager.js';
-import { resolveSniplyoUrlForIp } from '../../providers/cdn/index.js';
 
 interface OrchestratorOptions {
   meta: MediaMetadata;
@@ -296,10 +295,8 @@ export class OrchestratorService {
 
           if (isMp4) {
             let targetUrl = lazy?.directUrl || (lazy?.url && !lazy.url.startsWith('/master.m3u8') ? lazy.url : undefined) || raw.url;
-            if (clientIp && (cdn.id === 'sniplyo' || targetUrl.includes('sniplyo.online') || targetUrl.includes('creavio.online'))) {
-              targetUrl = await resolveSniplyoUrlForIp(targetUrl, clientIp);
-            }
-            playUrl = isWebLike ? `${proxyHost}/video.mp4?url=${encodeURIComponent(targetUrl)}` : targetUrl;
+            const isSniplyo = cdn.id === 'sniplyo' || targetUrl.includes('sniplyo.online') || targetUrl.includes('creavio.online');
+            playUrl = isWebLike || isSniplyo ? `${proxyHost}/video.mp4?url=${encodeURIComponent(targetUrl)}` : targetUrl;
           } else if (isWebLike) {
             if (lazy) {
               if (lazy.cdn && lazy.id) {

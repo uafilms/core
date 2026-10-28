@@ -7,20 +7,49 @@ import { SNIPLYO_FILE_RE, SNIPLYO_PL_RE } from './config.js';
 const sniplyoTokenCache = new Map<string, { token: string; timestamp: number }>();
 const TOKEN_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-export async function resolveSniplyoUrlForIp(url: string, clientIp?: string): Promise<string> {
-  if (!clientIp || clientIp === 'unknown') {
-    return url;
+export function normalizeSniplyoStreamUrl(url: string, fallbackHost = 'creavio.online'): string {
+  if (!url) return url;
+  let clean = url.trim();
+  if (clean.startsWith('//')) clean = `https:${clean}`;
+
+  const match = clean.match(
+    /https?:\/\/((?:sniplyo|creavio)\.online)\/(?:video\/[a-f0-9]{32}\/|stream\.php\?name=)(.+)$/i
+  );
+  if (match) {
+    const host = match[1];
+    let filePath = match[2];
+    try {
+      filePath = decodeURIComponent(filePath);
+    } catch {
+      // ignore
+    }
+    return `https://${host}/stream.php?name=${encodeURIComponent(filePath)}`;
   }
 
+  if (!clean.startsWith('http') && clean.includes('.mp4')) {
+    const trimmed = clean.replace(/^\/+/, '');
+    return `https://${fallbackHost}/stream.php?name=${encodeURIComponent(trimmed)}`;
+  }
+
+  return clean;
+}
+
+export async function resolveSniplyoUrlForIp(url: string, clientIp?: string): Promise<string> {
   const match = url.match(
     /https?:\/\/((?:sniplyo|creavio)\.online)\/(?:video\/[a-f0-9]{32}\/|stream\.php\?name=)(.+)$/i
   );
   if (!match) return url;
 
   const host = match[1];
-  const filePath = match[2];
+  let filePath = match[2];
+  try {
+    filePath = decodeURIComponent(filePath);
+  } catch {
+    // ignore
+  }
 
-  const cacheKey = `${host}:${clientIp}`;
+  const effectiveIp = clientIp && clientIp !== 'unknown' ? clientIp : undefined;
+  const cacheKey = `${host}:${effectiveIp || 'direct'}`;
   const cached = sniplyoTokenCache.get(cacheKey);
   let token =
     cached && Date.now() - cached.timestamp < TOKEN_CACHE_TTL ? cached.token : undefined;
@@ -33,7 +62,7 @@ export async function resolveSniplyoUrlForIp(url: string, clientIp?: string): Pr
           'Referer': 'https://moviestape.lat/',
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-          'X-Forwarded-For': clientIp,
+          ...(effectiveIp ? { 'X-Forwarded-For': effectiveIp } : {}),
         },
         timeout: 5000,
       });
@@ -93,20 +122,25 @@ export async function parseSniplyoPlayerHtml(
     let fileUrl = fileMatch[1].trim();
     if (fileUrl.startsWith('//')) fileUrl = `https:${fileUrl}`;
 
-    if (options.clientIp) {
-      fileUrl = await resolveSniplyoUrlForIp(fileUrl, options.clientIp);
+    let host = 'creavio.online';
+    try {
+      host = new URL(pageUrl).hostname;
+    } catch {
+      // ignore
     }
+
+    const streamUrl = normalizeSniplyoStreamUrl(fileUrl, host);
 
     return {
       sources: [{
         title: 'Moviestape',
-        url: fileUrl,
+        url: streamUrl,
         mime: 'video/mp4',
         lazy: {
           cdn: 'sniplyo',
           type: 'vod',
-          url: fileUrl,
-          directUrl: fileUrl,
+          url: streamUrl,
+          directUrl: streamUrl,
         },
       }],
     };
@@ -159,17 +193,20 @@ export async function parseSniplyoPlayerHtml(
 export function parseSniplyoFolderTree(items: any[]): VodExtractionResult | null {
   // If flat array of movie sources: [{ title, file }]
   if (items[0]?.file && !items[0]?.folder) {
-    const sources: StreamSource[] = items.map((item) => ({
-      title: item.title || 'Moviestape',
-      url: item.file,
-      mime: 'video/mp4',
-      lazy: {
-        cdn: 'sniplyo',
-        type: 'vod',
-        url: item.file,
-        directUrl: item.file,
-      },
-    }));
+    const sources: StreamSource[] = items.map((item) => {
+      const streamUrl = normalizeSniplyoStreamUrl(item.file);
+      return {
+        title: item.title || 'Moviestape',
+        url: streamUrl,
+        mime: 'video/mp4',
+        lazy: {
+          cdn: 'sniplyo',
+          type: 'vod',
+          url: streamUrl,
+          directUrl: streamUrl,
+        },
+      };
+    });
     return { sources: sortSources(sources) };
   }
 
@@ -202,15 +239,17 @@ export function parseSniplyoFolderTree(items: any[]): VodExtractionResult | null
         epMap.set(epNum, []);
       }
 
+      const streamUrl = normalizeSniplyoStreamUrl(node.file);
+
       epMap.get(epNum)!.push({
         title: dub || 'Moviestape',
-        url: node.file,
+        url: streamUrl,
         mime: 'video/mp4',
         lazy: {
           cdn: 'sniplyo',
           type: 'vod',
-          url: node.file,
-          directUrl: node.file,
+          url: streamUrl,
+          directUrl: streamUrl,
         },
       });
     }

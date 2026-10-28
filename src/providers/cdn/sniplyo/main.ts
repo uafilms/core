@@ -85,4 +85,5 @@ export {
   parseSniplyoPlayerHtml,
   parseSniplyoFolderTree,
   resolveSniplyoUrlForIp,
+  normalizeSniplyoStreamUrl,
 } from './extract.js';

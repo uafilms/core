@@ -336,7 +336,7 @@ streamRouter.get('/video.mp4', async (c) => {
   }
 
   c.header('Access-Control-Allow-Origin', '*');
-  c.header('Cache-Control', 'public, max-age=14400');
+  c.header('Cache-Control', 'private, no-cache, no-store, must-revalidate');
   return c.redirect(finalUrl, 302);
 });
 
