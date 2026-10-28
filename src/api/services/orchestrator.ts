@@ -311,10 +311,11 @@ export class OrchestratorService {
               playUrl = `${proxyHost}/master.m3u8?url=${encodeURIComponent(raw.url)}`;
             }
 
-            // Додаємо ?cors=ashdi лише для веб-платформи (браузер вимагає CORS для ashdi сегментів).
+            // Додаємо ?cors=1 лише для веб-платформи: браузер вимагає CORS
+            // для сегментів CDN, які його не віддають (ashdi, tortuga).
             // Lampa-клієнти (platform=tv) відтворюють напряму без CORS-проксі.
-            if (platform === 'web' && cdn.id === 'ashdi' && playUrl.includes('/master.m3u8') && !playUrl.includes('cors=')) {
-              playUrl += (playUrl.includes('?') ? '&' : '?') + 'cors=ashdi';
+            if (platform === 'web' && (cdn.id === 'ashdi' || cdn.id === 'tortuga') && playUrl.includes('/master.m3u8') && !playUrl.includes('cors=')) {
+              playUrl += (playUrl.includes('?') ? '&' : '?') + 'cors=1';
             }
           } else {
             // Native platform: if directUrl is an API endpoint, proxy it via master.m3u8
