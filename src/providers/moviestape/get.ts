@@ -31,6 +31,7 @@ export async function getMoviestape(
       season: options?.season,
       episode: options?.episode,
       meta,
+      clientIp: options?.clientIp,
     });
     if (results.length > 0) {
       pageUrl = results[0].url || results[0].id;
@@ -45,7 +46,8 @@ export async function getMoviestape(
     pageUrl = `${BASE_URL}${pageUrl.startsWith('/') ? '' : '/'}${pageUrl}`;
   }
 
-  const cached = moviestapeCache.get(pageUrl);
+  const cacheKey = `${pageUrl}:${options?.clientIp || 'default'}`;
+  const cached = moviestapeCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.result;
   }
@@ -119,6 +121,7 @@ export async function getMoviestape(
         const vodResult = await extractVod(iframeSrc, {
           referer: pageUrl,
           signal: options?.signal,
+          clientIp: options?.clientIp,
         });
 
         if (!vodResult) continue;
@@ -169,7 +172,7 @@ export async function getMoviestape(
         seasons: sortSeasons(seasons),
       };
 
-      moviestapeCache.set(pageUrl, { result, timestamp: Date.now() });
+      moviestapeCache.set(cacheKey, { result, timestamp: Date.now() });
       return result;
     }
 
@@ -180,7 +183,7 @@ export async function getMoviestape(
         sources: sortSources(allMovieSources),
       };
 
-      moviestapeCache.set(pageUrl, { result, timestamp: Date.now() });
+      moviestapeCache.set(cacheKey, { result, timestamp: Date.now() });
       return result;
     }
 

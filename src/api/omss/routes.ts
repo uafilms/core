@@ -13,7 +13,7 @@ import {
   type MediaParseInfo,
 } from '../services/cache.js';
 import { applyFilterToSources } from './filter.js';
-import { enforceParsingSecurity } from '../services/security.js';
+import { enforceParsingSecurity, getClientIp } from '../services/security.js';
 import { isTurnstileEnabled } from '../services/turnstile.js';
 
 export const omssRouter = new Hono();
@@ -88,6 +88,7 @@ omssRouter.get('/v1/movies/:id', async (c) => {
   const host = c.req.header('host') || 'localhost:3000';
   const proto = c.req.header('x-forwarded-proto') || 'http';
   const proxyHost = `${proto}://${host}`;
+  const clientIp = getClientIp(c);
 
   if (sse) {
     return streamSSE(c, async (stream) => {
@@ -98,6 +99,7 @@ omssRouter.get('/v1/movies/:id', async (c) => {
           providerId: provider,
           platform,
           proxyHost,
+          clientIp,
           onProviderResult: async (chunk) => {
             let filteredSources = chunk.sources;
             if (filter) {
@@ -145,6 +147,7 @@ omssRouter.get('/v1/movies/:id', async (c) => {
       providerId: provider,
       platform,
       proxyHost,
+      clientIp,
     });
 
     // Apply filtering
@@ -242,6 +245,7 @@ omssRouter.get('/v1/tv/:id/seasons/:s/episodes/:e', async (c) => {
   const host = c.req.header('host') || 'localhost:3000';
   const proto = c.req.header('x-forwarded-proto') || 'http';
   const proxyHost = `${proto}://${host}`;
+  const clientIp = getClientIp(c);
 
   if (sse) {
     return streamSSE(c, async (stream) => {
@@ -254,6 +258,7 @@ omssRouter.get('/v1/tv/:id/seasons/:s/episodes/:e', async (c) => {
           providerId: provider,
           platform,
           proxyHost,
+          clientIp,
           onProviderResult: async (chunk) => {
             let filteredSources = chunk.sources;
             if (filter) {
@@ -303,6 +308,7 @@ omssRouter.get('/v1/tv/:id/seasons/:s/episodes/:e', async (c) => {
       providerId: provider,
       platform,
       proxyHost,
+      clientIp,
     });
 
     let sources = result.sources;

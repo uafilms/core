@@ -1,6 +1,6 @@
 import type { VodExtractor, VodExtractionOptions, VodExtractionResult } from '../../../types/vod.js';
 import { getHtml } from '../../../utils/http.js';
-import { parseSniplyoPlayerHtml } from './extract.js';
+import { parseSniplyoPlayerHtml, resolveSniplyoUrlForIp } from './extract.js';
 import { SNIPLYO_REFERER } from './config.js';
 
 export class SniplyoVodExtractor implements VodExtractor {
@@ -43,16 +43,19 @@ export class SniplyoVodExtractor implements VodExtractor {
 
     // Якщо це прямий MP4 потік
     if (targetUrl.includes('.mp4') && !targetUrl.includes('stream.php')) {
+      const finalUrl = options.clientIp
+        ? await resolveSniplyoUrlForIp(targetUrl, options.clientIp)
+        : targetUrl;
       return {
         sources: [{
           title: 'Moviestape',
-          url: targetUrl,
+          url: finalUrl,
           mime: 'video/mp4',
           lazy: {
             cdn: 'sniplyo',
             type: 'vod',
-            url: targetUrl,
-            directUrl: targetUrl,
+            url: finalUrl,
+            directUrl: finalUrl,
           },
         }],
       };
@@ -64,6 +67,7 @@ export class SniplyoVodExtractor implements VodExtractor {
         headers: {
           'Referer': options.referer || SNIPLYO_REFERER,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          ...(options.clientIp ? { 'X-Forwarded-For': options.clientIp } : {}),
           ...options.headers,
         },
       });

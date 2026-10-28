@@ -9,6 +9,7 @@ import { isSearchResultMatch, rankSearchResults } from '../../utils/sort.js';
 import { cleanStudioName, detectAudioLang, resolveStudioInfo } from '../../utils/studio.js';
 import { omssSourceResolutionCache, mediaParsedTimestampCache } from '../services/cache.js';
 import { runWithProvider } from '../../utils/proxyManager.js';
+import { resolveSniplyoUrlForIp } from '../../providers/cdn/index.js';
 
 interface OrchestratorOptions {
   meta: MediaMetadata;
@@ -18,6 +19,7 @@ interface OrchestratorOptions {
   providerId?: string;
   platform?: PlatformType;
   proxyHost: string;
+  clientIp?: string;
   onProviderResult?: (chunk: {
     provider: string;
     providerName?: string;
@@ -53,10 +55,10 @@ export class OrchestratorService {
     subtitles: OmssSubtitle[];
     diagnostics: OmssDiagnostic[];
   }> {
-    const { meta, type, season = 1, episode = 1, providerId, platform = 'web', proxyHost, onProviderResult } = options;
+    const { meta, type, season = 1, episode = 1, providerId, platform = 'web', proxyHost, clientIp, onProviderResult } = options;
 
     const mediaKey = meta.imdbId || meta.id || meta.title;
-    const cacheKey = `orchestrator:${mediaKey}:${type}:${season}:${episode}:${providerId || 'all'}:${platform}:${proxyHost}`;
+    const cacheKey = `orchestrator:${mediaKey}:${type}:${season}:${episode}:${providerId || 'all'}:${platform}:${proxyHost}:${clientIp || 'default'}`;
 
     // 24h caching for source resolution (when not streaming SSE or as baseline)
     if (!onProviderResult) {
@@ -171,6 +173,7 @@ export class OrchestratorService {
             season,
             episode,
             signal: abortController.signal,
+            clientIp,
           };
           const query = meta.imdbId || meta.title;
           let searchResults = await provider.search(query, searchOptions);
@@ -221,7 +224,7 @@ export class OrchestratorService {
             return;
           }
 
-          const res = await provider.get(target, { meta, season, episode, signal: abortController.signal });
+          const res = await provider.get(target, { meta, season, episode, signal: abortController.signal, clientIp });
           if (!res || abortController.signal.aborted || isRedundant(provider)) return;
 
           let rawSources: StreamSource[] = [];
@@ -284,7 +287,10 @@ export class OrchestratorService {
           const isMp4 = raw.mime === 'video/mp4' || raw.url?.includes('.mp4') || raw.url?.includes('VIDEOS.php') || raw.lazy?.directUrl?.includes('.mp4');
 
           if (isMp4) {
-            const targetUrl = lazy?.directUrl || (lazy?.url && !lazy.url.startsWith('/master.m3u8') ? lazy.url : undefined) || raw.url;
+            let targetUrl = lazy?.directUrl || (lazy?.url && !lazy.url.startsWith('/master.m3u8') ? lazy.url : undefined) || raw.url;
+            if (clientIp && (cdn.id === 'sniplyo' || targetUrl.includes('sniplyo.online') || targetUrl.includes('creavio.online'))) {
+              targetUrl = await resolveSniplyoUrlForIp(targetUrl, clientIp);
+            }
             playUrl = isWebLike ? `${proxyHost}/video.mp4?url=${encodeURIComponent(targetUrl)}` : targetUrl;
           } else if (isWebLike) {
             if (lazy) {

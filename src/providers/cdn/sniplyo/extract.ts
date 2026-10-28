@@ -8,14 +8,7 @@ const sniplyoTokenCache = new Map<string, { token: string; timestamp: number }>(
 const TOKEN_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 export async function resolveSniplyoUrlForIp(url: string, clientIp?: string): Promise<string> {
-  if (
-    !clientIp ||
-    clientIp === 'unknown' ||
-    clientIp === '127.0.0.1' ||
-    clientIp === '::1' ||
-    clientIp.startsWith('192.168.') ||
-    clientIp.startsWith('10.')
-  ) {
+  if (!clientIp || clientIp === 'unknown') {
     return url;
   }
 
@@ -100,6 +93,10 @@ export async function parseSniplyoPlayerHtml(
     let fileUrl = fileMatch[1].trim();
     if (fileUrl.startsWith('//')) fileUrl = `https:${fileUrl}`;
 
+    if (options.clientIp) {
+      fileUrl = await resolveSniplyoUrlForIp(fileUrl, options.clientIp);
+    }
+
     return {
       sources: [{
         title: 'Moviestape',
@@ -134,6 +131,7 @@ export async function parseSniplyoPlayerHtml(
         headers: {
           'Referer': pageUrl,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          ...(options.clientIp ? { 'X-Forwarded-For': options.clientIp } : {}),
           ...options.headers,
         },
       });

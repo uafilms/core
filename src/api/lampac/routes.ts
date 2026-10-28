@@ -4,6 +4,7 @@ import type { MediaType, MediaMetadata } from '../../types/media.js';
 import type { OmssSource } from '../types.js';
 import { TmdbService } from '../services/tmdb.js';
 import { OrchestratorService } from '../services/orchestrator.js';
+import { getClientIp } from '../services/security.js';
 
 export const lampacRouter = new Hono();
 
@@ -297,6 +298,7 @@ async function handleCdnBalancer(c: any) {
   const proto = c.req.header('x-forwarded-proto') || (c.req.url.startsWith('https') ? 'https' : 'http');
   const host = c.req.header('x-forwarded-host') || c.req.header('host') || 'localhost:3000';
   const proxyHost = `${proto}://${host}`;
+  const clientIp = getClientIp(c);
   const asJson = shouldReturnJson(c);
 
   const encTitle = encodeURIComponent(meta.title || query.title || '');
@@ -386,6 +388,7 @@ async function handleCdnBalancer(c: any) {
         episode: 1,
         platform: 'tv',
         proxyHost,
+        clientIp,
       });
 
       const filteredProbeSources = (probeRes.sources || []).filter((s) => matchesCdn(s, cdnSlug));
@@ -465,6 +468,7 @@ ${voiceHtml}
     type: 'movie',
     platform: 'tv',
     proxyHost,
+    clientIp,
   });
 
   const sources = (result.sources || []).filter((s) => matchesCdn(s, cdnSlug));
@@ -564,6 +568,7 @@ async function handleVideo(c: any) {
   const proto = c.req.header('x-forwarded-proto') || (c.req.url.startsWith('https') ? 'https' : 'http');
   const host = c.req.header('x-forwarded-host') || c.req.header('host') || 'localhost:3000';
   const proxyHost = `${proto}://${host}`;
+  const clientIp = getClientIp(c);
 
   const isSerial = season !== undefined && season !== null && season !== '';
   const mediaType: MediaType = isSerial ? 'tv' : 'movie';
@@ -603,6 +608,7 @@ async function handleVideo(c: any) {
     episode: e,
     platform: 'tv',
     proxyHost,
+    clientIp,
   });
 
   const sources = (result.sources || []).filter((src) => matchesCdn(src, cdnSlug));

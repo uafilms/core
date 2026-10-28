@@ -6,6 +6,7 @@ export interface VodExtractionOptions {
   referer?: string;
   type?: MediaType;
   prefetch?: boolean;
+  clientIp?: string;
 }
 
 export interface VodExtractionResult {

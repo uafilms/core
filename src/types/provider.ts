@@ -7,6 +7,7 @@ export interface ProviderSearchOptions {
   season?: number;
   episode?: number;
   meta?: MediaMetadata;
+  clientIp?: string;
 }
 
 export interface ProviderGetOptions {
@@ -14,6 +15,7 @@ export interface ProviderGetOptions {
   season?: number;
   episode?: number;
   meta?: MediaMetadata;
+  clientIp?: string;
 }
 
 export interface Provider {
