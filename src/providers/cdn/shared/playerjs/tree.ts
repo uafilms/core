@@ -47,21 +47,30 @@ export function parsePlayerjsDubTree(parsed: any, opts: DubTreeOptions): VodExtr
     const titleStr = String(node.title || '').trim();
 
     const sMatch = titleStr.match(opts.seasonRe);
-    if (sMatch) currentCtx.season = parseInt(sMatch[1], 10);
+    if (sMatch) {
+      const sVal = sMatch[1] || sMatch[2];
+      if (sVal) currentCtx.season = parseInt(sVal, 10);
+    }
 
     const eMatch = titleStr.match(opts.episodeRe);
-    if (eMatch) currentCtx.episode = parseInt(eMatch[1], 10);
+    if (eMatch) {
+      const eVal = eMatch[1] || eMatch[2];
+      if (eVal) currentCtx.episode = parseInt(eVal, 10);
+    }
 
-    if (opts.dubFromAnyNode) {
-      if (node.title && !currentCtx.dub) currentCtx.dub = titleStr;
-    } else if (titleStr && !sMatch && !eMatch && !currentCtx.dub && Array.isArray(node.folder)) {
-      currentCtx.dub = titleStr;
+    let cleanDub = titleStr;
+    if (sMatch) cleanDub = cleanDub.replace(sMatch[0], '');
+    if (eMatch) cleanDub = cleanDub.replace(eMatch[0], '');
+    cleanDub = cleanDub.replace(/[\(\)\[\]]/g, '').trim().replace(/^[\s\-\.]+|[\s\-\.]+$/g, '');
+
+    if (cleanDub.length > 0 && !/^\d+$/.test(cleanDub)) {
+      currentCtx.dub = cleanDub;
     }
 
     if (node.file && typeof node.file === 'string') {
       const s = currentCtx.season || 1;
       const e = currentCtx.episode || 1;
-      const dubTitle = currentCtx.dub || titleStr || opts.defaultTitle;
+      const dubTitle = currentCtx.dub || opts.defaultTitle;
 
       if (!seasonsMap.has(s)) seasonsMap.set(s, new Map());
       const epMap = seasonsMap.get(s)!;

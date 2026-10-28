@@ -26,6 +26,15 @@ export class HdvbVodExtractor implements VodExtractor {
 
     const normalizedUrl = normalizeHdvbUrl(targetUrl);
 
+    // Guard against non-HDVB domains
+    const isHdvbHost =
+      normalizedUrl.includes('hdvb') ||
+      normalizedUrl.includes('vidcache') ||
+      normalizedUrl.includes('embd.');
+    if (!isHdvbHost) {
+      return null;
+    }
+
     // Якщо це прямий m3u8 (і не наш проксі)
     if (normalizedUrl.includes('.m3u8') && !normalizedUrl.includes('/master.m3u8')) {
       return {

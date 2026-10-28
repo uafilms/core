@@ -218,7 +218,7 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
     if (res) return res;
   }
 
-  if (url.includes('cdn=hdvb') || url.includes('hdvbua') || url.includes('vidcache')) {
+  if (url.includes('cdn=hdvb') || url.includes('hdvb') || url.includes('vidcache') || url.includes('embd.')) {
     const res = await runWithProvider(hdvbVod.name, () => hdvbVod.extract(url, options));
     if (res) return res;
   }

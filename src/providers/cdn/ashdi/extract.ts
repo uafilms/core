@@ -60,8 +60,8 @@ export function parseAshdiPlayerHtml(html: string, _pageUrl: string): VodExtract
 
   return parsePlayerjsDubTree(parsed, {
     defaultTitle: 'Ashdi',
-    seasonRe: /(?:сезон|season)\s*(\d+)/i,
-    episodeRe: /(?:серія|серiя|episode|ep|e)\s*(\d+)/i,
+    seasonRe: /(?:season|сезон|s)\s*0*(\d+)|(\d+)\s*(?:-?(?:й|ий|ій)?\s*)?(?:season|сезон)/i,
+    episodeRe: /(?:episode|серія|серiя|епізод|ep|e)\s*0*(\d+)|(\d+)\s*(?:-?(?:а|я|тя)?\s*)?(?:серія|серiя|епізод|episode|ep)/i,
     normalizeUrl: normalizeAshdiUrl,
     dubFromAnyNode: true,
     fallbackPoster: poster,

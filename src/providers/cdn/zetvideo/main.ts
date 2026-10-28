@@ -37,6 +37,10 @@ export class ZetVideoVodExtractor implements VodExtractor {
       targetUrl = 'https:' + targetUrl;
     }
 
+    if (!targetUrl.includes('zetvideo') && !targetUrl.includes('cdn=zetvideo')) {
+      return null;
+    }
+
     if (targetUrl.includes('.m3u8') && !targetUrl.includes('/master.m3u8')) {
       return {
         sources: [{

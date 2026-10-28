@@ -81,15 +81,17 @@ export function parseHdvbPlayerHtml(html: string, _pageUrl: string): VodExtracti
       const rawTitle: string = (item.title || '').trim();
 
       // Пошук сезону
-      const sMatch = rawTitle.match(/(?:season|сезон|s)\s*(\d+)/i) || rawTitle.match(/(\d+)\s*(?:season|сезон)/i);
+      const sMatch = rawTitle.match(/(?:season|сезон|s)\s*0*(\d+)|(\d+)\s*(?:-?(?:й|ий|ій)?\s*)?(?:season|сезон)/i);
       if (sMatch) {
-        currentCtx.season = parseInt(sMatch[1], 10);
+        const sVal = sMatch[1] || sMatch[2];
+        if (sVal) currentCtx.season = parseInt(sVal, 10);
       }
 
       // Пошук серії
-      const eMatch = rawTitle.match(/(?:episode|серія|серiя|епізод|ep|e)\s*(\d+)/i) || rawTitle.match(/(\d+)\s*(?:episode|серія|серiя|епізод)/i);
+      const eMatch = rawTitle.match(/(?:episode|серія|серiя|епізод|ep|e)\s*0*(\d+)|(\d+)\s*(?:-?(?:а|я|тя)?\s*)?(?:серія|серiя|епізод|episode|ep)/i);
       if (eMatch) {
-        currentCtx.episode = parseInt(eMatch[1], 10);
+        const eVal = eMatch[1] || eMatch[2];
+        if (eVal) currentCtx.episode = parseInt(eVal, 10);
       }
 
       if (item.folder && Array.isArray(item.folder)) {

@@ -61,6 +61,15 @@ export class AshdiVodExtractor implements VodExtractor {
 
     const normalizedUrl = normalizeAshdiUrl(targetUrl);
 
+    // Guard against non-Ashdi domains
+    const isAshdiHost =
+      normalizedUrl.includes('ashdi') ||
+      normalizedUrl.includes('0yql3tj') ||
+      normalizedUrl.includes('oyql3tj');
+    if (!isAshdiHost) {
+      return null;
+    }
+
     if (normalizedUrl.includes('.m3u8') && !normalizedUrl.includes('/master.m3u8')) {
       return {
         sources: [{
