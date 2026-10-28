@@ -279,6 +279,7 @@ export class OrchestratorService {
             }
           }
 
+          const cdn = detectCdn({ ...raw, lazy }, provider.name);
           const isWebLike = platform === 'web' || platform === 'tv';
           const isMp4 = raw.mime === 'video/mp4' || raw.url?.includes('.mp4') || raw.url?.includes('VIDEOS.php') || raw.lazy?.directUrl?.includes('.mp4');
 
@@ -303,6 +304,12 @@ export class OrchestratorService {
             } else if (raw.url.startsWith('http')) {
               playUrl = `${proxyHost}/master.m3u8?url=${encodeURIComponent(raw.url)}`;
             }
+
+            // Додаємо ?cors=ashdi лише для веб-платформи (браузер вимагає CORS для ashdi сегментів).
+            // Lampa-клієнти (platform=tv) відтворюють напряму без CORS-проксі.
+            if (platform === 'web' && cdn.id === 'ashdi' && playUrl.includes('/master.m3u8') && !playUrl.includes('cors=')) {
+              playUrl += (playUrl.includes('?') ? '&' : '?') + 'cors=ashdi';
+            }
           } else {
             // Native platform: if directUrl is an API endpoint, proxy it via master.m3u8
             if (lazy) {
@@ -318,8 +325,6 @@ export class OrchestratorService {
               }
             }
           }
-
-          const cdn = detectCdn(raw, provider.name);
 
           const rawAudioName = raw.audio || raw.title || 'Озвучення';
           const studioCleaned = cleanStudioName(rawAudioName);

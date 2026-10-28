@@ -30,6 +30,7 @@ export function stripCorsProxy(url: string): string {
 
 export interface ParsePlaylistOptions {
   corsProxySegments?: boolean;
+  corsParam?: string;
   /**
    * Переписує посилання на сегменти у `${segmentProxyBase}${encodeURIComponent(url)}`.
    * Потрібно для CDN, які прив'язують підписані посилання до IP запитувача
@@ -105,7 +106,8 @@ export function parseMasterPlaylist(
   proxyHost: string,
   options: ParsePlaylistOptions = {}
 ): string {
-  const { corsProxySegments = false, segmentProxyBase, subtitles = [] } = options;
+  const { corsProxySegments = false, corsParam, segmentProxyBase, subtitles = [] } = options;
+  const corsSuffix = corsParam ? `&cors=${encodeURIComponent(corsParam)}` : '';
   const lines = content.split('\n');
   const newLines: string[] = [];
 
@@ -186,7 +188,7 @@ export function parseMasterPlaylist(
             const mediaUrl = normalizeFenixCdnHost(new URL(mediaUriMatch[1], cleanBaseUrl).href);
             const rewritten = /\.(vtt|srt)(\?|$)/i.test(mediaUrl)
               ? `${proxyHost}/subs.m3u8?url=${encodeURIComponent(mediaUrl)}`
-              : `${proxyHost}/master.m3u8?url=${encodeURIComponent(mediaUrl)}`;
+              : `${proxyHost}/master.m3u8?url=${encodeURIComponent(mediaUrl)}${corsSuffix}`;
             newLines.push(mediaLine.replace(mediaUriMatch[1], rewritten));
           } catch {
             newLines.push(mediaLine);
@@ -234,7 +236,7 @@ export function parseMasterPlaylist(
         ) {
           streamTargetUrl = streamTargetUrl.replace(/\/hls\/\d+\//, `/hls/${currentStreamHeight}/`);
         }
-        newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(streamTargetUrl)}`);
+        newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(streamTargetUrl)}${corsSuffix}`);
         nextIsStreamUrl = false;
         currentStreamHeight = undefined;
       } else if (nextIsSegmentUrl) {
@@ -255,7 +257,7 @@ export function parseMasterPlaylist(
             /\/(index|master|playlist)(\/|\?|$)/i.test(absoluteUrl));
 
         if (looksLikePlaylist) {
-          newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(absoluteUrl)}`);
+          newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(absoluteUrl)}${corsSuffix}`);
         } else {
           const isMooncdn = /mooncdn\.(online|xyz)|moonanime\.art/i.test(absoluteUrl);
           if (segmentProxyBase) {

@@ -102,7 +102,7 @@ export function useOmssSources({ data, type, id, season, episode }) {
       const authToken = localStorage.getItem('uafilms_auth_token');
       const tokenParam = turnstileToken && turnstileToken !== 'disabled' ? `&turnstile_token=${encodeURIComponent(turnstileToken)}` : '';
       const authParam = authToken ? `&auth_token=${encodeURIComponent(authToken)}` : '';
-      const sseUrl = `${baseUrl}${subpath}?sse=1${tokenParam}${authParam}`;
+      const sseUrl = `${baseUrl}${subpath}?sse=1&platform=web${tokenParam}${authParam}`;
 
       try {
         eventSource = new EventSource(sseUrl);
@@ -165,7 +165,7 @@ export function useOmssSources({ data, type, id, season, episode }) {
         };
       } catch (err) {
         console.warn('SSE not supported or failed, falling back to standard GET:', err);
-        api.get(subpath)
+        api.get(`${subpath}?platform=web`)
           .then((res) => {
             if (cancelled) return;
             const list = sortWithFavoriteCdns(res.data?.sources || []);

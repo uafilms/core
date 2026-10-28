@@ -595,6 +595,24 @@ streamRouter.get('/master.m3u8', async (c) => {
   const isUakinoAx = streamUrl.includes('cdn.uakino.ax');
   const isFenix = streamUrl.includes('fenixplay.xyz');
 
+  const corsQuery = c.req.query('cors');
+  const corsValues = corsQuery
+    ? corsQuery.toLowerCase().split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const corsActive = corsValues.length > 0 && (
+    corsValues.includes('1') ||
+    corsValues.includes('true') ||
+    corsValues.includes('all') ||
+    (isAshdi && corsValues.includes('ashdi')) ||
+    (Boolean(cdn) && corsValues.includes(cdn!.toLowerCase())) ||
+    (isMoon && corsValues.includes('moonanime')) ||
+    (isBamboo && corsValues.includes('bamboo')) ||
+    (isHdvb && corsValues.includes('hdvb')) ||
+    (isFranko && corsValues.includes('franko')) ||
+    (isZetvideo && corsValues.includes('zetvideo'))
+  );
+
   if (isAshdi) {
     headers['Origin'] = 'https://ashdi.vip';
     headers['Referer'] = 'https://ashdi.vip/';
@@ -669,7 +687,7 @@ streamRouter.get('/master.m3u8', async (c) => {
     const proto = c.req.header('x-forwarded-proto') || 'http';
     const proxyHost = `${proto}://${host}`;
 
-    const cacheKey = `${proxyHost}:${streamUrl}:${extractedSubtitles.length}`;
+    const cacheKey = `${proxyHost}:${streamUrl}:${extractedSubtitles.length}:${corsActive ? (corsQuery || 'cors') : 'direct'}`;
     // Master playlists are dynamic or short-lived, while child media playlists can be cached briefly
     const isMaster = manifestData.includes('#EXT-X-STREAM-INF');
 
@@ -707,11 +725,10 @@ streamRouter.get('/master.m3u8', async (c) => {
       streamUrl,
       proxyHost,
       {
-        // CORS-проксі потрібен лише ashdi: його сегменти віддаються з жорстким
-        // Access-Control-Allow-Origin: https://ashdi.vip і вимагають Referer.
-        // Решта CDN (moonanime, dawn, zetvideo, hdvb, fenix, bamboo) мають
-        // дозвільний CORS, тому браузер тягне їхні сегменти напряму.
-        corsProxySegments: isAshdi,
+        // CORS-проксі додається до сегментів лише коли передано відповідний параметр ?cors=...
+        // Клієнти, які підтримують пряме відтворення (Lampa), не передають ?cors= і тягнуть сегменти напряму.
+        corsProxySegments: corsActive,
+        corsParam: corsQuery || undefined,
         // сегменти uakino.ax підписані на IP сервера, тому тягнемо їх самі
         segmentProxyBase: isUakinoAx ? `${proxyHost}/segment?url=` : undefined,
         subtitles: extractedSubtitles.filter((sub) => sub.format !== 'ass'),
