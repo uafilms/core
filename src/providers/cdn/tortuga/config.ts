@@ -7,6 +7,12 @@ export const TORTUGA_VOD_FILE_RE = /file\s*:\s*["']([A-Za-z0-9+/=]+)["']/;
 /** `file:` на /embed/ сторінці — довший base64 з JSON-деревом сезонів. */
 export const TORTUGA_EMBED_FILE_RE = /file\s*:\s*["']([A-Za-z0-9+/=]{20,})["']/;
 
+/**
+ * `fbu:` — мапа hash → канонічний URL. Підписані `/t/<token>/<hash>/` лінки
+ * прив'язані до IP і дають 403 з чужої адреси, канонічні `/hls/` — відкриті.
+ */
+export const TORTUGA_FBU_RE = /fbu\s*:\s*["']([A-Za-z0-9+/=]+)["']/;
+
 export const TORTUGA_POSTER_RE = /poster\s*:\s*["']([A-Za-z0-9+/=]+)["']/;
 export const TORTUGA_SUBTITLE_ENCODED_RE = /subtitle\s*:\s*["']([A-Za-z0-9+/=]+)["']/;
 export const TORTUGA_SUBTITLE_PLAIN_RE = /subtitle\s*:\s*["']([^"']+)["']/;

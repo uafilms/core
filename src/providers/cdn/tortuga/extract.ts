@@ -6,6 +6,7 @@ import { decodeTortuga } from './decrypt.js';
 import { parsePlayerjsSubtitles } from '../shared/playerjs/index.js';
 import {
   TORTUGA_EMBED_FILE_RE,
+  TORTUGA_FBU_RE,
   TORTUGA_ORIGIN,
   TORTUGA_POSTER_RE,
   TORTUGA_REFERER,
@@ -13,6 +14,57 @@ import {
   TORTUGA_SUBTITLE_PLAIN_RE,
   TORTUGA_VOD_FILE_RE,
 } from './config.js';
+
+/** Підписаний лінк `/t/<token>/<hash>/...`: CDN звіряє IP і час із токеном у шляху. */
+const TORTUGA_SIGNED_URL_RE = /https?:\/\/[^/\s"'()]+\/t\/[A-Za-z0-9_-]+\/([A-Za-z0-9_-]+)\/[A-Za-z0-9._~%+-]+/g;
+const TORTUGA_SIGNED_PATH_RE = /\/t\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\//;
+
+/** Декодує `fbu:` у мапу hash → канонічний URL (не прив'язаний до IP). */
+function parseFbuMap(html: string): Record<string, string> {
+  const match = html.match(TORTUGA_FBU_RE);
+  const decoded = match ? decodeTortuga(match[1]) : null;
+  if (!decoded) return {};
+
+  try {
+    const parsed = JSON.parse(decoded);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+
+    const map: Record<string, string> = {};
+    for (const [hash, url] of Object.entries(parsed)) {
+      if (typeof url === 'string' && /^https?:\/\//.test(url)) map[hash] = url;
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+/** Замінює підписані `/t/` лінки на канонічні з `fbu`, якщо hash відомий. */
+function applyFbuMap(text: string, fbu: Record<string, string>): string {
+  if (!text || Object.keys(fbu).length === 0) return text;
+  return text.replace(TORTUGA_SIGNED_URL_RE, (match, hash: string) => fbu[hash] || match);
+}
+
+/**
+ * Декодує та резолвить URL. Підписані лінки без відповідника в `fbu`
+ * відкидаються: з іншої IP вони віддають 403.
+ */
+function resolveTortugaUrl(encoded: string | null | undefined, fbu: Record<string, string>): string | undefined {
+  const decoded = decodeTortuga(encoded);
+  if (!decoded) return undefined;
+
+  const resolved = applyFbuMap(decoded, fbu);
+  return TORTUGA_SIGNED_PATH_RE.test(resolved) ? undefined : resolved;
+}
+
+/** Розбирає рядок Playerjs-субтитрів, відкидаючи підписані лінки без відповідника в `fbu`. */
+function parseTortugaSubtitles(raw: string | null | undefined, fbu: Record<string, string>): Subtitle[] | undefined {
+  if (!raw) return undefined;
+
+  const subtitles = parsePlayerjsSubtitles(applyFbuMap(raw, fbu))
+    .filter(s => !TORTUGA_SIGNED_PATH_RE.test(s.url));
+  return subtitles.length > 0 ? subtitles : undefined;
+}
 
 async function fetchTortugaHtml(url: string, options: VodExtractionOptions = {}): Promise<string> {
   return getHtml(url, {
@@ -41,19 +93,19 @@ function parsePlayerjsFileString(raw: string, defaultTitle = 'Tortuga'): Array<{
   return sources;
 }
 
-function extractMeta(html: string): { poster?: string; subtitles?: Subtitle[] } {
+function extractMeta(html: string, fbu: Record<string, string>): { poster?: string; subtitles?: Subtitle[] } {
   const posterMatch = html.match(TORTUGA_POSTER_RE);
-  const poster = posterMatch ? (decodeTortuga(posterMatch[1]) || posterMatch[1]) : undefined;
+  const poster = posterMatch ? resolveTortugaUrl(posterMatch[1], fbu) : undefined;
 
   const subMatch = html.match(TORTUGA_SUBTITLE_ENCODED_RE);
   const decodedSub = subMatch ? decodeTortuga(subMatch[1]) : null;
   const rawSubMatch = !decodedSub ? html.match(TORTUGA_SUBTITLE_PLAIN_RE) : null;
   const subString = decodedSub || (rawSubMatch ? rawSubMatch[1] : null);
-  const subtitles = subString ? parsePlayerjsSubtitles(subString) : undefined;
+  const subtitles = parseTortugaSubtitles(subString, fbu);
 
   return {
     poster: poster || undefined,
-    subtitles: subtitles && subtitles.length > 0 ? subtitles : undefined,
+    subtitles,
   };
 }
 
@@ -66,10 +118,15 @@ export function parseTortugaPlayerHtml(html: string, _pageUrl?: string): VodExtr
   const fileMatch = html.match(TORTUGA_EMBED_FILE_RE) || html.match(TORTUGA_VOD_FILE_RE);
   if (!fileMatch) return null;
 
-  const decoded = decodeTortuga(fileMatch[1]);
-  if (!decoded) return null;
+  const rawDecoded = decodeTortuga(fileMatch[1]);
+  if (!rawDecoded) return null;
 
-  const { poster, subtitles: fallbackSubs } = extractMeta(html);
+  const fbu = parseFbuMap(html);
+  // `file` містить підписані `/t/` лінки — замінюємо їх на канонічні з `fbu`,
+  // інакше CDN віддасть 403, щойно IP запиту не збіжиться з IP генерації сторінки.
+  const decoded = applyFbuMap(rawDecoded, fbu);
+
+  const { poster, subtitles: fallbackSubs } = extractMeta(html, fbu);
 
   // Варіант 1: Пряме посилання на m3u8 або Playerjs рядок вигляду {Озвучка}url(subtitle:...)
   if (!decoded.startsWith('[') && !decoded.startsWith('{')) {
@@ -105,10 +162,10 @@ export function parseTortugaPlayerHtml(html: string, _pageUrl?: string): VodExtr
           title: s.title || item.title || 'Tortuga',
           url: s.url,
           mime: 'application/x-mpegURL',
-          poster: item.poster ? (decodeTortuga(item.poster) || item.poster) : poster,
+          poster: item.poster ? (resolveTortugaUrl(item.poster, fbu) || poster) : poster,
           subtitles: s.subtitle
-            ? parsePlayerjsSubtitles(s.subtitle)
-            : (item.subtitle ? parsePlayerjsSubtitles(decodeTortuga(item.subtitle) || item.subtitle) : fallbackSubs),
+            ? parseTortugaSubtitles(s.subtitle, fbu)
+            : (item.subtitle ? parseTortugaSubtitles(decodeTortuga(item.subtitle) || item.subtitle, fbu) : fallbackSubs),
         });
       }
     }
@@ -149,8 +206,8 @@ export function parseTortugaPlayerHtml(html: string, _pageUrl?: string): VodExtr
           title: src.title || currentCtx.dub || 'Tortuga',
           url: src.url,
           mime: 'application/x-mpegURL',
-          poster: node.poster ? (decodeTortuga(node.poster) || node.poster) : poster,
-          subtitles: subStr ? parsePlayerjsSubtitles(subStr) : fallbackSubs,
+          poster: node.poster ? (resolveTortugaUrl(node.poster, fbu) || poster) : poster,
+          subtitles: subStr ? parseTortugaSubtitles(subStr, fbu) : fallbackSubs,
         });
       }
     }
