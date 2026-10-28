@@ -131,9 +131,9 @@ export function detectCdn(raw: { lazy?: { cdn?: string; type?: string; url?: str
   if (fullText.includes('sniplyo') || fullText.includes('creavio')) {
     return { id: 'sniplyo', name: 'Sniplyo' };
   }
-  // Fenix — власний плеєр animeon.club і mikai.me (embed fenixplay.xyz, медіа media.fenixplay.xyz).
+  // Fenix — власний плеєр animeon.club і mikai.me (embed fenixplay.xyz, медіа media.fenixplay.xyz / media.fanixplay.xyz).
   // Детектуємо його за URL, щоб однаковий контент різних провайдерів дедуплікувався в один cdn.
-  if (fullText.includes('fenixplay.xyz')) {
+  if (fullText.includes('fenixplay.xyz') || fullText.includes('fanixplay.xyz')) {
     return { id: 'fenix', name: 'Fenix' };
   }
 

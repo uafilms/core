@@ -4,6 +4,64 @@ import { getHtml, request } from '../../../utils/http.js';
 import { sortSeasons, sortSources } from '../../../utils/sort.js';
 import { SNIPLYO_FILE_RE, SNIPLYO_PL_RE } from './config.js';
 
+const sniplyoTokenCache = new Map<string, { token: string; timestamp: number }>();
+const TOKEN_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+export async function resolveSniplyoUrlForIp(url: string, clientIp?: string): Promise<string> {
+  if (
+    !clientIp ||
+    clientIp === 'unknown' ||
+    clientIp === '127.0.0.1' ||
+    clientIp === '::1' ||
+    clientIp.startsWith('192.168.') ||
+    clientIp.startsWith('10.')
+  ) {
+    return url;
+  }
+
+  const match = url.match(
+    /https?:\/\/((?:sniplyo|creavio)\.online)\/(?:video\/[a-f0-9]{32}\/|stream\.php\?name=)(.+)$/i
+  );
+  if (!match) return url;
+
+  const host = match[1];
+  const filePath = match[2];
+
+  const cacheKey = `${host}:${clientIp}`;
+  const cached = sniplyoTokenCache.get(cacheKey);
+  let token =
+    cached && Date.now() - cached.timestamp < TOKEN_CACHE_TTL ? cached.token : undefined;
+
+  if (!token) {
+    try {
+      const probeUrl = `https://${host}/stream.php?name=${encodeURIComponent(filePath)}`;
+      const res = await request<string>(probeUrl, {
+        headers: {
+          'Referer': 'https://moviestape.lat/',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+          'X-Forwarded-For': clientIp,
+        },
+        timeout: 5000,
+      });
+
+      const m = String(res.data || '').match(/video\/([a-f0-9]{32})\//);
+      if (m && m[1]) {
+        token = m[1];
+        sniplyoTokenCache.set(cacheKey, { token, timestamp: Date.now() });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (token) {
+    return `https://${host}/video/${token}/${filePath}`;
+  }
+
+  return url;
+}
+
 export function parseEpisodeNumber(title: string, indexFallback: number): number {
   const labeledMatch = title.match(/(?:серія|серiя|episode|ep|e)\s*0*(\d+)/i);
   if (labeledMatch) return parseInt(labeledMatch[1], 10);

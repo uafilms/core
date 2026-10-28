@@ -77,4 +77,8 @@ export class SniplyoVodExtractor implements VodExtractor {
 
 export const sniplyoVod = new SniplyoVodExtractor();
 export * from './config.js';
-export { parseSniplyoPlayerHtml, parseSniplyoFolderTree } from './extract.js';
+export {
+  parseSniplyoPlayerHtml,
+  parseSniplyoFolderTree,
+  resolveSniplyoUrlForIp,
+} from './extract.js';

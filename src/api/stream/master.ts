@@ -1,6 +1,14 @@
 import { Hono } from 'hono';
 import axios from 'axios';
-import { extractVod, stripUakinoAxIntro, buildFenixMergedManifest } from '../../providers/cdn/index.js';
+import {
+  extractVod,
+  stripUakinoAxIntro,
+  buildFenixMergedManifest,
+  getCdnStreamHeaders,
+  getCdnSubtitleHeaders,
+  getCdnSegmentHeaders,
+  resolveDirectVideoUrl,
+} from '../../providers/cdn/index.js';
 import { parseMasterPlaylist, stripCorsProxy, formatSubtitleUri, normalizeSubLang } from '../../utils/m3u8.js';
 import { logWarn, logError } from '../../utils/logger.js';
 import { m3u8PlaylistCache } from '../services/cache.js';
@@ -8,6 +16,8 @@ import { proxyManager } from '../../utils/proxyManager.js';
 import type { Subtitle } from '../../types/media.js';
 import { TmdbService } from '../services/tmdb.js';
 import { OrchestratorService } from '../services/orchestrator.js';
+import { getClientIp } from '../services/security.js';
+import { detectCdn } from '../../utils/cdn.js';
 
 export const streamRouter = new Hono();
 
@@ -175,22 +185,7 @@ streamRouter.get('/subs.vtt', async (c) => {
 
   try {
     const subUrl = stripCorsProxy(targetUrl);
-    const subHeaders: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': '*/*',
-    };
-    if (subUrl.includes('ashdi.vip')) {
-      subHeaders['Origin'] = 'https://ashdi.vip';
-      subHeaders['Referer'] = 'https://ashdi.vip/';
-    } else if (subUrl.includes('zetvideo.net')) {
-      subHeaders['Origin'] = 'https://zetvideo.net';
-      subHeaders['Referer'] = 'https://uafix.net/';
-    } else if (subUrl.includes('hdvbua.pro') || subUrl.includes('vidcache')) {
-      subHeaders['Referer'] = 'https://eneyida.tv/';
-    } else if (subUrl.includes('tortuga.tw') || subUrl.includes('tortuga.wtf')) {
-      subHeaders['Referer'] = 'https://tortuga.tw/';
-      subHeaders['Origin'] = 'https://tortuga.tw';
-    }
+    const subHeaders = getCdnSubtitleHeaders(subUrl, cdn || undefined);
 
     const proxyOpts = proxyManager.getConfig(cdn || undefined, subUrl);
     const res = await axios.get<string>(subUrl, {
@@ -248,14 +243,7 @@ streamRouter.get('/subs.ass', async (c) => {
 
   try {
     const subUrl = stripCorsProxy(targetUrl);
-    const subHeaders: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': '*/*',
-    };
-    if (subUrl.includes('fenixplay.xyz')) {
-      subHeaders['Referer'] = 'https://fenixplay.xyz/';
-      subHeaders['Origin'] = 'https://fenixplay.xyz';
-    }
+    const subHeaders = getCdnSubtitleHeaders(subUrl, cdn || undefined);
 
     const proxyOpts = proxyManager.getConfig(cdn || undefined, subUrl);
     const res = await axios.get<string>(subUrl, {
@@ -292,18 +280,9 @@ streamRouter.get('/segment', async (c) => {
   try {
     const range = c.req.header('range');
     const reqHeaders: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-      'Accept': '*/*',
+      ...getCdnSegmentHeaders(target),
       ...(range ? { Range: range } : {}),
     };
-
-    if (target.includes('fenixplay.xyz') || target.includes('fanixplay.xyz')) {
-      reqHeaders['Origin'] = 'https://fenixplay.xyz';
-      reqHeaders['Referer'] = 'https://fenixplay.xyz/';
-    } else if (target.includes('ashdi.vip')) {
-      reqHeaders['Origin'] = 'https://ashdi.vip';
-      reqHeaders['Referer'] = 'https://ashdi.vip/';
-    }
 
     const res = await axios.get<ArrayBuffer>(target, {
       headers: reqHeaders,
@@ -343,76 +322,14 @@ function fixRedirectLocation(location: string): string {
 }
 
 streamRouter.get('/video.mp4', async (c) => {
-  let target = stripCorsProxy(c.req.query('url') || '');
+  const target = stripCorsProxy(c.req.query('url') || '');
   const cdn = c.req.query('cdn');
   const id = c.req.query('id');
+  const clientIp = getClientIp(c);
 
-  if (!target && cdn === 'ufdub' && id) {
-    target = `https://video.ufdub.com/V2/VP.php?ID=${encodeURIComponent(id)}`;
-  } else if (!target && cdn === 'sniplyo' && id) {
-    target = id.startsWith('http')
-      ? id
-      : `https://sniplyo.online/stream.php?${id.includes('pl=') || id.includes('name=') ? id : `name=${encodeURIComponent(id)}`}`;
-  }
-
-  if (!target) {
+  const finalUrl = await resolveDirectVideoUrl({ target, cdn, id, clientIp });
+  if (!finalUrl) {
     return c.text('Bad url', 400, { 'Access-Control-Allow-Origin': '*' });
-  }
-
-  // Якщо target вказує на сторінку плеєра (наприклад, video.ufdub.com/V2/VP.php?ID=... або sniplyo.online/stream.php?...)
-  if (target.includes('video.ufdub.com') || target.includes('sniplyo.online') || target.includes('creavio.online')) {
-    try {
-      const extracted = await extractVod(target);
-      if (extracted?.sources?.[0]?.url) {
-        target = extracted.sources[0].url;
-      }
-    } catch {
-      // продовжуємо з вихідним target
-    }
-  }
-
-  let finalUrl = target;
-
-  // Якщо це редиректний скрипт (як VIDEOS.php або подібні)
-  if (target.includes('VIDEOS.php') || target.includes('/video/') || !target.includes('.mp4')) {
-    try {
-      let currentUrl = target;
-      let redirectsCount = 0;
-
-      while (redirectsCount < 5) {
-        const isUfdub = currentUrl.includes('ufdub.com');
-        const isSniplyo = currentUrl.includes('sniplyo.online') || currentUrl.includes('creavio.online');
-        const reqHeaders: Record<string, string> = {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-          ...(isUfdub ? { 'Referer': 'https://video.ufdub.com/' } : {}),
-          ...(isSniplyo ? { 'Referer': 'https://moviestape.lat/' } : {}),
-        };
-
-        const proxyOpts = proxyManager.getConfig(cdn || undefined, currentUrl);
-
-        const res = await axios.head(currentUrl, {
-          headers: reqHeaders,
-          timeout: 10000,
-          maxRedirects: 0,
-          validateStatus: () => true,
-          ...proxyOpts,
-        });
-
-        if (res.status >= 300 && res.status < 400 && res.headers.location) {
-          redirectsCount++;
-          const nextLoc = res.headers.location as string;
-          currentUrl = new URL(fixRedirectLocation(nextLoc), currentUrl).toString();
-          continue;
-        }
-
-        break;
-      }
-
-      finalUrl = currentUrl;
-    } catch (err: any) {
-      logWarn('stream', `video.mp4 redirect resolution error: ${err.message}`);
-    }
   }
 
   c.header('Access-Control-Allow-Origin', '*');
@@ -582,24 +499,9 @@ streamRouter.get('/master.m3u8', async (c) => {
   }
 
   // 3. Select appropriate headers based on target CDN
-  const headers: Record<string, string> = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': '*/*',
-  };
-
-  const isAshdi =
-    streamUrl.includes('ashdi.vip') ||
-    streamUrl.includes('ashdi.me') ||
-    streamUrl.includes('0yql3tj') ||
-    streamUrl.includes('oyql3tj');
-  const isMoon = streamUrl.includes('moonanime.art') || streamUrl.includes('mooncdn') || streamUrl.includes('s.moonanime');
-  const isBamboo = streamUrl.includes('bambooua.com');
-  const isHdvb = streamUrl.includes('hdvbua.pro') || streamUrl.includes('vidcache');
-  const isFranko = streamUrl.includes('factorios.live') || streamUrl.includes('uacdn.online');
-  const isTortuga = streamUrl.includes('tortuga.tw') || streamUrl.includes('tortuga.wtf') || streamUrl.includes('tortuga');
-  const isZetvideo = streamUrl.includes('zetvideo.net');
-  const isUakinoAx = streamUrl.includes('cdn.uakino.ax');
-  const isFenix = streamUrl.includes('fenixplay.xyz');
+  const detectedCdn = detectCdn({ url: streamUrl }, cdn).id;
+  const isAshdi = detectedCdn === 'ashdi';
+  const isUakinoAx = detectedCdn === 'uakino-ax' || streamUrl.includes('cdn.uakino.ax');
 
   const corsQuery = c.req.query('cors');
   const corsValues = corsQuery
@@ -610,52 +512,11 @@ streamRouter.get('/master.m3u8', async (c) => {
     corsValues.includes('1') ||
     corsValues.includes('true') ||
     corsValues.includes('all') ||
-    (isAshdi && corsValues.includes('ashdi')) ||
-    (Boolean(cdn) && corsValues.includes(cdn!.toLowerCase())) ||
-    (isMoon && corsValues.includes('moonanime')) ||
-    (isBamboo && corsValues.includes('bamboo')) ||
-    (isHdvb && corsValues.includes('hdvb')) ||
-    (isFranko && corsValues.includes('franko')) ||
-    (isZetvideo && corsValues.includes('zetvideo'))
+    corsValues.includes(detectedCdn) ||
+    (Boolean(cdn) && corsValues.includes(cdn!.toLowerCase()))
   );
 
-  if (isAshdi) {
-    headers['Origin'] = 'https://ashdi.vip';
-    headers['Referer'] = 'https://ashdi.vip/';
-  } else if (isMoon) {
-    headers['Origin'] = 'https://moonanime.art';
-    headers['Referer'] = 'https://moonanime.art/';
-    headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36';
-    headers['Accept'] = '*/*';
-    headers['Accept-Language'] = 'en-US,en;q=0.9';
-    headers['sec-fetch-dest'] = 'empty';
-    headers['sec-fetch-mode'] = 'cors';
-    headers['sec-fetch-site'] = 'same-site';
-  } else if (isBamboo) {
-    headers['Origin'] = 'https://bambooua.com';
-    headers['Referer'] = 'https://bambooua.com/';
-  } else if (isHdvb) {
-    headers['Referer'] = 'https://eneyida.tv/';
-  } else if (isFranko) {
-    headers['Origin'] = 'https://franko.uacdn.online';
-    headers['Referer'] = 'https://franko.uacdn.online/';
-  } else if (isTortuga) {
-    headers['Referer'] = 'https://uaserials.com/';
-    headers['Origin'] = 'https://uaserials.com';
-  } else if (isZetvideo) {
-    headers['Origin'] = 'https://zetvideo.net';
-    headers['Referer'] = 'https://uafix.net/';
-  } else if (isFenix) {
-    headers['Referer'] = 'https://fenixplay.xyz/';
-    headers['Origin'] = 'https://fenixplay.xyz';
-  } else if (streamUrl.includes('ufdub.com')) {
-    headers['Referer'] = 'https://video.ufdub.com/';
-  } else if (streamUrl.includes('sniplyo.online') || streamUrl.includes('creavio.online')) {
-    headers['Referer'] = 'https://moviestape.lat/';
-  } else if (streamUrl.includes('unimay.media')) {
-    headers['Referer'] = 'https://unimay.media/';
-    headers['Origin'] = 'https://unimay.media';
-  }
+  const headers = getCdnStreamHeaders(streamUrl, cdn || undefined);
 
   // 4. Fetch manifest and rewrite
   try {

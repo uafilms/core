@@ -30,6 +30,8 @@ export { uakinoAxVod, stripUakinoAxIntro } from './uakinoax/main.js';
 export { ufdubVod } from './ufdub/main.js';
 export { sniplyoVod } from './sniplyo/main.js';
 export { playUakinoAx, findUakinoAxMovie, uakinoAxVoiceCdnId } from './uakinoax/api.js';
+export { getCdnStreamHeaders, getCdnSubtitleHeaders, getCdnSegmentHeaders } from './headers.js';
+export { resolveDirectVideoUrl } from './video.js';
 
 export const vodExtractors: VodExtractor[] = [
   tortugaVod,
