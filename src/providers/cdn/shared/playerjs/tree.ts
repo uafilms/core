@@ -40,6 +40,7 @@ export function parsePlayerjsDubTree(parsed: any, opts: DubTreeOptions): VodExtr
   }
 
   const seasonsMap = new Map<number, Map<number, StreamSource[]>>();
+  let hasAnySeasonOrEpisode = false;
 
   const walk = (node: any, ctx: { dub?: string; season?: number; episode?: number }) => {
     if (!node) return;
@@ -49,13 +50,19 @@ export function parsePlayerjsDubTree(parsed: any, opts: DubTreeOptions): VodExtr
     const sMatch = titleStr.match(opts.seasonRe);
     if (sMatch) {
       const sVal = sMatch[1] || sMatch[2];
-      if (sVal) currentCtx.season = parseInt(sVal, 10);
+      if (sVal) {
+        currentCtx.season = parseInt(sVal, 10);
+        hasAnySeasonOrEpisode = true;
+      }
     }
 
     const eMatch = titleStr.match(opts.episodeRe);
     if (eMatch) {
       const eVal = eMatch[1] || eMatch[2];
-      if (eVal) currentCtx.episode = parseInt(eVal, 10);
+      if (eVal) {
+        currentCtx.episode = parseInt(eVal, 10);
+        hasAnySeasonOrEpisode = true;
+      }
     }
 
     let cleanDub = titleStr;
@@ -100,20 +107,33 @@ export function parsePlayerjsDubTree(parsed: any, opts: DubTreeOptions): VodExtr
 
   if (seasonsMap.size === 0) return null;
 
-  const seasons: Season[] = [];
-  for (const [seasonNum, epMap] of seasonsMap.entries()) {
-    const episodes: Episode[] = [];
-    for (const [epNum, sources] of epMap.entries()) {
-      episodes.push({
-        episode: epNum,
-        sources: sortSources(sources),
+  // Якщо були виявлені маркери сезону чи серії — це серіал
+  if (hasAnySeasonOrEpisode) {
+    const seasons: Season[] = [];
+    for (const [seasonNum, epMap] of seasonsMap.entries()) {
+      const episodes: Episode[] = [];
+      for (const [epNum, sources] of epMap.entries()) {
+        episodes.push({
+          episode: epNum,
+          sources: sortSources(sources),
+        });
+      }
+      seasons.push({
+        season: seasonNum,
+        episodes,
       });
     }
-    seasons.push({
-      season: seasonNum,
-      episodes,
-    });
+
+    return { seasons: sortSeasons(seasons) };
   }
 
-  return { seasons: sortSeasons(seasons) };
+  // Інакше це фільм з папками озвучок/якостей — повертаємо джерела фільму
+  const allMovieSources: StreamSource[] = [];
+  for (const epMap of seasonsMap.values()) {
+    for (const sources of epMap.values()) {
+      allMovieSources.push(...sources);
+    }
+  }
+
+  return { sources: opts.sortMovieSources ? sortSources(allMovieSources) : allMovieSources };
 }

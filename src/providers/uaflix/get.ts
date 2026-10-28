@@ -275,8 +275,8 @@ export async function getUaflix(
 
     // Case 1: Serial with episode links on main page (e.g. pervorodnij-grih-takopi or venzdej)
     if (isSerial && episodeLinks.length > 0) {
-      const targetSeason = meta?.season;
-      const targetEpisode = meta?.episode;
+      const targetSeason = options?.season ?? meta?.season;
+      const targetEpisode = options?.episode ?? meta?.episode;
 
       // Determine initial episode to probe
       let probeLink = episodeLinks[0];
