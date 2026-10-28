@@ -1,5 +1,10 @@
 import type { OmssSourceItem, TmdbEpisodeItem } from '../types/index.js';
-import { extractVoiceName, normalizeStreamUrl, withVoiceQuery } from '../utils/index.js';
+import {
+  extractVoiceName,
+  getProviderFromMap,
+  normalizeStreamUrl,
+  withVoiceQuery,
+} from '../utils/index.js';
 import { fetchEpisodeProviders } from '../api/index.js';
 import type { ComponentContext } from './types.js';
 import {
@@ -111,9 +116,10 @@ export async function playTvEpisode(
   let subTracks: any[] = [];
   let playUrl = '';
 
-  const provItem =
-    ctx.state.currentProvidersMap.get(activeProvider) ||
-    Array.from(ctx.state.currentProvidersMap.values())[0];
+  const provItem = getProviderFromMap(
+    ctx.state.currentProvidersMap,
+    activeProvider
+  );
 
   // ONLY reuse preloaded sources if the clicked episode matches the probed episode (typically episode 1)
   const isProbed =

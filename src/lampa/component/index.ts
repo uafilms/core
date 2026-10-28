@@ -1,5 +1,5 @@
 import type { LampaActivityObject, LampaMovie } from '../types/index.js';
-import { getHost } from '../utils/index.js';
+import { getHost, getProviderFromMap } from '../utils/index.js';
 import { fetchTvDetails } from '../api/index.js';
 import type { ComponentContext, ComponentState } from './types.js';
 import { getSavedChoice, saveChoice } from './storage.js';
@@ -32,9 +32,10 @@ export function UAFilmsComponent(this: any, object: LampaActivityObject) {
   const movie: LampaMovie = object.movie || object.card || {};
   const isTv = Boolean(
     movie.number_of_seasons ||
-      movie.name ||
       (movie.seasons && movie.seasons.length > 0) ||
-      object.search_two
+      object.method === 'tv' ||
+      movie.method === 'tv' ||
+      (movie.name && !movie.title)
   );
 
   const scroll = new Lampa.Scroll({ mask: true, over: true });
@@ -110,11 +111,12 @@ export function UAFilmsComponent(this: any, object: LampaActivityObject) {
 
     filter.onSelect = (type: string, a: any, b: any) => {
       if (type === 'sort') {
-        // Balancer / Source tab clicked! (NO "All" option)
-        Lampa.Select.close();
-        if (a.source) {
+        const selectedSource = String(a?.source || a?.name || a?.title || a || '')
+          .replace(/^★\s*/, '')
+          .trim();
+        if (selectedSource) {
           state.userManuallySelectedProvider = true;
-          state.activeProvider = a.source;
+          state.activeProvider = selectedSource;
           saveChoice(ctx, { provider: state.activeProvider });
           filter.chosen('sort', [state.activeProvider]);
 
@@ -137,16 +139,16 @@ export function UAFilmsComponent(this: any, object: LampaActivityObject) {
           loadTvSeason(ctx, b.index);
         } else if (a.stype === 'voice') {
           state.userManuallySelectedVoice = true;
-          const provItem =
-            state.currentProvidersMap.get(state.activeProvider) ||
-            Array.from(state.currentProvidersMap.values())[0];
+          const provItem = getProviderFromMap(
+            state.currentProvidersMap,
+            state.activeProvider
+          );
           const voices = extractVoicesFromProvider(provItem);
           if (voices[b.index]) {
             state.activeVoice = voices[b.index];
             saveChoice(ctx, { voice: state.activeVoice });
             updateTvFilter(ctx);
           }
-          Lampa.Select.close();
         }
       }
     };

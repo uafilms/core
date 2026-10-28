@@ -2,6 +2,7 @@ import type { OmssSourceItem } from '../types/index.js';
 import { streamMovieSources } from '../api/index.js';
 import {
   extractVoiceName,
+  getProviderFromMap,
   normalizeStreamUrl,
   withVoiceQuery,
 } from '../utils/index.js';
@@ -28,9 +29,10 @@ export function renderActiveProviderSources(ctx: ComponentContext): void {
 
   resetList(ctx);
 
-  const providerItem =
-    ctx.state.currentProvidersMap.get(ctx.state.activeProvider) ||
-    Array.from(ctx.state.currentProvidersMap.values())[0];
+  const providerItem = getProviderFromMap(
+    ctx.state.currentProvidersMap,
+    ctx.state.activeProvider
+  );
 
   if (!providerItem || !providerItem.sources || !providerItem.sources.length) {
     showEmpty(ctx, Lampa.Lang.translate('uafilms_not_found'));
@@ -49,9 +51,9 @@ export function renderActiveProviderSources(ctx: ComponentContext): void {
 
   const seenVoices = new Set<string>();
 
-  sources.forEach((source) => {
+  sources.forEach((source: OmssSourceItem) => {
     if (source.audioTracks && source.audioTracks.length > 1 && sources.length === 1) {
-      source.audioTracks.forEach((trackName) => {
+      source.audioTracks.forEach((trackName: string) => {
         if (!seenVoices.has(trackName)) {
           seenVoices.add(trackName);
           displaySources.push({

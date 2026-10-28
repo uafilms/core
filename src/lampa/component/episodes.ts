@@ -1,6 +1,11 @@
 import type { OmssProviderItem, TmdbEpisodeItem } from '../types/index.js';
 import { fetchSeasonDetails, streamEpisodeSources } from '../api/index.js';
-import { extractVoiceName, formatFullDate, secondsToTime } from '../utils/index.js';
+import {
+  extractVoiceName,
+  formatFullDate,
+  getProviderFromMap,
+  secondsToTime,
+} from '../utils/index.js';
 import type { ComponentContext } from './types.js';
 import {
   getEpisodeHashBehold,
@@ -62,9 +67,10 @@ export function updateTvFilter(ctx: ComponentContext): void {
   const chosenTitles: string[] = [];
 
   // 1. Voice acting / Studio dropdown
-  const provItem =
-    ctx.state.currentProvidersMap.get(ctx.state.activeProvider) ||
-    Array.from(ctx.state.currentProvidersMap.values())[0];
+  const provItem = getProviderFromMap(
+    ctx.state.currentProvidersMap,
+    ctx.state.activeProvider
+  );
   const voices = extractVoicesFromProvider(provItem);
 
   if (voices.length > 0) {
@@ -117,9 +123,10 @@ export function updateTvFilter(ctx: ComponentContext): void {
 }
 
 export function updateTvVoicesAndFilter(ctx: ComponentContext): void {
-  const provItem =
-    ctx.state.currentProvidersMap.get(ctx.state.activeProvider) ||
-    Array.from(ctx.state.currentProvidersMap.values())[0];
+  const provItem = getProviderFromMap(
+    ctx.state.currentProvidersMap,
+    ctx.state.activeProvider
+  );
   const voices = extractVoicesFromProvider(provItem);
   const saved = getSavedChoice(ctx);
 

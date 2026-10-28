@@ -49,17 +49,32 @@ export function updateBalancersTab(ctx: ComponentContext, providers: OmssProvide
   }
 
   const sorted = sortProvidersWithFavorites(providers);
-  const providerNames = sorted.map((p) => p.name);
+  const cleanActive = (ctx.state.activeProvider || '').replace(/^★\s*/, '').toLowerCase().trim();
+
+  const matchProvider = (target: string) => {
+    const cleanTarget = target.replace(/^★\s*/, '').toLowerCase().trim();
+    return sorted.find(
+      (p) =>
+        p.name.toLowerCase().trim() === cleanTarget ||
+        (p.provider && p.provider.toLowerCase().trim() === cleanTarget)
+    );
+  };
 
   if (!ctx.state.userManuallySelectedProvider) {
     const saved = getSavedChoice(ctx).provider;
-    if (saved && providerNames.includes(saved)) {
-      ctx.state.activeProvider = saved;
+    const matchedSaved = saved ? matchProvider(saved) : undefined;
+    if (matchedSaved) {
+      ctx.state.activeProvider = matchedSaved.name;
     } else {
       ctx.state.activeProvider = sorted[0].name;
     }
-  } else if (!providerNames.includes(ctx.state.activeProvider)) {
-    ctx.state.activeProvider = sorted[0].name;
+  } else {
+    const matched = matchProvider(cleanActive);
+    if (matched) {
+      ctx.state.activeProvider = matched.name;
+    } else {
+      ctx.state.activeProvider = sorted[0].name;
+    }
   }
 
   ctx.filter.set(
@@ -69,7 +84,7 @@ export function updateBalancersTab(ctx: ComponentContext, providers: OmssProvide
       return {
         title: isFav ? `★ ${p.name}` : p.name,
         source: p.name,
-        selected: p.name.toLowerCase() === ctx.state.activeProvider.toLowerCase(),
+        selected: p.name.toLowerCase().trim() === ctx.state.activeProvider.toLowerCase().trim(),
       };
     })
   );

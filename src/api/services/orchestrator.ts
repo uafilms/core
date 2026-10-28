@@ -113,7 +113,7 @@ export class OrchestratorService {
       }
     } else {
       // Exclude anime-specific providers if media is definitively not anime
-      const animeSpecificProviders = new Set(['anihub', 'animeon', 'aniworld', 'mikai', 'unimay']);
+      const animeSpecificProviders = new Set(['anihub', 'animeon', 'aniworld', 'mikai', 'unimay', 'ufdub']);
       const isAnime = meta.isAnime ?? (
         meta.originalLanguage === 'ja' ||
         meta.genres?.some(g => g.toLowerCase().includes('аніме') || g.toLowerCase().includes('anime'))
