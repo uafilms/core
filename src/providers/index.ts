@@ -18,6 +18,7 @@ export { UfdubProvider, ufdubProvider } from './ufdub/main.js';
 export { KlonProvider, klonProvider } from './klon/main.js';
 export { UnimayProvider, unimayProvider } from './unimay/main.js';
 export { UaSerialsFmProvider, uaserialsFmProvider } from './uaserials-fm/main.js';
+export { MoviestapeProvider, moviestapeProvider } from './moviestape/main.js';
 
 import { uakinoProvider } from './uakino/main.js';
 import { kinoukrProvider } from './kinoukr/main.js';
@@ -38,6 +39,7 @@ import { ufdubProvider } from './ufdub/main.js';
 import { klonProvider } from './klon/main.js';
 import { unimayProvider } from './unimay/main.js';
 import { uaserialsFmProvider } from './uaserials-fm/main.js';
+import { moviestapeProvider } from './moviestape/main.js';
 import type { Provider } from '../types/provider.js';
 
 export const providers: Provider[] = [
@@ -65,4 +67,5 @@ export const providers: Provider[] = [
   klonProvider,
   unimayProvider,
   uaserialsFmProvider,
+  moviestapeProvider,
 ];

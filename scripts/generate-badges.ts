@@ -162,6 +162,22 @@ const BADGES: StudioBadgeConfig[] = [
     text: 'UFDUB',
     subtext: 'STUDIO',
     icon: `<text x="100" y="115" font-family="system-ui, sans-serif" font-weight="900" font-size="52" text-anchor="middle" fill="#c084fc">UFDUB</text>`,
+  },
+  {
+    slug: 'moviestape',
+    bg: ['#121824', '#1e293b'],
+    accent: '#38bdf8',
+    text: 'Moviestape',
+    subtext: 'CINEMA',
+    icon: `<text x="100" y="115" font-family="system-ui, sans-serif" font-weight="900" font-size="34" text-anchor="middle" fill="#38bdf8">TAPE</text>`,
+  },
+  {
+    slug: 'sniplyo',
+    bg: ['#1a1025', '#2e1b47'],
+    accent: '#a855f7',
+    text: 'Sniplyo',
+    subtext: 'CDN',
+    icon: `<text x="100" y="115" font-family="system-ui, sans-serif" font-weight="900" font-size="38" text-anchor="middle" fill="#a855f7">SNIP</text>`,
   }
 ];
 

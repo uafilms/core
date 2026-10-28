@@ -274,6 +274,11 @@ export const KNOWN_STUDIOS: Record<string, StudioDefinition> = {
     aliases: ['ufdub', 'юфдаб', 'ufdub group', 'ufdub studio'],
     logoFile: 'ufdub.svg',
   },
+  moviestape: {
+    name: 'Moviestape',
+    aliases: ['moviestape', 'мувістейп', 'мувистейп', 'sniplyo'],
+    logoFile: 'moviestape.svg',
+  },
   kaizoku: {
     name: 'Клан Кайзоку',
     aliases: ['клан кайзоку', 'кайзоку', 'clan kaizoku', 'kaizoku'],

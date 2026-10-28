@@ -13,6 +13,7 @@ import { fenixVod } from './fenix/main.js';
 import { dawnVod } from './dawn/main.js';
 import { uakinoAxVod } from './uakinoax/main.js';
 import { ufdubVod } from './ufdub/main.js';
+import { sniplyoVod } from './sniplyo/main.js';
 
 export { tortugaVod } from './tortuga/main.js';
 export { ashdiVod } from './ashdi/main.js';
@@ -27,6 +28,7 @@ export { fenixVod, buildFenixMergedManifest } from './fenix/main.js';
 export { dawnVod } from './dawn/main.js';
 export { uakinoAxVod, stripUakinoAxIntro } from './uakinoax/main.js';
 export { ufdubVod } from './ufdub/main.js';
+export { sniplyoVod } from './sniplyo/main.js';
 export { playUakinoAx, findUakinoAxMovie, uakinoAxVoiceCdnId } from './uakinoax/api.js';
 
 export const vodExtractors: VodExtractor[] = [
@@ -42,6 +44,7 @@ export const vodExtractors: VodExtractor[] = [
   dawnVod,
   uakinoAxVod,
   ufdubVod,
+  sniplyoVod,
 ];
 
 /**
@@ -238,6 +241,11 @@ export async function extractVod(url: string, options: VodExtractionOptions = {}
     if (res) return res;
   }
 
+  if (url.includes('cdn=sniplyo') || url.includes('sniplyo.online') || url.includes('creavio.online')) {
+    const res = await runWithProvider(sniplyoVod.name, () => sniplyoVod.extract(url, options));
+    if (res) return res;
+  }
+
   // Спробувати всі інші по черзі
   for (const extractor of vodExtractors) {
     try {
@@ -257,3 +265,4 @@ export * from './hdvb/main.js';
 export * from './bunny/main.js';
 export * from './aniworld/main.js';
 export * from './ufdub/main.js';
+export * from './sniplyo/main.js';

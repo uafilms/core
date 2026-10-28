@@ -26,6 +26,7 @@ const CDN_BALANCERS: { id: string; name: string }[] = [
   { id: 'moonanime', name: 'MoonAnime' },
   { id: 'hdvbua', name: 'HdvbUA' },
   { id: 'zetvideo', name: 'ZetVideo' },
+  { id: 'sniplyo', name: 'Sniplyo' },
 ];
 
 function matchesCdn(source: OmssSource, cdnSlug: string): boolean {
@@ -150,7 +151,7 @@ function buildCdnBalancersList(baseUrl: string, queryParams: URLSearchParams) {
 
 // 1. Lampac withsearch & spider
 lampacRouter.get('/lite/withsearch', (c) =>
-  c.json(['ashdi', 'bamboo', 'tortuga', 'fenix', 'moonanime', 'hdvbua', 'zetvideo', 'uafilms'])
+  c.json(['ashdi', 'bamboo', 'tortuga', 'fenix', 'moonanime', 'hdvbua', 'zetvideo', 'sniplyo', 'uafilms'])
 );
 lampacRouter.get('/lite/spider', (c) => {
   const baseUrl = getBaseUrl(c);

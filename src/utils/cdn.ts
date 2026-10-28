@@ -23,6 +23,7 @@ const CDN_DISPLAY_NAMES: Record<string, string> = {
   'uakino-ax': 'UaKinoAX',
   ufdub: 'UFDUB',
   unimay: 'Unimay',
+  sniplyo: 'Sniplyo',
 };
 
 export function normalizeCdnName(cdnId: string): string {
@@ -42,7 +43,7 @@ export function normalizeCdnName(cdnId: string): string {
 export function detectCdn(raw: { lazy?: { cdn?: string; type?: string; url?: string }; url?: string }, fallbackProvider = 'unknown'): CdnInfo {
   // 1. Check known CDN keywords in raw.lazy.type first
   const lazyType = raw.lazy?.type?.toLowerCase().trim();
-  const knownTypes = ['moon', 'moonanime', 'dawn', 'ashdi', 'tortuga', 'hdvb', 'hdvbua', 'franko', 'bamboo', 'bambooua', 'bunny', 'aniworld', 'zetvideo', 'ufdub', 'unimay'];
+  const knownTypes = ['moon', 'moonanime', 'dawn', 'ashdi', 'tortuga', 'hdvb', 'hdvbua', 'franko', 'bamboo', 'bambooua', 'bunny', 'aniworld', 'zetvideo', 'ufdub', 'unimay', 'sniplyo'];
   if (lazyType && knownTypes.includes(lazyType)) {
     return {
       id: lazyType === 'moon' || lazyType === 'dawn' ? 'moonanime' : lazyType === 'bambooua' ? 'bamboo' : lazyType === 'hdvbua' ? 'hdvb' : lazyType,
@@ -126,6 +127,9 @@ export function detectCdn(raw: { lazy?: { cdn?: string; type?: string; url?: str
   }
   if (fullText.includes('unimay')) {
     return { id: 'unimay', name: 'Unimay' };
+  }
+  if (fullText.includes('sniplyo') || fullText.includes('creavio')) {
+    return { id: 'sniplyo', name: 'Sniplyo' };
   }
   // Fenix — власний плеєр animeon.club і mikai.me (embed fenixplay.xyz, медіа media.fenixplay.xyz).
   // Детектуємо його за URL, щоб однаковий контент різних провайдерів дедуплікувався в один cdn.

@@ -349,14 +349,18 @@ streamRouter.get('/video.mp4', async (c) => {
 
   if (!target && cdn === 'ufdub' && id) {
     target = `https://video.ufdub.com/V2/VP.php?ID=${encodeURIComponent(id)}`;
+  } else if (!target && cdn === 'sniplyo' && id) {
+    target = id.startsWith('http')
+      ? id
+      : `https://sniplyo.online/stream.php?${id.includes('pl=') || id.includes('name=') ? id : `name=${encodeURIComponent(id)}`}`;
   }
 
   if (!target) {
     return c.text('Bad url', 400, { 'Access-Control-Allow-Origin': '*' });
   }
 
-  // Якщо target вказує на сторінку плеєра (наприклад, video.ufdub.com/V2/VP.php?ID=...)
-  if (target.includes('video.ufdub.com')) {
+  // Якщо target вказує на сторінку плеєра (наприклад, video.ufdub.com/V2/VP.php?ID=... або sniplyo.online/stream.php?...)
+  if (target.includes('video.ufdub.com') || target.includes('sniplyo.online') || target.includes('creavio.online')) {
     try {
       const extracted = await extractVod(target);
       if (extracted?.sources?.[0]?.url) {
@@ -377,10 +381,12 @@ streamRouter.get('/video.mp4', async (c) => {
 
       while (redirectsCount < 5) {
         const isUfdub = currentUrl.includes('ufdub.com');
+        const isSniplyo = currentUrl.includes('sniplyo.online') || currentUrl.includes('creavio.online');
         const reqHeaders: Record<string, string> = {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
           ...(isUfdub ? { 'Referer': 'https://video.ufdub.com/' } : {}),
+          ...(isSniplyo ? { 'Referer': 'https://moviestape.lat/' } : {}),
         };
 
         const proxyOpts = proxyManager.getConfig(cdn || undefined, currentUrl);
@@ -644,6 +650,8 @@ streamRouter.get('/master.m3u8', async (c) => {
     headers['Origin'] = 'https://fenixplay.xyz';
   } else if (streamUrl.includes('ufdub.com')) {
     headers['Referer'] = 'https://video.ufdub.com/';
+  } else if (streamUrl.includes('sniplyo.online') || streamUrl.includes('creavio.online')) {
+    headers['Referer'] = 'https://moviestape.lat/';
   } else if (streamUrl.includes('unimay.media')) {
     headers['Referer'] = 'https://unimay.media/';
     headers['Origin'] = 'https://unimay.media';
