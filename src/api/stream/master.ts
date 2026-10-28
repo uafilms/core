@@ -31,6 +31,8 @@ const handleDirectPlay = async (c: any) => {
   const provider = query.provider;
   const voice = query.voice;
   const platform = (query.platform || 'web') as any;
+  const corsParam = query.cors;
+  const corsProxy = corsParam === undefined ? undefined : corsParam === '1' || corsParam === 'true';
 
   if (!id) {
     return c.text('Missing id parameter', 400);
@@ -56,6 +58,7 @@ const handleDirectPlay = async (c: any) => {
       episode,
       platform,
       proxyHost,
+      corsProxy,
       providerId: undefined,
     });
 

@@ -20,6 +20,11 @@ interface OrchestratorOptions {
   platform?: PlatformType;
   proxyHost: string;
   clientIp?: string;
+  /**
+   * Примусово увімкнути (`true`) або вимкнути (`false`) CORS-проксі сегментів.
+   * `undefined` — авто: увімкнено для web, вимкнено для решти платформ.
+   */
+  corsProxy?: boolean;
   onProviderResult?: (chunk: {
     provider: string;
     providerName?: string;
@@ -55,10 +60,13 @@ export class OrchestratorService {
     subtitles: OmssSubtitle[];
     diagnostics: OmssDiagnostic[];
   }> {
-    const { meta, type, season = 1, episode = 1, providerId, platform = 'web', proxyHost, clientIp, onProviderResult } = options;
+    const { meta, type, season = 1, episode = 1, providerId, platform = 'web', proxyHost, clientIp, corsProxy, onProviderResult } = options;
+
+    const corsEnabled = corsProxy ?? platform === 'web';
+    const corsCacheKey = corsProxy === undefined ? 'auto' : corsProxy ? 'cors' : 'nocors';
 
     const mediaKey = meta.imdbId || meta.id || meta.title;
-    const cacheKey = `orchestrator:${mediaKey}:${type}:${season}:${episode}:${providerId || 'all'}:${platform}:${proxyHost}:${clientIp || 'default'}`;
+    const cacheKey = `orchestrator:${mediaKey}:${type}:${season}:${episode}:${providerId || 'all'}:${platform}:${proxyHost}:${clientIp || 'default'}:${corsCacheKey}`;
 
     // 24h caching for source resolution (when not streaming SSE or as baseline)
     if (!onProviderResult) {
@@ -311,10 +319,10 @@ export class OrchestratorService {
               playUrl = `${proxyHost}/master.m3u8?url=${encodeURIComponent(raw.url)}`;
             }
 
-            // Додаємо ?cors=1 лише для веб-платформи: браузер вимагає CORS
-            // для сегментів CDN, які його не віддають (ashdi, tortuga).
-            // Lampa-клієнти (platform=tv) відтворюють напряму без CORS-проксі.
-            if (platform === 'web' && (cdn.id === 'ashdi' || cdn.id === 'tortuga') && playUrl.includes('/master.m3u8') && !playUrl.includes('cors=')) {
+            // CORS-проксі сегментів потрібен лише вбудованому плеєру (hls.js у браузері);
+            // зовнішні плеєри тягнуть сегменти самі. CDN, які не віддають
+            // Access-Control-Allow-Origin — ashdi і tortuga.
+            if (corsEnabled && (cdn.id === 'ashdi' || cdn.id === 'tortuga') && playUrl.includes('/master.m3u8') && !playUrl.includes('cors=')) {
               playUrl += (playUrl.includes('?') ? '&' : '?') + 'cors=1';
             }
           } else {

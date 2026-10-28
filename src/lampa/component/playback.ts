@@ -3,6 +3,8 @@ import {
   extractVoiceName,
   getProviderFromMap,
   normalizeStreamUrl,
+  playerCorsQuery,
+  withPlayerCors,
   withVoiceQuery,
 } from '../utils/index.js';
 import { fetchEpisodeProviders } from '../api/index.js';
@@ -133,6 +135,7 @@ export async function playTvEpisode(
       if (activeVoice && targetSource.sharedVideo && !playUrl.includes('voice=')) {
         playUrl = withVoiceQuery(playUrl, activeVoice);
       }
+      playUrl = withPlayerCors(playUrl, targetSource.provider?.id || provItem.provider);
       subTracks = (targetSource.subtitles || provItem.subtitles || []).map((sub: any) => ({
         ...sub,
         url: normalizeStreamUrl(sub.url, host),
@@ -171,6 +174,7 @@ export async function playTvEpisode(
         if (activeVoice && targetSource.sharedVideo && !playUrl.includes('voice=')) {
           playUrl = withVoiceQuery(playUrl, activeVoice);
         }
+        playUrl = withPlayerCors(playUrl, targetSource.provider?.id || foundProv.provider);
         subTracks = (targetSource.subtitles || foundProv.subtitles || []).map((sub: any) => ({
           ...sub,
           url: normalizeStreamUrl(sub.url, host),
@@ -194,7 +198,7 @@ export async function playTvEpisode(
   if (!playUrl) {
     const cleanProv = activeProvider ? activeProvider.replace(/^★\s*/, '').trim() : '';
     const ext = isTargetMp4 ? 'mp4' : 'm3u8';
-    playUrl = `${host}/play.${ext}?id=${encodeURIComponent(String(movie.id || movie.imdb_id))}&type=tv&s=${activeSeason}&e=${epNum}&provider=${encodeURIComponent(cleanProv)}&voice=${encodeURIComponent(activeVoice)}`;
+    playUrl = `${host}/play.${ext}?id=${encodeURIComponent(String(movie.id || movie.imdb_id))}&type=tv&s=${activeSeason}&e=${epNum}&provider=${encodeURIComponent(cleanProv)}&voice=${encodeURIComponent(activeVoice)}&${playerCorsQuery()}`;
   }
 
   const hashTimeline = getEpisodeHashTimeline(movie, activeSeason, epNum);
@@ -330,7 +334,7 @@ export async function playTvEpisode(
       : '';
 
     const nextExt = isTargetMp4 ? 'mp4' : 'm3u8';
-    const nextUrl = `${host}/play.${nextExt}?id=${encodeURIComponent(String(movie.id || movie.imdb_id))}&type=tv&s=${activeSeason}&e=${n}&provider=${encodeURIComponent(cleanProvider)}&voice=${encodeURIComponent(activeVoice)}`;
+    const nextUrl = `${host}/play.${nextExt}?id=${encodeURIComponent(String(movie.id || movie.imdb_id))}&type=tv&s=${activeSeason}&e=${n}&provider=${encodeURIComponent(cleanProvider)}&voice=${encodeURIComponent(activeVoice)}&${playerCorsQuery()}`;
 
     const epObj: any = {
       url: n === epNum ? playUrl : nextUrl,

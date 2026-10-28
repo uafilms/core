@@ -1,3 +1,44 @@
+declare const Lampa: any;
+
+/** CDN, які не віддають Access-Control-Allow-Origin для сегментів. */
+const CORS_PROXY_CDNS = new Set(['ashdi', 'tortuga']);
+
+/** Вбудований плеєр Lampa — це hls.js у браузері, тому йому потрібен CORS. */
+export function isInternalPlayer(): boolean {
+  try {
+    if (typeof Lampa !== 'undefined' && Lampa.Storage) {
+      const value =
+        typeof Lampa.Storage.field === 'function'
+          ? Lampa.Storage.field('player')
+          : Lampa.Storage.get('player', 'inner');
+      return !value || value === 'inner';
+    }
+  } catch {
+    // ignore
+  }
+  return true;
+}
+
+/**
+ * Додає `cors=1` до master-плейлиста, коли грає вбудований плеєр.
+ * Зовнішні плеєри (mpv, IINA, Tizen, webOS) тягнуть сегменти самі.
+ */
+export function withPlayerCors(url: string, providerId?: string): string {
+  if (!url || !url.includes('/master.m3u8')) return url;
+  if (!isInternalPlayer() || /[?&]cors=/.test(url)) return url;
+
+  const sensitive =
+    (providerId && CORS_PROXY_CDNS.has(providerId)) || /(?:ashdi|tortuga)/i.test(url);
+  if (!sensitive) return url;
+
+  return `${url}${url.includes('?') ? '&' : '?'}cors=1`;
+}
+
+/** Прапорець CORS-проксі для `/play.m3u8` та `/play.mp4`: експліцитно 1 або 0. */
+export function playerCorsQuery(): string {
+  return `cors=${isInternalPlayer() ? '1' : '0'}`;
+}
+
 export function getProviderFromMap<T = any>(
   map: Map<string, T>,
   targetIdOrName?: string

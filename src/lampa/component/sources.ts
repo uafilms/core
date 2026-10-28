@@ -4,6 +4,7 @@ import {
   extractVoiceName,
   getProviderFromMap,
   normalizeStreamUrl,
+  withPlayerCors,
   withVoiceQuery,
 } from '../utils/index.js';
 import type { ComponentContext } from './types.js';
@@ -161,7 +162,10 @@ export function renderActiveProviderSources(ctx: ComponentContext): void {
       }
       markViewed(ctx, hashBehold);
 
-      const playUrl = normalizeStreamUrl(effectiveUrl, ctx.host);
+      const playUrl = withPlayerCors(
+        normalizeStreamUrl(effectiveUrl, ctx.host),
+        source.provider?.id || providerItem.provider
+      );
       const subTracks = (source.subtitles || providerItem.subtitles || []).map((sub: any) => ({
         ...sub,
         url: normalizeStreamUrl(sub.url, ctx.host),
@@ -226,7 +230,10 @@ export function renderActiveProviderSources(ctx: ComponentContext): void {
             (d) => d.voiceName.toLowerCase().trim() === trackName.toLowerCase().trim()
           );
           const trackUrl = matchedEntry
-            ? normalizeStreamUrl(matchedEntry.playUrl, ctx.host)
+            ? withPlayerCors(
+                normalizeStreamUrl(matchedEntry.playUrl, ctx.host),
+                matchedEntry.source.provider?.id || providerItem.provider
+              )
             : source.sharedVideo
             ? withVoiceQuery(playUrl, trackName)
             : playUrl;
@@ -253,7 +260,10 @@ export function renderActiveProviderSources(ctx: ComponentContext): void {
 
     showContextMenu(ctx, {
       html: itemHtml,
-      streamUrl: normalizeStreamUrl(effectiveUrl, ctx.host),
+      streamUrl: withPlayerCors(
+        normalizeStreamUrl(effectiveUrl, ctx.host),
+        source.provider?.id || providerItem.provider
+      ),
       hashBehold,
       timeline,
       onPlay: playCurrent,
