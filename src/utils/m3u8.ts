@@ -1,6 +1,7 @@
 import type { Subtitle } from '../types/media.js';
+import { getActiveCorsProxy, stripCorsProxy } from './corsProxy.js';
 
-const CORS_PROXY = 'https://cors.bwa.workers.dev/';
+export { stripCorsProxy } from './corsProxy.js';
 
 /**
  * Cloudflare віддає сегменти moonanime лише з домену .xyz: .online відповідає
@@ -17,15 +18,6 @@ export function normalizeMoonCdnHost(url: string): string {
  */
 export function normalizeFenixCdnHost(url: string): string {
   return url.replace(/(?:cf-media\.fenixplay\.xyz|media\.fenixplay\.xyz)/gi, 'media.fanixplay.xyz');
-}
-
-export function stripCorsProxy(url: string): string {
-  const prefix = CORS_PROXY.replace(/\/+$/, '/');
-  let current = url;
-  while (current.startsWith(prefix)) {
-    current = current.slice(prefix.length);
-  }
-  return current;
 }
 
 export interface ParsePlaylistOptions {
@@ -108,6 +100,7 @@ export function parseMasterPlaylist(
 ): string {
   const { corsProxySegments = false, corsParam, segmentProxyBase, subtitles = [] } = options;
   const corsSuffix = corsParam ? `&cors=${encodeURIComponent(corsParam)}` : '';
+  const corsProxy = corsProxySegments ? getActiveCorsProxy() : '';
   const lines = content.split('\n');
   const newLines: string[] = [];
 
@@ -205,8 +198,8 @@ export function parseMasterPlaylist(
             const mapUrl = normalizeFenixCdnHost(new URL(mapUriMatch[1], cleanBaseUrl).href);
             const rewritten = segmentProxyBase
               ? `${segmentProxyBase}${encodeURIComponent(mapUrl)}`
-              : corsProxySegments
-                ? `${CORS_PROXY}${mapUrl}`
+              : corsProxy
+                ? `${corsProxy}${mapUrl}`
                 : mapUrl;
             newLines.push(trimmed.replace(mapUriMatch[1], rewritten));
           } catch {
@@ -243,8 +236,8 @@ export function parseMasterPlaylist(
         const isMooncdn = /mooncdn\.(online|xyz)|moonanime\.art/i.test(absoluteUrl);
         if (segmentProxyBase) {
           newLines.push(`${segmentProxyBase}${encodeURIComponent(absoluteUrl)}`);
-        } else if (corsProxySegments && !isMooncdn && !absoluteUrl.startsWith(CORS_PROXY)) {
-          newLines.push(`${CORS_PROXY}${absoluteUrl}`);
+        } else if (corsProxy && !isMooncdn && !absoluteUrl.startsWith(corsProxy)) {
+          newLines.push(`${corsProxy}${absoluteUrl}`);
         } else {
           newLines.push(absoluteUrl);
         }
@@ -262,8 +255,8 @@ export function parseMasterPlaylist(
           const isMooncdn = /mooncdn\.(online|xyz)|moonanime\.art/i.test(absoluteUrl);
           if (segmentProxyBase) {
             newLines.push(`${segmentProxyBase}${encodeURIComponent(absoluteUrl)}`);
-          } else if (corsProxySegments && !isMooncdn && !absoluteUrl.startsWith(CORS_PROXY)) {
-            newLines.push(`${CORS_PROXY}${absoluteUrl}`);
+          } else if (corsProxy && !isMooncdn && !absoluteUrl.startsWith(corsProxy)) {
+            newLines.push(`${corsProxy}${absoluteUrl}`);
           } else {
             newLines.push(absoluteUrl);
           }

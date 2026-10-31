@@ -10,6 +10,7 @@ import {
   resolveDirectVideoUrl,
 } from '../../providers/cdn/index.js';
 import { parseMasterPlaylist, stripCorsProxy, formatSubtitleUri, normalizeSubLang } from '../../utils/m3u8.js';
+import { getActiveCorsProxy } from '../../utils/corsProxy.js';
 import { logWarn, logError } from '../../utils/logger.js';
 import { m3u8PlaylistCache } from '../services/cache.js';
 import { proxyManager } from '../../utils/proxyManager.js';
@@ -559,7 +560,8 @@ streamRouter.get('/master.m3u8', async (c) => {
     const proto = c.req.header('x-forwarded-proto') || 'http';
     const proxyHost = `${proto}://${host}`;
 
-    const cacheKey = `${proxyHost}:${streamUrl}:${extractedSubtitles.length}:${corsActive ? (corsQuery || 'cors') : 'direct'}`;
+    const corsCacheTag = corsActive ? `${corsQuery || 'cors'}:${getActiveCorsProxy() || 'none'}` : 'direct';
+    const cacheKey = `${proxyHost}:${streamUrl}:${extractedSubtitles.length}:${corsCacheTag}`;
     // Master playlists are dynamic or short-lived, while child media playlists can be cached briefly
     const isMaster = manifestData.includes('#EXT-X-STREAM-INF');
 

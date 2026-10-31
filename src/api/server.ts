@@ -17,6 +17,7 @@ import { isTurnstileEnabled, getTurnstileSiteKey } from './services/turnstile.js
 import { generatePowChallenge, verifyPowSolution } from './services/pow.js';
 import { getClientIp } from './services/security.js';
 import { formatHttpLog, log } from '../utils/logger.js';
+import { startCorsProxyHealthChecks } from '../utils/corsProxy.js';
 
 export const app = new Hono();
 
@@ -192,6 +193,8 @@ export function startServer(port = 3000) {
   startTelegramBot().catch((err) => {
     console.error('[TelegramBot] Failed to start:', err);
   });
+
+  startCorsProxyHealthChecks();
 
   return serve({
     fetch: app.fetch,
