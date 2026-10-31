@@ -4,7 +4,7 @@ import type { SearchResult, ProviderSearchOptions } from '../../types/index.js';
 import { rankSearchResults } from '../../utils/sort.js';
 
 const BASE_URL = 'https://uafix.net';
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36';
 
 export async function searchUaflix(query: string, options?: ProviderSearchOptions | number): Promise<SearchResult[]> {
   const targetYear = typeof options === 'number' ? options : options?.year;
