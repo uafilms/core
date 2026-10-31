@@ -9,8 +9,11 @@ import { log, logWarn } from './logger.js';
  */
 
 const HEALTH_CHECK_INTERVAL_MS = 30 * 60 * 1000;
-const PROBE_URL = 'https://www.google.com/robots.txt';
-const PROBE_TIMEOUT_MS = 10000;
+// Перевіряємо не лише доступність, а й цілісність відповіді: деякі проксі
+// обрізають великі сегменти (наприклад, на 512 КБ), що ламає відтворення.
+const PROBE_URL = 'https://speed.cloudflare.com/__down?bytes=1048576';
+const PROBE_MIN_BYTES = 1048576;
+const PROBE_TIMEOUT_MS = 20000;
 
 interface CorsProxyEntry {
   base: string;
@@ -91,17 +94,18 @@ function getOrderedEntries(): CorsProxyEntry[] {
 
 async function probe(entry: CorsProxyEntry): Promise<void> {
   try {
-    const res = await axios.get<string>(`${entry.base}${PROBE_URL}`, {
-      responseType: 'text',
+    const res = await axios.get<ArrayBuffer>(`${entry.base}${PROBE_URL}`, {
+      responseType: 'arraybuffer',
       timeout: PROBE_TIMEOUT_MS,
       maxRedirects: 3,
       headers: { 'User-Agent': DEFAULT_USER_AGENT },
       validateStatus: (status) => status >= 200 && status < 300,
     });
 
-    entry.healthy = typeof res.data === 'string' && res.data.length > 100;
+    const size = res.data?.byteLength ?? 0;
+    entry.healthy = size >= PROBE_MIN_BYTES;
     if (!entry.healthy) {
-      logWarn('cors', `proxy ${entry.base} returned an unexpected response`);
+      logWarn('cors', `proxy ${entry.base} truncated the probe response (${size}/${PROBE_MIN_BYTES} bytes)`);
     }
   } catch (err: unknown) {
     entry.healthy = false;
