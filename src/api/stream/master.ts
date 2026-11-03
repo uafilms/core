@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import axios from 'axios';
 import {
   extractVod,
   stripUakinoAxIntro,
@@ -19,8 +18,65 @@ import { TmdbService } from '../services/tmdb.js';
 import { OrchestratorService } from '../services/orchestrator.js';
 import { getClientIp } from '../services/security.js';
 import { detectCdn } from '../../utils/cdn.js';
+import {
+  StreamGuardError,
+  acquireSegmentSlot,
+  assertSafeUpstreamUrl,
+  fetchBufferLimited,
+  fetchTextLimited,
+  isAssContent,
+  isBinarySegmentContentType,
+  isM3u8Content,
+  isTooLargeError,
+  isVttContent,
+  consumeSegmentBytes,
+  getStreamClientIp,
+  segmentByteBudgetAvailable,
+  streamGuardMiddleware,
+  STREAM_LIMITS,
+} from './guard.js';
+import { verifyStreamTarget } from '../../utils/streamSign.js';
 
 export const streamRouter = new Hono();
+
+function guardErrorStatus(err: unknown): 400 | 403 | 413 | 429 | 502 | 503 {
+  if (isTooLargeError(err)) return 413;
+  return err instanceof StreamGuardError ? err.status : 502;
+}
+
+function isSubtitleTarget(url: string): boolean {
+  return (
+    url.endsWith('.vtt') ||
+    url.endsWith('.srt') ||
+    url.includes('/subtitle/') ||
+    url.includes('/hls/sub/') ||
+    url.includes('/subtitles/') ||
+    /\.(vtt|srt)\?/i.test(url)
+  );
+}
+
+function isPlaylistTarget(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return /\.m3u8$/i.test(parsed.pathname);
+  } catch {
+    return /\.m3u8(\?|$)/i.test(url);
+  }
+}
+
+function envInt(name: string, fallback: number): number {
+  const value = parseInt(process.env[name] || '', 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function signedProxyUrlsRequired(): boolean {
+  return process.env.STREAM_REQUIRE_SIGNED_URLS !== 'false';
+}
+
+interface CachedPlaylist {
+  body: string;
+  cacheControl: string;
+}
 
 // Роут для прямих посилань на відтворення серій у плейлістах Lampa та external плеєрів
 const handleDirectPlay = async (c: any) => {
@@ -113,12 +169,12 @@ const handleDirectPlay = async (c: any) => {
   }
 };
 
-streamRouter.get('/play.m3u8', handleDirectPlay);
-streamRouter.get('/play.mp4', handleDirectPlay);
-streamRouter.get('/play', handleDirectPlay);
+streamRouter.get('/play.m3u8', streamGuardMiddleware, handleDirectPlay);
+streamRouter.get('/play.mp4', streamGuardMiddleware, handleDirectPlay);
+streamRouter.get('/play', streamGuardMiddleware, handleDirectPlay);
 
 // HLS Media Playlist для субтитрів (/subs.m3u8)
-streamRouter.get('/subs.m3u8', async (c) => {
+streamRouter.get('/subs.m3u8', streamGuardMiddleware, async (c) => {
   const query = c.req.query();
   const cdn = query.cdn;
   const id = query.id;
@@ -135,6 +191,7 @@ streamRouter.get('/subs.m3u8', async (c) => {
   if (id) params.set('id', id);
   if (lang) params.set('lang', lang);
   if (rawUrl) params.set('url', rawUrl);
+  if (query.sig) params.set('sig', query.sig);
 
   const queryString = params.toString();
   if (queryString) {
@@ -161,7 +218,7 @@ streamRouter.get('/subs.m3u8', async (c) => {
 });
 
 // Роут для віддачі сегменту/файлу WebVTT (/subs.vtt)
-streamRouter.get('/subs.vtt', async (c) => {
+streamRouter.get('/subs.vtt', streamGuardMiddleware, async (c) => {
   const query = c.req.query();
   const cdn = query.cdn;
   const id = query.id;
@@ -187,19 +244,34 @@ streamRouter.get('/subs.vtt', async (c) => {
     });
   }
 
+  if (rawUrl && signedProxyUrlsRequired() && !verifyStreamTarget(rawUrl, query.sig)) {
+    return c.text('WEBVTT\n\n', 403, {
+      'Content-Type': 'text/vtt; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    });
+  }
+
   try {
     const subUrl = stripCorsProxy(targetUrl);
     const subHeaders = getCdnSubtitleHeaders(subUrl, cdn || undefined);
 
     const proxyOpts = proxyManager.getConfig(cdn || undefined, subUrl);
-    const res = await axios.get<string>(subUrl, {
+    const fetched = await fetchTextLimited(subUrl, {
       headers: subHeaders,
-      responseType: 'text',
-      timeout: 10000,
-      ...proxyOpts,
+      timeoutMs: 10000,
+      maxBytes: STREAM_LIMITS.subtitleBytes,
+      axiosConfig: proxyOpts,
     });
 
-    let content = res.data;
+    let content = fetched.data;
+
+    if (!isVttContent(content)) {
+      logWarn('stream', `subtitle proxy rejected non-VTT content: ${subUrl.slice(0, 120)}`);
+      return c.text('WEBVTT\n\n', 502, {
+        'Content-Type': 'text/vtt; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+      });
+    }
 
     // 1. Нормалізуємо таймкоди WebVTT: перетворюємо MM:SS.mmm на 00:MM:SS.mmm
     content = content.replace(/(\r?\n|^)(\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}\.\d{3})/g, '$100:$2 --> 00:$3');
@@ -233,7 +305,7 @@ streamRouter.get('/subs.vtt', async (c) => {
 // Роут для віддачі стилізованих ASS-субтитрів (Fenix styled_url).
 // Рендерить не плеєр, а libass/JASSUB на канвасі, тому це не VTT і через
 // EXT-X-MEDIA такий файл не проксіюється — плеєр тягне його окремо.
-streamRouter.get('/subs.ass', async (c) => {
+streamRouter.get('/subs.ass', streamGuardMiddleware, async (c) => {
   const query = c.req.query();
   const cdn = query.cdn;
   const targetUrl = query.url;
@@ -245,19 +317,34 @@ streamRouter.get('/subs.ass', async (c) => {
     });
   }
 
+  if (signedProxyUrlsRequired() && !verifyStreamTarget(targetUrl, query.sig)) {
+    return c.text('', 403, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    });
+  }
+
   try {
     const subUrl = stripCorsProxy(targetUrl);
     const subHeaders = getCdnSubtitleHeaders(subUrl, cdn || undefined);
 
     const proxyOpts = proxyManager.getConfig(cdn || undefined, subUrl);
-    const res = await axios.get<string>(subUrl, {
+    const fetched = await fetchTextLimited(subUrl, {
       headers: subHeaders,
-      responseType: 'text',
-      timeout: 15000,
-      ...proxyOpts,
+      timeoutMs: 15000,
+      maxBytes: STREAM_LIMITS.assBytes,
+      axiosConfig: proxyOpts,
     });
 
-    const content = typeof res.data === 'string' ? res.data : String(res.data ?? '');
+    const content = fetched.data;
+
+    if (!isAssContent(content)) {
+      logWarn('stream', `ass subtitle proxy rejected non-ASS content: ${subUrl.slice(0, 120)}`);
+      return c.text('', 502, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+      });
+    }
 
     return c.text(content, 200, {
       'Content-Type': 'text/plain; charset=utf-8',
@@ -275,10 +362,33 @@ streamRouter.get('/subs.ass', async (c) => {
 
 // Проксі сегментів для CDN з підписами, прив'язаними до IP (uakino.ax).
 // Браузер не може тягнути такі сегменти напряму — токен виданий на IP сервера.
-streamRouter.get('/segment', async (c) => {
+streamRouter.get('/segment', streamGuardMiddleware, async (c) => {
   const target = stripCorsProxy(c.req.query('url') || '');
   if (!target || !/^https?:\/\//i.test(target)) {
     return c.text('Bad url', 400, { 'Access-Control-Allow-Origin': '*' });
+  }
+
+  const signatureRequired = process.env.STREAM_REQUIRE_SIGNED_SEGMENTS !== 'false';
+  if (signatureRequired && !verifyStreamTarget(target, c.req.query('sig'))) {
+    return c.text('Signed segment URL required', 403, { 'Access-Control-Allow-Origin': '*' });
+  }
+
+  const clientIp = getStreamClientIp(c);
+  const hasClientIp = Boolean(clientIp && clientIp !== 'unknown');
+
+  if (hasClientIp && !segmentByteBudgetAvailable(clientIp)) {
+    return c.text('Daily segment traffic quota exceeded', 429, {
+      'Access-Control-Allow-Origin': '*',
+      'Retry-After': '3600',
+    });
+  }
+
+  const release = acquireSegmentSlot();
+  if (!release) {
+    return c.text('Too many concurrent segment requests', 503, {
+      'Access-Control-Allow-Origin': '*',
+      'Retry-After': '2',
+    });
   }
 
   try {
@@ -288,20 +398,31 @@ streamRouter.get('/segment', async (c) => {
       ...(range ? { Range: range } : {}),
     };
 
-    const res = await axios.get<ArrayBuffer>(target, {
+    const res = await fetchBufferLimited(target, {
       headers: reqHeaders,
-      responseType: 'arraybuffer',
-      timeout: 20000,
-      validateStatus: () => true,
+      timeoutMs: 20000,
+      maxBytes: STREAM_LIMITS.segmentBytes,
     });
+
+    if (hasClientIp) {
+      consumeSegmentBytes(clientIp, res.data.byteLength || 0);
+    }
 
     if (res.status >= 400) {
       logWarn('stream', `segment fetch failed ${res.status}: ${target.slice(0, 120)}`);
       return c.text(`Segment upstream error ${res.status}`, 502, { 'Access-Control-Allow-Origin': '*' });
     }
 
+    const upstreamContentType = String(res.headers['content-type'] || '');
+    if (!isBinarySegmentContentType(upstreamContentType)) {
+      logWarn('stream', `segment proxy rejected non-media content: ${upstreamContentType}`);
+      return c.text('Segment upstream returned non-media content', 502, {
+        'Access-Control-Allow-Origin': '*',
+      });
+    }
+
     const headers: Record<string, string> = {
-      'Content-Type': (res.headers['content-type'] as string) || (target.includes('.m4s') || target.includes('.mp4') ? 'video/iso.segment' : 'video/mp2t'),
+      'Content-Type': upstreamContentType || (target.includes('.m4s') || target.includes('.mp4') ? 'video/iso.segment' : 'video/mp2t'),
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'public, max-age=3600',
     };
@@ -311,8 +432,21 @@ streamRouter.get('/segment', async (c) => {
 
     return c.body(res.data as ArrayBuffer, res.status as 200 | 206, headers);
   } catch (err: unknown) {
+    if (isTooLargeError(err)) {
+      logWarn('stream', `segment too large: ${target.slice(0, 120)}`);
+      return c.text('Segment exceeds size limit', 413, { 'Access-Control-Allow-Origin': '*' });
+    }
+
+    const status = guardErrorStatus(err);
+    if (status !== 502) {
+      logWarn('stream', `segment blocked (${status}): ${(err as Error).message}`);
+      return c.text((err as Error).message, status, { 'Access-Control-Allow-Origin': '*' });
+    }
+
     logWarn('stream', `segment proxy error: ${(err as Error).message}`);
     return c.text('Segment fetch error', 502, { 'Access-Control-Allow-Origin': '*' });
+  } finally {
+    release();
   }
 });
 
@@ -325,11 +459,32 @@ function fixRedirectLocation(location: string): string {
   }
 }
 
-streamRouter.get('/video.mp4', async (c) => {
+streamRouter.get('/video.mp4', streamGuardMiddleware, async (c) => {
   const target = stripCorsProxy(c.req.query('url') || '');
   const cdn = c.req.query('cdn');
   const id = c.req.query('id');
   const clientIp = getClientIp(c);
+
+  const idTarget = id && /^https?:\/\//i.test(id) ? id : '';
+  const candidateTarget = target || idTarget;
+
+  if (signedProxyUrlsRequired() && target && !verifyStreamTarget(target, c.req.query('sig'))) {
+    return c.text('Signed URL required', 403, { 'Access-Control-Allow-Origin': '*' });
+  }
+
+  if (signedProxyUrlsRequired() && idTarget && !verifyStreamTarget(idTarget, c.req.query('sig'))) {
+    return c.text('Signed URL required', 403, { 'Access-Control-Allow-Origin': '*' });
+  }
+
+  if (candidateTarget) {
+    try {
+      await assertSafeUpstreamUrl(candidateTarget);
+    } catch (err: unknown) {
+      return c.text((err as Error).message, guardErrorStatus(err), {
+        'Access-Control-Allow-Origin': '*',
+      });
+    }
+  }
 
   const finalUrl = await resolveDirectVideoUrl({ target, cdn, id, clientIp });
   if (!finalUrl) {
@@ -341,7 +496,7 @@ streamRouter.get('/video.mp4', async (c) => {
   return c.redirect(finalUrl, 302);
 });
 
-streamRouter.get('/master.m3u8', async (c) => {
+streamRouter.get('/master.m3u8', streamGuardMiddleware, async (c) => {
   const query = c.req.query();
   const cdn = query.cdn;
   const type = query.type;
@@ -353,8 +508,38 @@ streamRouter.get('/master.m3u8', async (c) => {
   const mergeAudio = query.mergeAudio === '1' || query.mergeAudio === 'true';
 
   // Пряме перенаправлення для субтитрів, якщо запитано через /master.m3u8
-  if (rawUrl && (rawUrl.endsWith('.vtt') || rawUrl.endsWith('.srt') || rawUrl.includes('/subtitle/') || rawUrl.includes('/hls/sub/') || rawUrl.includes('/subtitles/') || /\.(vtt|srt)\?/i.test(rawUrl))) {
-    return c.redirect(`/subs.vtt?url=${encodeURIComponent(rawUrl)}`);
+  if (rawUrl && isSubtitleTarget(rawUrl)) {
+    if (signedProxyUrlsRequired() && !verifyStreamTarget(rawUrl, query.sig)) {
+      return c.text('#EXTM3U\n#EXT-X-ERROR: Signed URL required', 403, {
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Access-Control-Allow-Origin': '*',
+      });
+    }
+
+    const sigSuffix = query.sig ? `&sig=${encodeURIComponent(query.sig)}` : '';
+    return c.redirect(`/subs.vtt?url=${encodeURIComponent(rawUrl)}${sigSuffix}`);
+  }
+
+  if (rawUrl && !isSubtitleTarget(rawUrl)) {
+    // Будь-який `url=` сюди має приходити з нашим підписом. Інакше
+    // /master.m3u8 стає відкритим проксі для довільних m3u8/embed-URL.
+    if (signedProxyUrlsRequired() && !verifyStreamTarget(rawUrl, query.sig)) {
+      return c.text('#EXTM3U\n#EXT-X-ERROR: Signed URL required', 403, {
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Access-Control-Allow-Origin': '*',
+      });
+    }
+
+    if (!isPlaylistTarget(rawUrl)) {
+      try {
+        await assertSafeUpstreamUrl(rawUrl);
+      } catch (err: unknown) {
+        return c.text(`#EXTM3U\n#EXT-X-ERROR: ${(err as Error).message}`, guardErrorStatus(err), {
+          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Access-Control-Allow-Origin': '*',
+        });
+      }
+    }
   }
 
   let streamUrl: string | undefined;
@@ -522,6 +707,38 @@ streamRouter.get('/master.m3u8', async (c) => {
 
   const headers = getCdnStreamHeaders(streamUrl, cdn || undefined);
 
+  const host = c.req.header('host') || 'localhost:3000';
+  const proto = c.req.header('x-forwarded-proto') || 'http';
+  const proxyHost = `${proto}://${host}`;
+
+  const corsCacheTag = corsActive ? `${corsQuery || 'cors'}:${getActiveCorsProxy() || 'none'}` : 'direct';
+  const cacheKey = [
+    proxyHost,
+    streamUrl,
+    cdn || '',
+    extractedSubtitles.length,
+    corsCacheTag,
+    c.req.query('voice') || '',
+    c.req.query('translation') || '',
+    mergeAudio ? 'merge' : 'plain',
+    c.req.query('_media') || '',
+  ].join(':');
+
+  const cachedPlaylist = m3u8PlaylistCache.get<CachedPlaylist | string>(cacheKey);
+  if (cachedPlaylist) {
+    const cachedBody = typeof cachedPlaylist === 'string' ? cachedPlaylist : cachedPlaylist.body;
+    const cachedCacheControl =
+      typeof cachedPlaylist === 'string'
+        ? 'public, max-age=3600'
+        : cachedPlaylist.cacheControl || 'public, max-age=3600';
+
+    return c.text(cachedBody, 200, {
+      'Content-Type': 'application/vnd.apple.mpegurl',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': cachedCacheControl,
+    });
+  }
+
   // 4. Fetch manifest and rewrite
   try {
     let manifestData: string;
@@ -529,13 +746,13 @@ streamRouter.get('/master.m3u8', async (c) => {
     if (preparedManifest) {
       manifestData = preparedManifest;
     } else try {
-      const res = await axios.get<string>(streamUrl, {
+      const fetched = await fetchTextLimited(streamUrl, {
         headers,
-        responseType: 'text',
-        timeout: 10000,
-        ...proxyOpts,
+        timeoutMs: 10000,
+        maxBytes: STREAM_LIMITS.manifestBytes,
+        axiosConfig: proxyOpts,
       });
-      manifestData = res.data;
+      manifestData = fetched.data;
     } catch (fetchErr: unknown) {
       logWarn('stream', `Failed fetching manifest from ${streamUrl}: ${(fetchErr as any).message}`);
       if ((fetchErr as any).response) {
@@ -544,11 +761,11 @@ streamRouter.get('/master.m3u8', async (c) => {
       // Якщо Ashdi повернув помилку (наприклад, 404) на відновлений потік 1080/720/2160 — пробуємо резервний 480
       if (streamUrl.includes('ashdi.vip') && /\/hls\/(?:1080|2160|1440|720)\//.test(streamUrl)) {
         const fallbackUrl = streamUrl.replace(/\/hls\/(?:1080|2160|1440|720)\//, '/hls/480/');
-        const fallbackRes = await axios.get<string>(fallbackUrl, {
+        const fallbackRes = await fetchTextLimited(fallbackUrl, {
           headers,
-          responseType: 'text',
-          timeout: 10000,
-          ...proxyOpts,
+          timeoutMs: 10000,
+          maxBytes: STREAM_LIMITS.manifestBytes,
+          axiosConfig: proxyOpts,
         });
         manifestData = fallbackRes.data;
       } else {
@@ -556,14 +773,23 @@ streamRouter.get('/master.m3u8', async (c) => {
       }
     }
 
-    const host = c.req.header('host') || 'localhost:3000';
-    const proto = c.req.header('x-forwarded-proto') || 'http';
-    const proxyHost = `${proto}://${host}`;
+    if (!isM3u8Content(manifestData)) {
+      logWarn('stream', `Upstream did not return an m3u8 playlist: ${streamUrl.slice(0, 120)}`);
+      return c.text('#EXTM3U\n#EXT-X-ERROR: Upstream did not return a valid playlist', 502, {
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Access-Control-Allow-Origin': '*',
+      });
+    }
 
-    const corsCacheTag = corsActive ? `${corsQuery || 'cors'}:${getActiveCorsProxy() || 'none'}` : 'direct';
-    const cacheKey = `${proxyHost}:${streamUrl}:${extractedSubtitles.length}:${corsCacheTag}`;
-    // Master playlists are dynamic or short-lived, while child media playlists can be cached briefly
     const isMaster = manifestData.includes('#EXT-X-STREAM-INF');
+    // VOD-плейлисти статичні, тому їх можна кешувати на годину.
+    // Live (без #EXT-X-ENDLIST) — лише на кілька секунд, інакше плеєр відстає.
+    const isLive = !isMaster && !manifestData.includes('#EXT-X-ENDLIST');
+    const cacheTtlSeconds = isLive
+      ? envInt('STREAM_LIVE_PLAYLIST_CACHE_TTL_SECONDS', 5)
+      : envInt('STREAM_PLAYLIST_CACHE_TTL_SECONDS', 3600);
+    const cacheTtlMs = cacheTtlSeconds * 1000;
+    const cacheControl = `public, max-age=${cacheTtlSeconds}`;
 
     // Якщо це одиночний медіа-плейлист, але у нас є субтитри — загортаємо у master playlist для RFC 8216
     if (!isMaster && extractedSubtitles.length > 0 && !c.req.query('_media')) {
@@ -577,19 +803,11 @@ streamRouter.get('/master.m3u8', async (c) => {
         masterWrap += `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="${subLabel}",DEFAULT=${isDefault},AUTOSELECT=YES,LANGUAGE="${subLang}",URI="${subUri}"\n`;
       });
       masterWrap += `#EXT-X-STREAM-INF:BANDWIDTH=3000000,SUBTITLES="subs"\n${mediaUrl}\n`;
+      m3u8PlaylistCache.set(cacheKey, { body: masterWrap, cacheControl }, cacheTtlMs);
       return c.text(masterWrap, 200, {
         'Content-Type': 'application/vnd.apple.mpegurl',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache',
-      });
-    }
-
-    const cachedM3u8 = m3u8PlaylistCache.get<string>(cacheKey);
-    if (cachedM3u8) {
-      return c.text(cachedM3u8, 200, {
-        'Content-Type': 'application/vnd.apple.mpegurl',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': isMaster ? 'no-cache' : 'public, max-age=3600',
+        'Cache-Control': cacheControl,
       });
     }
 
@@ -610,18 +828,16 @@ streamRouter.get('/master.m3u8', async (c) => {
       }
     );
 
-    if (!isMaster) {
-      m3u8PlaylistCache.set(cacheKey, modifiedM3u8, 60 * 60 * 1000);
-    }
+    m3u8PlaylistCache.set(cacheKey, { body: modifiedM3u8, cacheControl }, cacheTtlMs);
 
     return c.text(modifiedM3u8, 200, {
       'Content-Type': 'application/vnd.apple.mpegurl',
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': isMaster ? 'no-cache' : 'public, max-age=3600',
+      'Cache-Control': cacheControl,
     });
   } catch (err: unknown) {
     logError('stream', `m3u8 fetch error: ${(err as Error).message}`);
-    return c.text(`#EXTM3U\n#EXT-X-ERROR: ${(err as Error).message}`, 502, {
+    return c.text(`#EXTM3U\n#EXT-X-ERROR: ${(err as Error).message}`, guardErrorStatus(err), {
       'Content-Type': 'application/vnd.apple.mpegurl',
       'Access-Control-Allow-Origin': '*',
     });

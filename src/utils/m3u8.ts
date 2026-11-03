@@ -1,5 +1,6 @@
 import type { Subtitle } from '../types/media.js';
 import { getActiveCorsProxy, stripCorsProxy } from './corsProxy.js';
+import { signProxyUrl, signStreamTarget } from './streamSign.js';
 
 export { stripCorsProxy } from './corsProxy.js';
 
@@ -89,7 +90,7 @@ export function formatSubtitleUri(subUrl: string, proxyHost: string, lang = 'uk'
     // fallback to generic url parameter
   }
 
-  return `${proxyHost}/subs.m3u8?url=${encodeURIComponent(subUrl)}`;
+  return signProxyUrl(`${proxyHost}/subs.m3u8?url=${encodeURIComponent(subUrl)}`);
 }
 
 export function parseMasterPlaylist(
@@ -103,6 +104,9 @@ export function parseMasterPlaylist(
   const corsProxy = corsProxySegments ? getActiveCorsProxy() : '';
   const lines = content.split('\n');
   const newLines: string[] = [];
+
+  const proxySegmentUrl = (base: string, target: string) =>
+    `${base}${encodeURIComponent(target)}&sig=${signStreamTarget(target)}`;
 
   const cleanBaseUrl = normalizeFenixCdnHost(stripCorsProxy(baseUrl));
 
@@ -179,9 +183,11 @@ export function parseMasterPlaylist(
         if (mediaUriMatch && !mediaUriMatch[1].startsWith(`${proxyHost}/`)) {
           try {
             const mediaUrl = normalizeFenixCdnHost(new URL(mediaUriMatch[1], cleanBaseUrl).href);
-            const rewritten = /\.(vtt|srt)(\?|$)/i.test(mediaUrl)
-              ? `${proxyHost}/subs.m3u8?url=${encodeURIComponent(mediaUrl)}`
-              : `${proxyHost}/master.m3u8?url=${encodeURIComponent(mediaUrl)}${corsSuffix}`;
+            const rewritten = signProxyUrl(
+              /\.(vtt|srt)(\?|$)/i.test(mediaUrl)
+                ? `${proxyHost}/subs.m3u8?url=${encodeURIComponent(mediaUrl)}`
+                : `${proxyHost}/master.m3u8?url=${encodeURIComponent(mediaUrl)}${corsSuffix}`
+            );
             newLines.push(mediaLine.replace(mediaUriMatch[1], rewritten));
           } catch {
             newLines.push(mediaLine);
@@ -197,10 +203,8 @@ export function parseMasterPlaylist(
           try {
             const mapUrl = normalizeFenixCdnHost(new URL(mapUriMatch[1], cleanBaseUrl).href);
             const rewritten = segmentProxyBase
-              ? `${segmentProxyBase}${encodeURIComponent(mapUrl)}`
-              : corsProxy
-                ? `${corsProxy}${mapUrl}`
-                : mapUrl;
+              ? proxySegmentUrl(segmentProxyBase, mapUrl)
+              : signProxyUrl(corsProxy ? `${corsProxy}${mapUrl}` : mapUrl);
             newLines.push(trimmed.replace(mapUriMatch[1], rewritten));
           } catch {
             newLines.push(trimmed);
@@ -229,13 +233,17 @@ export function parseMasterPlaylist(
         ) {
           streamTargetUrl = streamTargetUrl.replace(/\/hls\/\d+\//, `/hls/${currentStreamHeight}/`);
         }
-        newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(streamTargetUrl)}${corsSuffix}`);
+        newLines.push(
+          signProxyUrl(
+            `${proxyHost}/master.m3u8?url=${encodeURIComponent(streamTargetUrl)}${corsSuffix}`
+          )
+        );
         nextIsStreamUrl = false;
         currentStreamHeight = undefined;
       } else if (nextIsSegmentUrl) {
         const isMooncdn = /mooncdn\.(online|xyz)|moonanime\.art/i.test(absoluteUrl);
         if (segmentProxyBase) {
-          newLines.push(`${segmentProxyBase}${encodeURIComponent(absoluteUrl)}`);
+          newLines.push(proxySegmentUrl(segmentProxyBase, absoluteUrl));
         } else if (corsProxy && !isMooncdn && !absoluteUrl.startsWith(corsProxy)) {
           newLines.push(`${corsProxy}${absoluteUrl}`);
         } else {
@@ -250,11 +258,15 @@ export function parseMasterPlaylist(
             /\/(index|master|playlist)(\/|\?|$)/i.test(absoluteUrl));
 
         if (looksLikePlaylist) {
-          newLines.push(`${proxyHost}/master.m3u8?url=${encodeURIComponent(absoluteUrl)}${corsSuffix}`);
+          newLines.push(
+            signProxyUrl(
+              `${proxyHost}/master.m3u8?url=${encodeURIComponent(absoluteUrl)}${corsSuffix}`
+            )
+          );
         } else {
           const isMooncdn = /mooncdn\.(online|xyz)|moonanime\.art/i.test(absoluteUrl);
           if (segmentProxyBase) {
-            newLines.push(`${segmentProxyBase}${encodeURIComponent(absoluteUrl)}`);
+            newLines.push(proxySegmentUrl(segmentProxyBase, absoluteUrl));
           } else if (corsProxy && !isMooncdn && !absoluteUrl.startsWith(corsProxy)) {
             newLines.push(`${corsProxy}${absoluteUrl}`);
           } else {

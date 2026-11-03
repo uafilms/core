@@ -7,7 +7,10 @@ interface CacheEntry<T> {
 export class MemoryCache {
   private store = new Map<string, CacheEntry<unknown>>();
 
-  constructor(private defaultTtlMs = 2 * 60 * 60 * 1000) {
+  constructor(
+    private defaultTtlMs = 2 * 60 * 60 * 1000,
+    private maxEntries = Infinity
+  ) {
     // Run cleanup every 10 minutes
     setInterval(() => this.cleanup(), 10 * 60 * 1000).unref();
   }
@@ -15,6 +18,12 @@ export class MemoryCache {
   set<T>(key: string, value: T, ttlMs?: number): void {
     const ttl = ttlMs !== undefined ? ttlMs : this.defaultTtlMs;
     const now = Date.now();
+
+    if (!this.store.has(key) && this.store.size >= this.maxEntries) {
+      const oldestKey = this.store.keys().next().value;
+      if (oldestKey !== undefined) this.store.delete(oldestKey);
+    }
+
     this.store.set(key, {
       value,
       createdAt: now,
@@ -77,7 +86,7 @@ export class MemoryCache {
 
 export const omssResponseCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
 export const metaCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
-export const m3u8PlaylistCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
+export const m3u8PlaylistCache = new MemoryCache(24 * 60 * 60 * 1000, 5000); // 24h, bounded
 export const omssSourceResolutionCache = new MemoryCache(24 * 60 * 60 * 1000); // 24 hours
 
 export interface MediaParseInfo {

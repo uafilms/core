@@ -9,6 +9,7 @@ import { isSearchResultMatch, rankSearchResults } from '../../utils/sort.js';
 import { cleanStudioName, detectAudioLang, resolveStudioInfo } from '../../utils/studio.js';
 import { omssSourceResolutionCache, mediaParsedTimestampCache } from '../services/cache.js';
 import { runWithProvider } from '../../utils/proxyManager.js';
+import { signProxyUrl } from '../../utils/streamSign.js';
 
 interface OrchestratorOptions {
   meta: MediaMetadata;
@@ -338,6 +339,8 @@ export class OrchestratorService {
             }
           }
 
+          playUrl = signProxyUrl(playUrl);
+
           const rawAudioName = raw.audio || raw.title || 'Озвучення';
           const studioCleaned = cleanStudioName(rawAudioName);
           const studio = resolveStudioInfo(studioCleaned, raw.poster || undefined);
@@ -392,7 +395,9 @@ export class OrchestratorService {
               // ASS рендерить libass на канвасі (плеєр тягне файл окремо),
               // VTT/SRT їдуть через HLS як звичайні текст-треки.
               const subUrl = platform === 'web'
-                ? `${proxyHost}/${subFormat === 'ass' ? 'subs.ass' : 'master.m3u8'}?url=${encodeURIComponent(sub.url)}`
+                ? signProxyUrl(
+                    `${proxyHost}/${subFormat === 'ass' ? 'subs.ass' : 'master.m3u8'}?url=${encodeURIComponent(sub.url)}`
+                  )
                 : sub.url;
 
               const subObj: OmssSubtitle = {
