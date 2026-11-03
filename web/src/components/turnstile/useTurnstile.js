@@ -10,6 +10,7 @@ export function useTurnstile() {
   const [animPhase, setAnimPhase] = useState('entering');
   const checkInterval = useRef(null);
   const tokenReadyFired = useRef(false);
+  const refreshPromiseRef = useRef(null);
 
   // Create overlay in body
   useEffect(() => {
@@ -153,6 +154,62 @@ export function useTurnstile() {
     if (animPhase === 'entering') setAnimPhase('visible');
     else if (animPhase === 'exiting') setAnimPhase('hidden');
   }, [animPhase]);
+
+  // Turnstile tokens are single-use: expose a way to obtain a fresh one.
+  // Requests that were rejected with TURNSTILE_VERIFICATION_FAILED can retry
+  // after calling window.refreshCfToken().
+  const requestFreshToken = useCallback(() => {
+    if (!config) return Promise.resolve(window.cfToken || null);
+    if (!config.enabled) return Promise.resolve('disabled');
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+
+    const promise = new Promise((resolve) => {
+      if (!window.turnstile || widgetId.current === null) {
+        resolve(window.cfToken || null);
+        return;
+      }
+
+      let settled = false;
+      let timer = null;
+
+      const finish = (nextToken) => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener('cf_token_ready', onReady);
+        if (timer) clearTimeout(timer);
+        refreshPromiseRef.current = null;
+        resolve(nextToken || null);
+      };
+
+      const onReady = () => finish(window.cfToken);
+
+      window.addEventListener('cf_token_ready', onReady);
+      timer = setTimeout(() => finish(null), 15000);
+
+      window.cfToken = null;
+      tokenReadyFired.current = false;
+      if (overlayRef.current) overlayRef.current.style.display = '';
+      try {
+        window.turnstile.reset(widgetId.current);
+        window.turnstile.execute(widgetId.current);
+      } catch {
+        finish(null);
+      }
+    });
+
+    refreshPromiseRef.current = promise;
+    return promise;
+  }, [config]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    window.refreshCfToken = requestFreshToken;
+    return () => {
+      if (window.refreshCfToken === requestFreshToken) {
+        delete window.refreshCfToken;
+      }
+    };
+  }, [requestFreshToken]);
 
   const handleClick = useCallback(() => {
     if (state === 'interactive') {

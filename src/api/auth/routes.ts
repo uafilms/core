@@ -100,10 +100,9 @@ authRouter.post('/telegram-start', async (c) => {
 });
 
 // Check Telegram Verification Status
+// No Turnstile here: the frontend polls this endpoint every 2s, and a
+// Turnstile token is single-use, so the second poll would always fail.
 authRouter.get('/telegram-status', async (c) => {
-  const turnstileErr = await requireTurnstile(c);
-  if (turnstileErr) return turnstileErr;
-
   const token = c.req.query('token') || '';
   const status = checkTelegramVerificationStatus(token);
   return c.json(status, 200);

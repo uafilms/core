@@ -68,8 +68,38 @@ instance.interceptors.request.use(async config => {
 instance.interceptors.response.use(response => {
   loaderEvent.dispatchEvent(new Event('stop'));
   return response;
-}, error => {
+}, async error => {
   loaderEvent.dispatchEvent(new Event('stop'));
+
+  const config = error.config;
+  const errorCode = error.response?.data?.error?.code;
+  const isTurnstileFailure =
+    error.response?.status === 403 &&
+    errorCode === 'TURNSTILE_VERIFICATION_FAILED' &&
+    config &&
+    !config._turnstileRetried &&
+    typeof window !== 'undefined' &&
+    typeof window.refreshCfToken === 'function';
+
+  // Turnstile tokens are single-use, so a token that worked for one request
+  // is rejected on the next one. Fetch a fresh token and retry once.
+  if (isTurnstileFailure) {
+    config._turnstileRetried = true;
+    loaderEvent.dispatchEvent(new Event('start'));
+    let freshToken = null;
+    try {
+      freshToken = await window.refreshCfToken();
+    } catch {
+      freshToken = null;
+    }
+    if (freshToken && freshToken !== 'disabled') {
+      config.headers = config.headers || {};
+      config.headers['cf-turnstile-response'] = freshToken;
+      return instance(config);
+    }
+    loaderEvent.dispatchEvent(new Event('stop'));
+  }
+
   return Promise.reject(error);
 });
 

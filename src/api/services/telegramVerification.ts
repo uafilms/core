@@ -201,12 +201,13 @@ export async function startTelegramBot(): Promise<void> {
                 continue;
               }
 
-              // Mark token verified!
+              // Mark token verified and refresh its TTL: the user needs time
+              // to fill the registration form after confirming in Telegram.
               db.prepare(`
                 UPDATE telegram_verifications 
-                SET verified = 1, telegram_id = ?, telegram_username = ? 
+                SET verified = 1, telegram_id = ?, telegram_username = ?, expires_at = ?
                 WHERE token = ?
-              `).run(fromId, username, token);
+              `).run(fromId, username, now + SESSION_TTL_MS, token);
 
               await sendTelegramMessage(
                 chatId,

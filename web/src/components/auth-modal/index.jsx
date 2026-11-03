@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { isTrustedEmailDomain } from './utils/validation';
@@ -23,7 +23,6 @@ export default function AuthModal() {
   const [tgVerified, setTgVerified] = useState(false);
   const [tgUsername, setTgUsername] = useState('');
   const [tgLoading, setTgLoading] = useState(false);
-  const pollTimerRef = useRef(null);
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,26 +30,57 @@ export default function AuthModal() {
 
   // Polling for Telegram verification
   useEffect(() => {
-    if (tgSession && !tgVerified && tab === 'register') {
-      const poll = async () => {
-        const res = await checkTelegramVerification(tgSession.token);
-        if (res.success && res.data) {
-          if (res.data.verified) {
-            setTgVerified(true);
-            setTgUsername(res.data.username || '');
-            setError('');
-          } else if (res.data.error) {
-            setError(res.data.error);
-          }
-        }
-      };
+    if (!tgSession || tgVerified || tab !== 'register') return undefined;
 
-      poll();
-      pollTimerRef.current = setInterval(poll, 2000);
-    }
+    let cancelled = false;
+    let intervalId = null;
+    let failures = 0;
+
+    const stopPolling = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const poll = async () => {
+      const res = await checkTelegramVerification(tgSession.token);
+      if (cancelled) return;
+
+      if (!res.success) {
+        failures += 1;
+        if (failures >= 3) {
+          setError(res.error || 'Не вдалося перевірити статус підтвердження');
+          stopPolling();
+        }
+        return;
+      }
+
+      failures = 0;
+      const data = res.data || {};
+
+      if (data.verified) {
+        setTgVerified(true);
+        setTgUsername(data.username || '');
+        setError('');
+        stopPolling();
+      } else if (data.error) {
+        setError(data.error);
+        stopPolling();
+      } else if (data.expired) {
+        setTgSession(null);
+        setTgVerified(false);
+        setError('Посилання для підтвердження застаріло. Отримайте нове посилання.');
+        stopPolling();
+      }
+    };
+
+    poll();
+    intervalId = setInterval(poll, 2000);
 
     return () => {
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      cancelled = true;
+      stopPolling();
     };
   }, [tgSession, tgVerified, tab]);
 
@@ -66,6 +96,7 @@ export default function AuthModal() {
   if ((!isAuthModalOpen && !isClosing) || typeof document === 'undefined') return null;
 
   const handleStartTelegram = async () => {
+    if (tgVerified || tgLoading) return;
     setError('');
     setTgLoading(true);
     const res = await startTelegramVerification();
