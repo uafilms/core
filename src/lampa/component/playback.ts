@@ -101,6 +101,137 @@ export function findMatchingVoiceSource(
   return sources[0];
 }
 
+interface EpisodePrefetchContext {
+  host: string;
+  movieId: string;
+  season: number;
+  provider: string;
+  voice: string;
+}
+
+const episodeUrlCache = new Map<string, Promise<string | null>>();
+let playlistPrefetchContext: EpisodePrefetchContext | null = null;
+let prefetchPlaylist: any[] | null = null;
+let playlistPrefetchListenerAttached = false;
+let prefetchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearPrefetchTimer(): void {
+  if (prefetchTimer) {
+    clearTimeout(prefetchTimer);
+    prefetchTimer = null;
+  }
+}
+
+function episodeUrlCacheKey(context: EpisodePrefetchContext, episode: number): string {
+  return [
+    context.movieId,
+    context.season,
+    episode,
+    context.provider.toLowerCase().trim(),
+    context.voice.toLowerCase().trim(),
+  ].join(':');
+}
+
+/**
+ * Resolve the same provider/voice source for an episode ahead of time.
+ * The playlist then can switch instantly instead of running the whole
+ * orchestrator inside /play.m3u8 when the current episode ends.
+ */
+function resolveEpisodePlaybackUrl(
+  context: EpisodePrefetchContext,
+  episode: number
+): Promise<string | null> {
+  const key = episodeUrlCacheKey(context, episode);
+  const cached = episodeUrlCache.get(key);
+  if (cached) return cached;
+
+  const promise = (async (): Promise<string | null> => {
+    try {
+      const providers = await fetchEpisodeProviders(
+        context.host,
+        context.movieId,
+        context.season,
+        episode
+      );
+      if (!providers.length) return null;
+
+      const wantedProvider = context.provider.toLowerCase().trim();
+      const foundProv =
+        providers.find((p) => p.name.toLowerCase().trim() === wantedProvider) || providers[0];
+      if (!foundProv || !foundProv.sources || !foundProv.sources.length) return null;
+
+      const source =
+        findMatchingVoiceSource(foundProv.sources, context.voice) || foundProv.sources[0];
+      if (!source) return null;
+
+      let url = normalizeStreamUrl(source.url, context.host);
+      if (context.voice && source.sharedVideo && !url.includes('voice=')) {
+        url = withVoiceQuery(url, context.voice);
+      }
+      return withPlayerCors(url, source.provider?.id || foundProv.provider);
+    } catch {
+      return null;
+    }
+  })();
+
+  episodeUrlCache.set(key, promise);
+  promise.then((url) => {
+    if (!url) episodeUrlCache.delete(key);
+  });
+  return promise;
+}
+
+function patchPlaylistEpisodeUrl(
+  playlist: any[],
+  season: number,
+  episode: number,
+  url: string
+): void {
+  if (prefetchPlaylist !== playlist) return;
+  for (const item of playlist) {
+    if (item && item.season === season && item.episode === episode) {
+      item.url = url;
+    }
+  }
+}
+
+function prefetchPlaylistEpisode(
+  playlist: any[] | null,
+  season: number,
+  episode: number
+): void {
+  const context = playlistPrefetchContext;
+  if (!context || !playlist || !episode || season !== context.season) return;
+
+  resolveEpisodePlaybackUrl(context, episode).then((url) => {
+    if (url) patchPlaylistEpisodeUrl(playlist, season, episode, url);
+  });
+}
+
+function ensurePlaylistPrefetchListener(): void {
+  if (playlistPrefetchListenerAttached) return;
+  if (typeof Lampa === 'undefined' || !Lampa.PlayerPlaylist || !Lampa.PlayerPlaylist.listener) {
+    return;
+  }
+
+  playlistPrefetchListenerAttached = true;
+
+  // Lampa keeps the same playlist while it moves between episodes, so the
+  // only chance to warm up the following episode is right after a switch.
+  Lampa.PlayerPlaylist.listener.follow('select', (e: any) => {
+    const items = e?.playlist;
+    const position = Number(e?.position);
+    if (!Array.isArray(items) || !Number.isFinite(position)) return;
+    // Ignore playlists from other plugins/extensions.
+    if (items !== prefetchPlaylist) return;
+
+    const upcoming = items[position + 1];
+    if (upcoming) {
+      prefetchPlaylistEpisode(items, Number(upcoming.season), Number(upcoming.episode));
+    }
+  });
+}
+
 export async function playTvEpisode(
   ctx: ComponentContext,
   ep: TmdbEpisodeItem
@@ -113,6 +244,7 @@ export async function playTvEpisode(
   const activeVoice = ctx.state.activeVoice;
 
   ctx.state.selectedEpisodeNumber = epNum;
+  clearPrefetchTimer();
 
   let targetSource: OmssSourceItem | null = null;
   let subTracks: any[] = [];
@@ -372,10 +504,32 @@ export async function playTvEpisode(
 
   ctx.state.isPlaybackActive = true;
 
+  playlistPrefetchContext = {
+    host,
+    movieId: String(movie.id || movie.imdb_id || ''),
+    season: activeSeason,
+    provider: cleanProvider,
+    voice: activeVoice || '',
+  };
+  prefetchPlaylist = playlist;
+  ensurePlaylistPrefetchListener();
+
   try {
     Lampa.Player.play(playData);
     if (playlist.length > 1 && Lampa.Player.playlist) {
       Lampa.Player.playlist(playlist);
+    }
+
+    const nextEpisode = ctx.state.seasonEpisodes
+      .filter((item) => item.episode_number > epNum)
+      .sort((a, b) => a.episode_number - b.episode_number)[0];
+    if (nextEpisode) {
+      // Delay the prefetch so rapid episode clicks do not stack extra
+      // parser requests against the guest rate limit.
+      prefetchTimer = setTimeout(() => {
+        prefetchTimer = null;
+        prefetchPlaylistEpisode(playlist, activeSeason, nextEpisode.episode_number);
+      }, 15000);
     }
   } catch (err: any) {
     ctx.state.isPlaybackActive = false;
