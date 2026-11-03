@@ -23,8 +23,11 @@ import { isPlayerActive } from './playback.js';
 declare const Lampa: any;
 declare const $: any;
 
-export function renderActiveProviderSources(ctx: ComponentContext): void {
-  if (isPlayerActive(ctx)) {
+export function renderActiveProviderSources(ctx: ComponentContext, force = false): void {
+  // force=true для ручного перемикання CDN у фільтрі: користувач явно обрав
+  // інше джерело, тому перемальовуємо список навіть якщо прапорець відтворення
+  // не встиг скинутися після закриття плеєра.
+  if (!force && isPlayerActive(ctx)) {
     return;
   }
 

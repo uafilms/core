@@ -123,7 +123,7 @@ export function UAFilmsComponent(this: any, object: LampaActivityObject) {
           if (isTv) {
             updateTvVoicesAndFilter(ctx);
           } else {
-            renderActiveProviderSources(ctx);
+            renderActiveProviderSources(ctx, true);
           }
         }
       } else if (type === 'filter') {
@@ -205,6 +205,19 @@ export function UAFilmsComponent(this: any, object: LampaActivityObject) {
     if (!state.initialized) {
       state.initialized = true;
       this.initialize();
+    }
+
+    // Після повернення з плеєра прапорець міг лишитися true (подія destroy не
+    // долетіла). Перевіряємо реальний стан плеєра, а не власний прапорець.
+    try {
+      const playerOpen = Boolean(
+        Lampa.Player &&
+          ((typeof Lampa.Player.opened === 'function' && Lampa.Player.opened()) ||
+            Lampa.Player.opened === true)
+      );
+      if (!playerOpen) state.isPlaybackActive = false;
+    } catch {
+      // Ignore
     }
 
     if (Lampa.Background && Lampa.Background.immediately && Lampa.Utils.cardImgBackgroundBlur) {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { favoriteCdnRank, getSourceVoice } from '../utils/sources';
+import { favoriteCdnRank } from '../utils/sources';
 
 export default function SourceChips({
   type,
@@ -7,10 +7,9 @@ export default function SourceChips({
   episode,
   sources,
   selectedSource,
-  setSelectedSource,
+  onSourceChange,
   loadingSources,
   findBestSource,
-  savePreferences,
 }) {
   // Group unique CDNs / providers
   const cdnMap = new Map();
@@ -45,8 +44,7 @@ export default function SourceChips({
                   if (selectedSource?.provider?.id !== src.provider?.id) {
                     const cdnSources = sources.filter((s) => s.provider?.id === src.provider?.id);
                     const best = findBestSource(cdnSources) || src;
-                    setSelectedSource(best);
-                    savePreferences(best.provider?.id, getSourceVoice(best));
+                    onSourceChange(best);
                   }
                 }}
                 style={{ cursor: 'pointer' }}

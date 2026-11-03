@@ -46,7 +46,6 @@ export default function Details() {
   const {
     sources,
     selectedSource,
-    setSelectedSource,
     loadingSources,
     subtitles,
     desiredAudioLabel,
@@ -54,7 +53,6 @@ export default function Details() {
     handleSourceChange,
     handleAudioTrackChange,
     findBestSource,
-    savePreferences,
   } = useOmssSources({ data, type, id, season, episode });
 
   const availableSeasons = useMemo(() => {
@@ -246,10 +244,9 @@ export default function Details() {
           episode={episode}
           sources={sources}
           selectedSource={selectedSource}
-          setSelectedSource={setSelectedSource}
+          onSourceChange={handleSourceChange}
           loadingSources={loadingSources}
           findBestSource={findBestSource}
-          savePreferences={savePreferences}
         />
 
         <PlayerContainer

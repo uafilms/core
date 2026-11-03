@@ -98,6 +98,23 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function pickSearchMatch(
+  results: any[],
+  mediaType: MediaType,
+  year?: number
+): any | undefined {
+  const typed = results.filter((r: any) => r.media_type === mediaType);
+  const pool = typed.length ? typed : results;
+  if (year) {
+    const sameYear = pool.find((r: any) => {
+      const date = r.release_date || r.first_air_date || '';
+      return String(date).slice(0, 4) === String(year);
+    });
+    if (sameYear) return sameYear;
+  }
+  return pool[0];
+}
+
 async function resolveMediaMeta(query: {
   id?: string;
   tmdb_id?: string;
@@ -121,12 +138,17 @@ async function resolveMediaMeta(query: {
     if (meta) return { meta, type: mediaType };
   }
 
-  const title = query.title || query.original_title;
-  if (title) {
+  const year = parseInt(query.year || '', 10) || undefined;
+  const titles = [query.title, query.original_title].filter(
+    (t): t is string => Boolean(t && t.trim())
+  );
+
+  for (const title of titles) {
     try {
       const searchRes = await TmdbService.search(title);
-      if (searchRes && searchRes.results && searchRes.results.length > 0) {
-        const match = searchRes.results.find((r: any) => r.media_type === mediaType) || searchRes.results[0];
+      if (searchRes && Array.isArray(searchRes.results) && searchRes.results.length > 0) {
+        // Рік обов'язковий: без нього однойменний старий фільм перекриває новинку.
+        const match = pickSearchMatch(searchRes.results, mediaType, year);
         if (match) {
           const meta = await TmdbService.getMetadata(String(match.id), mediaType);
           if (meta) return { meta, type: mediaType };

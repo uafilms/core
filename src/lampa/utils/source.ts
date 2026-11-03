@@ -69,7 +69,9 @@ export function getProviderFromMap<T = any>(
     }
   }
 
-  return Array.from(map.values())[0];
+  // Ніколи не підміняємо запитаний CDN першим-ліпшим: інакше після перемикання
+  // джерела список показує чужі посилання, а плеєр грає попередній CDN.
+  return undefined;
 }
 
 export function extractVoiceName(source: any): string {
