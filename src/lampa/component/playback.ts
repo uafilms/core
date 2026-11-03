@@ -133,6 +133,30 @@ function episodeUrlCacheKey(context: EpisodePrefetchContext, episode: number): s
 }
 
 /**
+ * Carry the episode number through lazy CDN URLs. Serial pages return one
+ * shared master URL, and without s/e the master route falls back to S1E1.
+ */
+function withTvEpisodeParams(url: string, season: number, episode: number): string {
+  if (!url || !url.includes('/master.m3u8')) return url;
+
+  let result = url;
+  if (!/[?&]s=/.test(result)) {
+    result += `${result.includes('?') ? '&' : '?'}s=${season}`;
+  }
+  if (!/[?&]e=/.test(result)) {
+    result += `${result.includes('?') ? '&' : '?'}e=${episode}`;
+  }
+  return result;
+}
+
+/** A bare proxy URL has no target and always ends with 404. */
+function isResolvedStreamUrl(url: string): boolean {
+  if (!url) return false;
+  if (!url.includes('/master.m3u8')) return true;
+  return /[?&](url|cdn|id)=/.test(url);
+}
+
+/**
  * Resolve the same provider/voice source for an episode ahead of time.
  * The playlist then can switch instantly instead of running the whole
  * orchestrator inside /play.m3u8 when the current episode ends.
@@ -168,6 +192,8 @@ function resolveEpisodePlaybackUrl(
       if (context.voice && source.sharedVideo && !url.includes('voice=')) {
         url = withVoiceQuery(url, context.voice);
       }
+      url = withTvEpisodeParams(url, context.season, episode);
+      if (!isResolvedStreamUrl(url)) return null;
       return withPlayerCors(url, source.provider?.id || foundProv.provider);
     } catch {
       return null;
@@ -267,6 +293,7 @@ export async function playTvEpisode(
       if (activeVoice && targetSource.sharedVideo && !playUrl.includes('voice=')) {
         playUrl = withVoiceQuery(playUrl, activeVoice);
       }
+      playUrl = withTvEpisodeParams(playUrl, activeSeason, epNum);
       playUrl = withPlayerCors(playUrl, targetSource.provider?.id || provItem.provider);
       subTracks = (targetSource.subtitles || provItem.subtitles || []).map((sub: any) => ({
         ...sub,
@@ -306,6 +333,7 @@ export async function playTvEpisode(
         if (activeVoice && targetSource.sharedVideo && !playUrl.includes('voice=')) {
           playUrl = withVoiceQuery(playUrl, activeVoice);
         }
+        playUrl = withTvEpisodeParams(playUrl, activeSeason, epNum);
         playUrl = withPlayerCors(playUrl, targetSource.provider?.id || foundProv.provider);
         subTracks = (targetSource.subtitles || foundProv.subtitles || []).map((sub: any) => ({
           ...sub,
