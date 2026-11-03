@@ -162,9 +162,12 @@ const handleDirectPlay = async (c: any) => {
         const pId = (s.provider?.id || '').toLowerCase().trim();
         return pName === cleanProv || pId === cleanProv || pName.includes(cleanProv) || cleanProv.includes(pName);
       });
-      if (byProv.length > 0) {
-        matchedSources = byProv;
+      if (byProv.length === 0) {
+        // Never substitute another CDN for the one the client asked for:
+        // a Tortuga request must not silently start playing Ashdi.
+        return c.text(`No sources found for provider ${provider}`, 404);
       }
+      matchedSources = byProv;
     }
 
     let targetSource = matchedSources[0];
