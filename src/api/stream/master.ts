@@ -86,7 +86,35 @@ const handleDirectPlay = async (c: any) => {
   const eParam = query.e || '1';
   const media = (query.type || (query.s ? 'tv' : 'movie')) as 'movie' | 'tv';
   const provider = query.provider;
+  const requestedProvider = (provider || '').replace(/^★\s*/, '').trim().toLowerCase();
+  let cdnFilter: string | undefined;
+  if (requestedProvider && requestedProvider !== 'uafilms') {
+    const detected = detectCdn({
+      url: `/master.m3u8?cdn=${encodeURIComponent(requestedProvider)}`,
+    }).id;
+    if (detected !== 'unknown') {
+      cdnFilter = detected === 'uakinoax' ? 'uakino-ax' : detected;
+    }
+  }
   const voice = query.voice;
+  const voiceMatches = (source: any): boolean => {
+    if (!voice) return true;
+    const clean = voice.toLowerCase().trim();
+    const value = (
+      source.studio?.name ||
+      source.audioTracks?.[0] ||
+      source.audio ||
+      source.title ||
+      ''
+    )
+      .toLowerCase()
+      .trim();
+    return value === clean || value.includes(clean) || clean.includes(value);
+  };
+  const abortWhenSourceReady = cdnFilter
+    ? (sources: any[]) =>
+        sources.some((source) => source.provider?.id === cdnFilter && voiceMatches(source))
+    : undefined;
   const platform = (query.platform || 'web') as any;
   const corsParam = query.cors;
   const corsProxy = corsParam === undefined ? undefined : corsParam === '1' || corsParam === 'true';
@@ -117,6 +145,9 @@ const handleDirectPlay = async (c: any) => {
       proxyHost,
       corsProxy,
       providerId: undefined,
+      cdnId: cdnFilter,
+      providerTimeoutMs: cdnFilter ? 10000 : 0,
+      abortWhen: abortWhenSourceReady,
     });
 
     if (!result.sources || result.sources.length === 0) {

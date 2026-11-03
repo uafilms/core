@@ -623,6 +623,15 @@ async function handleVideo(c: any) {
   const s = season ? Number(season) : 1;
   const e = episode ? Number(episode) : 1;
 
+  const requestedCdn =
+    cdnSlug === 'hdvbua' || cdnSlug === 'hdvb'
+      ? 'hdvb'
+      : cdnSlug === 'bambooua'
+        ? 'bamboo'
+        : cdnSlug === 'uafilms'
+          ? undefined
+          : cdnSlug;
+
   const result = await OrchestratorService.resolveSources({
     meta,
     type: mediaType,
@@ -631,6 +640,8 @@ async function handleVideo(c: any) {
     platform: 'tv',
     proxyHost,
     clientIp,
+    cdnId: requestedCdn,
+    providerTimeoutMs: 10000,
   });
 
   const sources = (result.sources || []).filter((src) => matchesCdn(src, cdnSlug));

@@ -17,6 +17,12 @@ interface OrchestratorOptions {
   season?: number;
   episode?: number;
   providerId?: string;
+  /** Run only providers that can return this CDN (providers without cdns metadata are kept). */
+  cdnId?: string;
+  /** Abort a provider task that runs longer than this. 0/undefined disables the limit. */
+  providerTimeoutMs?: number;
+  /** Abort remaining provider tasks once this predicate matches accumulated sources. */
+  abortWhen?: (sources: OmssSource[]) => boolean;
   platform?: PlatformType;
   proxyHost: string;
   clientIp?: string;
@@ -60,13 +66,13 @@ export class OrchestratorService {
     subtitles: OmssSubtitle[];
     diagnostics: OmssDiagnostic[];
   }> {
-    const { meta, type, season = 1, episode = 1, providerId, platform = 'web', proxyHost, clientIp, corsProxy, onProviderResult } = options;
+    const { meta, type, season = 1, episode = 1, providerId, cdnId, providerTimeoutMs = 0, abortWhen, platform = 'web', proxyHost, clientIp, corsProxy, onProviderResult } = options;
 
     const corsEnabled = corsProxy ?? platform === 'web';
     const corsCacheKey = corsProxy === undefined ? 'auto' : corsProxy ? 'cors' : 'nocors';
 
     const mediaKey = meta.imdbId || meta.id || meta.title;
-    const cacheKey = `orchestrator:${mediaKey}:${type}:${season}:${episode}:${providerId || 'all'}:${platform}:${proxyHost}:${clientIp || 'default'}:${corsCacheKey}`;
+    const cacheKey = `orchestrator:${mediaKey}:${type}:${season}:${episode}:${providerId || 'all'}:${platform}:${proxyHost}:${clientIp || 'default'}:${corsCacheKey}:${cdnId || 'all'}:${providerTimeoutMs}:${abortWhen ? 'early' : 'full'}`;
 
     // 24h caching for source resolution (when not streaming SSE or as baseline)
     if (!onProviderResult) {
@@ -136,6 +142,18 @@ export class OrchestratorService {
       }
     }
 
+    // A playback route asks for one CDN. Providers that cannot return it only
+    // add latency: /play.m3u8 was waiting for uakino-ax/uaserials-fm even when
+    // their Ashdi source was never used.
+    if (cdnId) {
+      const knownCdn = targetProviders.some((p) => p.cdns?.includes(cdnId));
+      if (knownCdn) {
+        targetProviders = targetProviders.filter(
+          (p) => !p.cdns || p.cdns.length === 0 || p.cdns.includes(cdnId)
+        );
+      }
+    }
+
     const sources: OmssSource[] = [];
     const subtitles: OmssSubtitle[] = [];
     const diagnostics: OmssDiagnostic[] = [];
@@ -158,6 +176,12 @@ export class OrchestratorService {
 
     const activeControllers = new Map<Provider, AbortController>();
 
+    const abortAllTasks = () => {
+      for (const controller of activeControllers.values()) {
+        controller.abort();
+      }
+    };
+
     const abortRedundantTasks = () => {
       for (const [p, controller] of activeControllers.entries()) {
         if (isRedundant(p)) {
@@ -170,6 +194,10 @@ export class OrchestratorService {
       if (isRedundant(provider)) return;
 
       const abortController = new AbortController();
+      let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+      if (providerTimeoutMs > 0) {
+        timeoutTimer = setTimeout(() => abortController.abort(), providerTimeoutMs);
+      }
       activeControllers.set(provider, abortController);
 
       return runWithProvider(provider.name, async () => {
@@ -472,6 +500,10 @@ export class OrchestratorService {
             sources.push(...acceptedSources);
             subtitles.push(...acceptedSubtitles);
 
+            if (abortWhen && abortWhen(sources)) {
+              abortAllTasks();
+            }
+
             if (onProviderResult && !alreadyEmitted) {
               emittedCdns.add(group.id);
               onProviderResult({
@@ -498,6 +530,7 @@ export class OrchestratorService {
           severity: 'warning',
         });
       } finally {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
         activeControllers.delete(provider);
       }
       });
