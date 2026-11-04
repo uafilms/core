@@ -21,10 +21,11 @@ export async function request<T = any>(
   options: HttpRequestOptions = {}
 ): Promise<AxiosResponse<T>> {
   const { retries = 1, timeout = 12000, headers, provider, ...rest } = options;
-  const proxyConfig = proxyManager.getConfig(provider, url);
 
   let attempt = 0;
   while (attempt <= retries) {
+    // Fetch per attempt so a retry can rotate to the fallback pool.
+    const proxyConfig = proxyManager.getConfig(provider, url, attempt);
     try {
       return await axios({
         url,

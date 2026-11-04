@@ -28,6 +28,8 @@ export interface ProxyConfigResult {
 export class ProxyManager {
   private agents: any[] = [];
   private targetAgents = new Map<string, any[]>();
+  private fallbackAgents: any[] = [];
+  private fallbackTargetAgents = new Map<string, any[]>();
   private proxyAll = false;
   private enabledSet = new Set<string>();
   private counter = 0;
@@ -52,15 +54,17 @@ export class ProxyManager {
     }
   }
 
-  public reload() {
-    this.agents = [];
-    this.targetAgents.clear();
-
-    const rawEntries = process.env.PROXIES
-      ? process.env.PROXIES.split(',').map((s) => s.trim()).filter(Boolean)
+  private parsePool(rawValue: string | undefined): {
+    global: any[];
+    targets: Map<string, any[]>;
+  } {
+    const global: any[] = [];
+    const targets = new Map<string, any[]>();
+    const entries = rawValue
+      ? rawValue.split(',').map((s) => s.trim()).filter(Boolean)
       : [];
 
-    for (const rawEntry of rawEntries) {
+    for (const rawEntry of entries) {
       // Optional per-provider prefix: "ashdi:socks5://user:pass@host:port".
       // Plain URLs keep the old global-pool behaviour.
       const match = rawEntry.match(/^([a-z0-9][a-z0-9_-]*):((?:socks5h?|socks4a?|https?):\/\/.+)$/i);
@@ -70,13 +74,25 @@ export class ProxyManager {
       if (!agent) continue;
 
       if (target) {
-        const list = this.targetAgents.get(target) ?? [];
+        const list = targets.get(target) ?? [];
         list.push(agent);
-        this.targetAgents.set(target, list);
+        targets.set(target, list);
       } else {
-        this.agents.push(agent);
+        global.push(agent);
       }
     }
+
+    return { global, targets };
+  }
+
+  public reload() {
+    const primary = this.parsePool(process.env.PROXIES);
+    this.agents = primary.global;
+    this.targetAgents = primary.targets;
+
+    const fallback = this.parsePool(process.env.PROXIES_FALLBACK);
+    this.fallbackAgents = fallback.global;
+    this.fallbackTargetAgents = fallback.targets;
 
     const rawList = (process.env.PROXIED_PROVIDERS ?? '')
       .split(',')
@@ -90,12 +106,24 @@ export class ProxyManager {
     const targetSummary = Array.from(this.targetAgents.entries())
       .map(([name, list]) => `${name}=${list.length}`)
       .join(', ');
+    const fallbackTargetSummary = Array.from(this.fallbackTargetAgents.entries())
+      .map(([name, list]) => `${name}=${list.length}`)
+      .join(', ');
 
-    if (this.agents.length > 0 || this.targetAgents.size > 0) {
+    if (
+      this.agents.length > 0 ||
+      this.targetAgents.size > 0 ||
+      this.fallbackAgents.length > 0 ||
+      this.fallbackTargetAgents.size > 0
+    ) {
       log(
         'proxy',
         `Initialized ${this.agents.length} global agents` +
           (targetSummary ? `; per-target: ${targetSummary}` : '') +
+          (this.fallbackAgents.length > 0
+            ? `; fallback global: ${this.fallbackAgents.length}`
+            : '') +
+          (fallbackTargetSummary ? `; fallback per-target: ${fallbackTargetSummary}` : '') +
           `. Proxied targets: ${this.proxyAll ? '*' : Array.from(this.enabledSet).join(', ') || 'none'}`
       );
     }
@@ -103,10 +131,14 @@ export class ProxyManager {
 
   public isProxied(target?: string, url?: string): boolean {
     const active = (target || getActiveProvider() || '').toLowerCase().trim();
-    if (active && (this.targetAgents.get(active)?.length ?? 0) > 0) {
+    if (
+      active &&
+      ((this.targetAgents.get(active)?.length ?? 0) > 0 ||
+        (this.fallbackTargetAgents.get(active)?.length ?? 0) > 0)
+    ) {
       return true;
     }
-    if (this.agents.length === 0) return false;
+    if (this.agents.length === 0 && this.fallbackAgents.length === 0) return false;
     if (this.proxyAll) return true;
 
     const lowerTarget = (target || '').toLowerCase().trim();
@@ -126,11 +158,31 @@ export class ProxyManager {
     return false;
   }
 
-  public getConfig(target?: string, url?: string): ProxyConfigResult {
+  public getConfig(target?: string, url?: string, attempt = 0): ProxyConfigResult {
     const active = (target || getActiveProvider() || '').toLowerCase().trim();
-    const targetPool = active ? this.targetAgents.get(active) : undefined;
-    const pool = targetPool && targetPool.length > 0 ? targetPool : this.agents;
+    const useFallback = attempt > 0;
 
+    const primaryTarget = active ? this.targetAgents.get(active) : undefined;
+    const fallbackTarget = active ? this.fallbackTargetAgents.get(active) : undefined;
+
+    let targetPool = useFallback
+      ? fallbackTarget && fallbackTarget.length > 0
+        ? fallbackTarget
+        : primaryTarget
+      : primaryTarget;
+    let globalPool = useFallback
+      ? this.fallbackAgents.length > 0
+        ? this.fallbackAgents
+        : this.agents
+      : this.agents;
+
+    // If only a fallback pool is configured, use it from the first attempt.
+    if (!useFallback && !(targetPool && targetPool.length) && globalPool.length === 0) {
+      targetPool = fallbackTarget;
+      globalPool = this.fallbackAgents;
+    }
+
+    const pool = targetPool && targetPool.length > 0 ? targetPool : globalPool;
     if (pool.length === 0) {
       return {};
     }
