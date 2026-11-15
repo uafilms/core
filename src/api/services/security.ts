@@ -3,6 +3,7 @@ import { isTurnstileEnabled, verifyTurnstileToken } from './turnstile.js';
 import {
   unauthenticatedParserRateLimiter,
   authenticatedParserRateLimiter,
+  GUEST_PARSER_RATE_LIMIT,
 } from './rateLimiter.js';
 import {
   verifyAuthToken,
@@ -159,9 +160,9 @@ export async function enforceParsingSecurity(c: Context): Promise<Response | nul
   const identity = await getAuthIdentity(c);
   const isAuthenticated = identity !== null;
 
-  // Rate limiting for guest / unauthenticated requests (3 requests/min)
+  // Rate limiting for guest / unauthenticated requests (GUEST_PARSER_RATE_LIMIT, default 10/min)
   if (!isAuthenticated) {
-    const { allowed } = unauthenticatedParserRateLimiter.check(ip, 3);
+    const { allowed } = unauthenticatedParserRateLimiter.check(ip);
     if (!allowed) {
       const ban = autoBanService.recordViolation(ip);
       if (ban.banned) {
@@ -180,7 +181,7 @@ export async function enforceParsingSecurity(c: Context): Promise<Response | nul
         {
           error: {
             code: 'RATE_LIMIT_EXCEEDED',
-            message: 'Забагато запитів на парсинг джерел. Ліміт для гостей: 3 запити на хвилину. Зареєструйтесь або використовуйте API-ключ для підвищення ліміту.',
+            message: `Забагато запитів на парсинг джерел. Ліміт для гостей: ${GUEST_PARSER_RATE_LIMIT} запитів на хвилину. Зареєструйтесь або використовуйте API-ключ для підвищення ліміту.`,
           },
           traceId: crypto.randomUUID(),
         },
