@@ -1,5 +1,5 @@
 import type { OmssProviderItem } from '../types/index.js';
-import { requestJson } from '../utils/index.js';
+import { requestJson, buildQueryString } from '../utils/index.js';
 import { getOrSolvePowToken, invalidatePowToken, setPowRequired } from '../pow/index.js';
 import { getLocalCache, setLocalCache } from '../cache/index.js';
 import { getAuthHeadersAndParams } from './auth.js';
@@ -31,14 +31,8 @@ export async function streamMovieSources(
     }
   }
 
-  const urlParams = new URLSearchParams();
-  urlParams.set('platform', 'tv');
-  urlParams.set('sse', '1');
-  for (const [k, v] of Object.entries(authParams)) {
-    urlParams.set(k, v);
-  }
-
-  const url = `${host}/v1/movies/${encodeURIComponent(String(id))}?${urlParams.toString()}`;
+  const query = { platform: 'tv', sse: '1', ...authParams };
+  const url = `${host}/v1/movies/${encodeURIComponent(String(id))}?${buildQueryString(query)}`;
   const allProviders: OmssProviderItem[] = [];
 
   let isCancelled = false;

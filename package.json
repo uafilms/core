@@ -41,6 +41,8 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.13",
+    "@babel/preset-env": "^7.29.14",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.2",
     "@types/ws": "^8.18.2",

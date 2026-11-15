@@ -1,5 +1,5 @@
 import type { OmssProviderItem } from '../types/index.js';
-import { requestJson } from '../utils/index.js';
+import { requestJson, buildQueryString } from '../utils/index.js';
 import { getOrSolvePowToken, invalidatePowToken, setPowRequired } from '../pow/index.js';
 import { getLocalCache, setLocalCache } from '../cache/index.js';
 import { getAuthHeadersAndParams } from './auth.js';
@@ -59,14 +59,8 @@ export async function streamEpisodeSources(
     }
   }
 
-  const urlParams = new URLSearchParams();
-  urlParams.set('platform', 'tv');
-  urlParams.set('sse', '1');
-  for (const [k, v] of Object.entries(authParams)) {
-    urlParams.set(k, v);
-  }
-
-  const url = `${host}/v1/tv/${encodeURIComponent(String(id))}/seasons/${season}/episodes/${episode}?${urlParams.toString()}`;
+  const query = { platform: 'tv', sse: '1', ...authParams };
+  const url = `${host}/v1/tv/${encodeURIComponent(String(id))}/seasons/${season}/episodes/${episode}?${buildQueryString(query)}`;
   const allProviders: OmssProviderItem[] = [];
 
   let isCancelled = false;
@@ -156,13 +150,8 @@ export async function fetchEpisodeProviders(
     }
   }
 
-  const urlParams = new URLSearchParams();
-  urlParams.set('platform', 'tv');
-  for (const [k, v] of Object.entries(authParams)) {
-    urlParams.set(k, v);
-  }
-
-  const reqUrl = `${host}/v1/tv/${encodeURIComponent(String(id))}/seasons/${season}/episodes/${episode}?${urlParams.toString()}`;
+  const query = { platform: 'tv', ...authParams };
+  const reqUrl = `${host}/v1/tv/${encodeURIComponent(String(id))}/seasons/${season}/episodes/${episode}?${buildQueryString(query)}`;
 
   try {
     const res = await requestJson<any>(reqUrl);
@@ -181,10 +170,10 @@ export async function fetchEpisodeProviders(
     invalidatePowToken();
     const newToken = await getOrSolvePowToken(host, true);
     if (newToken) {
-      urlParams.set('pow_token', newToken);
+      const retryQuery = { ...query, pow_token: newToken };
       try {
         const retryRes = await requestJson<any>(
-          `${host}/v1/tv/${encodeURIComponent(String(id))}/seasons/${season}/episodes/${episode}?${urlParams.toString()}`
+          `${host}/v1/tv/${encodeURIComponent(String(id))}/seasons/${season}/episodes/${episode}?${buildQueryString(retryQuery)}`
         );
         let retryList: OmssProviderItem[] = [];
         if (retryRes && retryRes.providers && Array.isArray(retryRes.providers)) {

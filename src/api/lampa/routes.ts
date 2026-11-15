@@ -2,23 +2,11 @@ import { Hono } from 'hono';
 import fs from 'fs';
 import path from 'path';
 import { isTurnstileEnabled } from '../services/turnstile.js';
+import { buildLampaBundle } from './bundle.js';
 
 export const lampaRouter = new Hono();
 
 let memoryCache: { code: string; mtime: number } | null = null;
-let esbuildModule: any = null;
-
-function getEsbuild() {
-  if (!esbuildModule) {
-    try {
-      const req = typeof require === 'function' ? require : (0, eval)('require');
-      esbuildModule = req('esbuild');
-    } catch {
-      // esbuild not available
-    }
-  }
-  return esbuildModule;
-}
 
 function getLampaDirectoryMtime(): number {
   const dir = path.resolve(process.cwd(), 'src/lampa');
@@ -41,7 +29,6 @@ function getLampaDirectoryMtime(): number {
 
 function getPluginBundle(isDev: boolean): string {
   const distFile = path.resolve(process.cwd(), 'dist/lampa/plugin.js');
-  const entryFile = path.resolve(process.cwd(), 'src/lampa/index.ts');
 
   // In production with prebuilt dist file, serve directly from disk/cache
   if (!isDev && fs.existsSync(distFile)) {
@@ -52,27 +39,14 @@ function getPluginBundle(isDev: boolean): string {
   }
 
   // In development, build on the fly or reload on edit across ALL files in src/lampa
-  const esbuild = getEsbuild();
-  if (esbuild && (isDev || !fs.existsSync(distFile))) {
+  if (isDev || !fs.existsSync(distFile)) {
     try {
       const dirMtime = getLampaDirectoryMtime();
       if (memoryCache && dirMtime > 0 && memoryCache.mtime === dirMtime) {
         return memoryCache.code;
       }
 
-      const buildResult = esbuild.buildSync({
-        entryPoints: [entryFile],
-        bundle: true,
-        format: 'iife',
-        target: ['es2015'],
-        minify: true,
-        minifyWhitespace: true,
-        minifyIdentifiers: true,
-        minifySyntax: true,
-        legalComments: 'none',
-        write: false,
-      });
-      const code = buildResult.outputFiles[0].text;
+      const code = buildLampaBundle();
       memoryCache = { code, mtime: dirMtime };
 
       // Update dist file on disk

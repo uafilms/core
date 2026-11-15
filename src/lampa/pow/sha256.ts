@@ -99,7 +99,7 @@ export async function calculateSha256(message: string): Promise<string> {
       const buffer = new TextEncoder().encode(message);
       const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+      return hashArray.map((b) => ('0' + b.toString(16)).slice(-2)).join('');
     } catch {
       // Fallback
     }
