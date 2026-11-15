@@ -12,7 +12,7 @@ export async function search(query: string, options?: ProviderSearchOptions): Pr
     return [{
       id: imdbId,
       title: options?.meta?.title || cleanQuery,
-      url: `https://wh.lme.isroot.in/?imdb_id=${imdbId}`,
+      url: `https://makhno.shares.zrok.io/?imdb_id=${imdbId}`,
     }];
   }
 

@@ -2,7 +2,7 @@ import { httpRequest } from '../../utils/http.js';
 import { ashdiVod } from '../cdn/ashdi/main.js';
 import type { ProviderGetOptions, ProviderResult, StreamSource, Season, LazyStream } from '../../types/index.js';
 
-const WORMHOLE_BASE = 'https://wh.lme.isroot.in';
+const WORMHOLE_BASE = 'https://makhno.shares.zrok.io';
 
 export interface WormholeApiResponse {
   play?: string;
@@ -31,6 +31,8 @@ export async function get(
       url: `${WORMHOLE_BASE}/?imdb_id=${imdbId}`,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        // zrok показує HTML-заглушку без цього заголовка; будь-яке значення її вимикає.
+        'skip_zrok_interstitial': '1',
       },
       signal: options?.signal,
     });
@@ -78,7 +80,7 @@ export async function get(
     const vodResult = await ashdiVod.extract(ashdiUrl, {
       signal: options?.signal,
       headers: {
-        'Referer': 'https://wh.lme.isroot.in/',
+        'Referer': 'https://makhno.shares.zrok.io/',
       },
     });
 
