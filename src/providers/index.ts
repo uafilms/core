@@ -45,10 +45,10 @@ import type { Provider } from '../types/provider.js';
 export const providers: Provider[] = [
   uakinoProvider,
   kinoukrProvider,
+  wormholeProvider,
   uaserialsProvider,
   uaserialsMyProvider,
   eneyidaProvider,
-  wormholeProvider,
   bambooUaProvider,
   // AniHub (anihub.in.ua) стоїть попереду AnimeOn: він власник Fenix CDN,
   // тому його fenix-джерело (одне відео + audioTracks) виграє за бар'єром claimedCdns.
