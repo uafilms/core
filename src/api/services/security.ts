@@ -4,6 +4,8 @@ import {
   unauthenticatedParserRateLimiter,
   authenticatedParserRateLimiter,
   GUEST_PARSER_RATE_LIMIT,
+  AUTHENTICATED_NEWBIE_PARSER_RATE_LIMIT,
+  AUTHENTICATED_PARSER_RATE_LIMIT,
 } from './rateLimiter.js';
 import {
   verifyAuthToken,
@@ -190,11 +192,14 @@ export async function enforceParsingSecurity(c: Context): Promise<Response | nul
     }
   } else {
     // Authenticated user / API Key rate limiting:
-    // 5 req/min for new accounts (< 14 days old), 15 req/min after 14 days
+    // AUTHENTICATED_NEWBIE_PARSER_RATE_LIMIT for new accounts (< 14 days old),
+    // AUTHENTICATED_PARSER_RATE_LIMIT after 14 days
     const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
     const accountAgeMs = Date.now() - (identity.userCreatedAt || Date.now());
     const isNewbie = accountAgeMs < FOURTEEN_DAYS_MS;
-    const maxRequests = isNewbie ? 5 : 15;
+    const maxRequests = isNewbie
+      ? AUTHENTICATED_NEWBIE_PARSER_RATE_LIMIT
+      : AUTHENTICATED_PARSER_RATE_LIMIT;
     const rateKey = identity.type === 'api_key' ? `key:${identity.id}` : `user:${identity.userId}`;
 
     const { allowed } = authenticatedParserRateLimiter.check(rateKey, maxRequests);
@@ -218,8 +223,8 @@ export async function enforceParsingSecurity(c: Context): Promise<Response | nul
           error: {
             code: 'RATE_LIMIT_EXCEEDED',
             message: isNewbie
-              ? `Перевищено ліміт запитів: 5 запитів на хвилину для нових акаунтів (до 14 днів). Через ${remainingDays} дн. ліміт автоматично зросте до 15 запитів/хв.`
-              : 'Перевищено ліміт запитів: 15 запитів на хвилину для перевірених акаунтів.',
+              ? `Перевищено ліміт запитів: ${AUTHENTICATED_NEWBIE_PARSER_RATE_LIMIT} запитів на хвилину для нових акаунтів (до 14 днів). Через ${remainingDays} дн. ліміт автоматично зросте до ${AUTHENTICATED_PARSER_RATE_LIMIT} запитів/хв.`
+              : `Перевищено ліміт запитів: ${AUTHENTICATED_PARSER_RATE_LIMIT} запитів на хвилину для перевірених акаунтів.`,
           },
           traceId: crypto.randomUUID(),
         },
