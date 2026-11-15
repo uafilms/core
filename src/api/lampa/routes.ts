@@ -110,6 +110,10 @@ const servePluginHandler = (c: any) => {
     const bundleCode = getPluginBundle(isDev);
     const powRequired = isTurnstileEnabled();
     const injected =
+      // "use strict" must be the very first statement, otherwise it stops being
+      // a directive prologue. Old Android WebViews then reject `let`/`const`
+      // in the bundled plugin with "Block-scoped declarations ... outside strict mode".
+      `"use strict";\n` +
       `window.__UAFILMS_SERVER_HOST__ = ${JSON.stringify(serverHost)};\n` +
       `window.__UAFILMS_POW_REQUIRED__ = ${powRequired ? 'true' : 'false'};\n` +
       bundleCode;
