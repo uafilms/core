@@ -16,6 +16,7 @@ Media stream aggregator + [OMSS](https://github.com/omss-spec/omss-spec) API ser
 ## Toolchain gotchas
 
 - tsconfig uses `module: NodeNext`: relative imports must keep the `.js` extension even though sources are `.ts` (e.g. `import { x } from './foo.js'`).
+- `src/lampa` is built into a standalone browser bundle by `scripts/build-lampa.ts` (and on demand by `src/api/lampa/routes.ts`). The shared builder lives in `src/api/lampa/bundle.ts` and runs esbuild → Babel (ES5) → esbuild; keep it ES5, because old TV browsers (webOS, Tizen, Android boxes) fail to parse template literals and other ES2015 syntax.
 - `web/` is plain JS/JSX (no TS), built separately by `build:web`.
 - `better-sqlite3` is native; Docker builds run `python3 make g++` for it.
 - Only `npm run dev` loads `.env` via `--env-file`; other scripts rely on `dotenv/config` imported by `src/api/server.ts` or the ambient environment.

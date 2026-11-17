@@ -4,6 +4,7 @@
  * Entry point compiled into standalone browser bundle served at {host}/l
  */
 
+import './polyfills.js';
 import { initUAFilmsPlugin } from './bootstrap/index.js';
 
 export * from './types/index.js';

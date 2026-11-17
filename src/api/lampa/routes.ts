@@ -68,7 +68,7 @@ function getPluginBundle(isDev: boolean): string {
     return fs.readFileSync(distFile, 'utf-8');
   }
 
-  throw new Error('Lampa plugin bundle not found and esbuild is not available');
+  throw new Error('Lampa plugin bundle not found and the on-the-fly build failed');
 }
 
 const servePluginHandler = (c: any) => {
@@ -109,6 +109,8 @@ const servePluginHandler = (c: any) => {
 };
 
 lampaRouter.get('/l', servePluginHandler);
+lampaRouter.get('/l/', servePluginHandler);
 lampaRouter.get('/lampa', servePluginHandler);
+lampaRouter.get('/lampa/', servePluginHandler);
 lampaRouter.get('/lampa.js', servePluginHandler);
 lampaRouter.get('/online.js', servePluginHandler);
